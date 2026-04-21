@@ -25,3 +25,22 @@ import instecTempStage_Control as tsC
 
 if __name__ == '__main__':
     
+    tempDev = tsC.mK2000B()
+    tempDev.connectTempController()
+    impdDev = ziC.ziDevice()
+    impdDev.connectDevice()
+    
+    # Set impedance analyzer parameters
+    impdDev.getConstants()
+    impdDev.setConstants()
+    
+    # Set temperature controller parameters
+    tempDev.setTempGrid()
+    
+    for i in range(len(tempDev.tempGrid)):
+        tempDev.goToTemp(tempDev.tempGrid[i])
+        impdDev.pullData()
+    # 
+
+    # tempDev.disconnTController()
+    # impdDev.close()

@@ -38,6 +38,7 @@ class mK2000B:
         self.Tinitial = 25
         self.Tfinal = 25
         self.numTemps = 1
+        self.tempGrid = 25
     
     def read(self):
         return self.dev.read()
@@ -176,11 +177,15 @@ class mK2000B:
 
     def setTempGrid(self):
         if not self.dev is None:
-            Tinit = self.Tinitial
-            Tfin = self.Tfinal
-            numT = self.numTemps
-
-            hpc.temprGrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
+            Tinit = input("Please enter Initial Temperature (C): ") or self.Tinitial
+            Tfin = input("Please enter Final Temperature (C): ") or self.Tfinal
+            numT = input("Please enter number of Temperature steps: ") or self.numTemps
+            
+            self.Tinitial = Tinit
+            self.Tfinal = Tfin
+            self.numTemps = numT
+            
+            self.tempGrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
         else:
            print("Nothing to do!")
         
