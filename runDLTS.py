@@ -37,9 +37,11 @@ if __name__ == '__main__':
     # Set temperature controller parameters
     tempDev.setTempGrid()
     
+    data = dict()
     for i in range(len(tempDev.tempGrid)):
         tempDev.goToTemp(tempDev.tempGrid[i])
-        impdDev.pullData()
+        time.sleep(1)
+        data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False)
     # 
 
     # tempDev.disconnTController()
