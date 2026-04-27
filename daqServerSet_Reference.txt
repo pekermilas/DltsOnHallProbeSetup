@@ -1,0 +1,1692 @@
+(/dev32271/stats/physical/temperatures/0, {'Node': '/dev32271/stats/physical/temperatures/0', 'Description': 'Internal temperature measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '°C'})
+
+
+(/dev32271/stats/physical/temperatures/1, {'Node': '/dev32271/stats/physical/temperatures/1', 'Description': 'Internal temperature measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '°C'})
+
+
+(/dev32271/stats/physical/temperatures/2, {'Node': '/dev32271/stats/physical/temperatures/2', 'Description': 'Internal temperature measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '°C'})
+
+
+(/dev32271/stats/physical/temperatures/3, {'Node': '/dev32271/stats/physical/temperatures/3', 'Description': 'Internal temperature measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '°C'})
+
+
+(/dev32271/stats/physical/temperatures/4, {'Node': '/dev32271/stats/physical/temperatures/4', 'Description': 'Internal temperature measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '°C'})
+
+
+(/dev32271/stats/physical/voltages/0, {'Node': '/dev32271/stats/physical/voltages/0', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/1, {'Node': '/dev32271/stats/physical/voltages/1', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/2, {'Node': '/dev32271/stats/physical/voltages/2', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/3, {'Node': '/dev32271/stats/physical/voltages/3', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/4, {'Node': '/dev32271/stats/physical/voltages/4', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/5, {'Node': '/dev32271/stats/physical/voltages/5', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/6, {'Node': '/dev32271/stats/physical/voltages/6', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/7, {'Node': '/dev32271/stats/physical/voltages/7', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/8, {'Node': '/dev32271/stats/physical/voltages/8', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/9, {'Node': '/dev32271/stats/physical/voltages/9', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/10, {'Node': '/dev32271/stats/physical/voltages/10', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/11, {'Node': '/dev32271/stats/physical/voltages/11', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/12, {'Node': '/dev32271/stats/physical/voltages/12', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/13, {'Node': '/dev32271/stats/physical/voltages/13', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/14, {'Node': '/dev32271/stats/physical/voltages/14', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/voltages/15, {'Node': '/dev32271/stats/physical/voltages/15', 'Description': 'Internal voltage measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/fanspeed, {'Node': '/dev32271/stats/physical/fanspeed', 'Description': 'Speed of the internal cooling fan.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'RPM'})
+
+
+(/dev32271/oscs/0/freq, {'Node': '/dev32271/oscs/0/freq', 'Description': 'Frequency control for each oscillator.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/demods/0/adcselect, {'Node': '/dev32271/demods/0/adcselect', 'Description': 'Selects the input signal for the demodulator.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"sigin0", "signal_input0": Sig In 1', '1': '"currin0", "current_input0": Curr In 1', '2': '"trigin0", "trigger_input0": Trigger Input 1', '3': '"trigin1", "trigger_input1": Trigger Input 2', '4': '"auxout0", "auxiliary_output0": Aux Out 1', '5': '"auxout1", "auxiliary_output1": Aux Out 2', '6': '"auxout2", "auxiliary_output2": Aux Out 3', '7': '"auxout3", "auxiliary_output3": Aux Out 4', '8': '"auxin0", "auxiliary_input0": Aux In 1', '9': '"auxin1", "auxiliary_input1": Aux In 2', '174': '"demod_constant_input": Demodulate a constant input. This results in a sine wave of the frequency specified by the demodulator\'s oscillator with an amplitude of 1 (at lower frequencies; higher frequencies will be attenuated). The maximum possible frequency is limited by the demodulator sampling rate and bandwidth; use demodulator order 1 for the least attenuation in demodulator output. This signal may be used with the auxiliary outputs, PID and Threshold Unit for advanced measurement and control tasks. When the demodulator output is written to an auxiliary output, the resulting signal can also be used as a second output channel (for low frequencies).'}})
+
+
+(/dev32271/demods/0/order, {'Node': '/dev32271/demods/0/order', 'Description': 'Selects the filter roll off between 6 dB/oct and 48 dB/oct.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'1': '1st order filter 6 dB/oct', '2': '2nd order filter 12 dB/oct', '3': '3rd order filter 18 dB/oct', '4': '4th order filter 24 dB/oct', '5': '5th order filter 30 dB/oct', '6': '6th order filter 36 dB/oct', '7': '7th order filter 42 dB/oct', '8': '8th order filter 48 dB/oct'}})
+
+
+(/dev32271/demods/0/rate, {'Node': '/dev32271/demods/0/rate', 'Description': 'Defines the demodulator sampling rate, the number of samples that are sent to the host computer per second. A rate of about 7-10 higher as compared to the filter bandwidth usually provides sufficient aliasing suppression. This is also the rate of data received by LabOne Data Server and saved to the computer hard disk. This setting has no impact on the sample rate on the auxiliary outputs connectors. Note: the value inserted by the user may be approximated to the nearest value supported by the instrument.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': '1/s'})
+
+
+(/dev32271/demods/0/oscselect, {'Node': '/dev32271/demods/0/oscselect', 'Description': 'Connects the demodulator with the supplied oscillator. Number of available oscillators depends on the installed options.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': 'Oscillator 1', '1': 'Oscillator 2', '2': 'Oscillator 3', '3': 'Oscillator 4'}})
+
+
+(/dev32271/demods/0/harmonic, {'Node': '/dev32271/demods/0/harmonic', 'Description': "Multiplies the demodulator's reference frequency by an integer factor. If the demodulator is used as a phase detector in external reference mode (PLL), the effect is that the internal oscillator locks to the external frequency divided by the integer factor.", 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/demods/0/phaseshift, {'Node': '/dev32271/demods/0/phaseshift', 'Description': 'Phase shift applied to the reference input of the demodulator.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'deg'})
+
+
+(/dev32271/demods/0/sinc, {'Node': '/dev32271/demods/0/sinc', 'Description': 'Enables the sinc filter. When the filter bandwidth is comparable to or larger than the demodulation frequency, the demodulator output may contain frequency components at the frequency of demodulation and its higher harmonics. The sinc is an additional filter that attenuates these unwanted components in the demodulator output.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/demods/0/timeconstant, {'Node': '/dev32271/demods/0/timeconstant', 'Description': 'Sets the integration time constant or in other words, the cutoff frequency of the demodulator low pass filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/demods/0/enable, {'Node': '/dev32271/demods/0/enable', 'Description': 'Enables the data acquisition for the corresponding demodulator. Note: increasing number of active demodulators increases load on the physical connection to the host computer.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": OFF: demodulator inactive', '1': '"on": ON: demodulator active'}})
+
+
+(/dev32271/demods/0/freq, {'Node': '/dev32271/demods/0/freq', 'Description': 'Indicates the frequency used for demodulation and for output generation. The demodulation frequency is calculated with oscillator frequency times the harmonic factor. When the MOD option is used linear combinations of oscillator frequencies including the harmonic factors define the demodulation frequencies.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/demods/0/trigger, {'Node': '/dev32271/demods/0/trigger', 'Description': 'Selects the acquisition mode (i.e. triggering) of the demodulator.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"continuous": Continuous: demodulator data is continuously streamed to the host computer.', '1': '"trigin0_rising", "trigger_input0_rising": Trigger Input 1: rising edge triggered.', '2': '"trigin0_falling", "trigger_input0_falling": Trigger Input 1: falling edge triggered.', '3': '"trigin0_both", "trigger_input0_both": Trigger Input 1: triggering on both rising and falling edge.', '4': '"trigin1_rising", "trigger_input1_rising": Trigger Input 2: rising edge triggered.', '5': '"trigin0or1_rising", "trigger_input0or1_rising": Trigger Input 1 or 2: rising edge triggered on either input.', '8': '"trigin1_falling", "trigger_input1_falling": Trigger Input 2: falling edge triggered.', '10': '"trigin0or1_falling", "trigger_input0or1_falling": Trigger Input 1 or 2: falling edge triggered on either input.', '12': '"trigin1_both", "trigger_input1_both": Trigger Input 2: triggering on both rising and falling edge.', '15': '"trigin0or1_both", "trigger_input0or1_both": Trigger Input 1 or 2: triggering on both rising and falling edge or either trigger input.', '16': '"trigin0_low", "trigger_input0_low": Trigger Input 1: demodulator data is streamed to the host computer when the level is low (TTL).', '32': '"trigin0_high", "trigger_input0_high": Trigger Input 1 for MF: demodulator data is streamed to the host computer when the level is high (TTL).', '64': '"trigin1_low", "trigger_input1_low": Trigger Input 2: demodulator data is streamed to the host computer when the level is low (TTL).', '80': '"trigin0or1_low", "trigger_input0or1_low": Trigger Input 1 or 2: demodulator data is streamed to the host computer when either level is low (TTL).', '128': '"trigin1_high", "trigger_input1_high": Trigger Input 2: demodulator data is streamed to the host computer when the level is high (TTL).', '160': '"trigin0or1_high", "trigger_input0or1_high": Trigger Input 1 or 2: demodulator data is streamed to the host computer when either level is high (TTL).'}})
+
+
+(/dev32271/demods/0/phaseadjust, {'Node': '/dev32271/demods/0/phaseadjust', 'Description': 'Adjust the demodulator phase automatically in order to read 0 degrees.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/demods/1/adcselect, {'Node': '/dev32271/demods/1/adcselect', 'Description': 'Selects the input signal for the demodulator.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"sigin0", "signal_input0": Sig In 1', '1': '"currin0", "current_input0": Curr In 1', '2': '"trigin0", "trigger_input0": Trigger Input 1', '3': '"trigin1", "trigger_input1": Trigger Input 2', '4': '"auxout0", "auxiliary_output0": Aux Out 1', '5': '"auxout1", "auxiliary_output1": Aux Out 2', '6': '"auxout2", "auxiliary_output2": Aux Out 3', '7': '"auxout3", "auxiliary_output3": Aux Out 4', '8': '"auxin0", "auxiliary_input0": Aux In 1', '9': '"auxin1", "auxiliary_input1": Aux In 2', '174': '"demod_constant_input": Demodulate a constant input. This results in a sine wave of the frequency specified by the demodulator\'s oscillator with an amplitude of 1 (at lower frequencies; higher frequencies will be attenuated). The maximum possible frequency is limited by the demodulator sampling rate and bandwidth; use demodulator order 1 for the least attenuation in demodulator output. This signal may be used with the auxiliary outputs, PID and Threshold Unit for advanced measurement and control tasks. When the demodulator output is written to an auxiliary output, the resulting signal can also be used as a second output channel (for low frequencies).'}})
+
+
+(/dev32271/demods/1/order, {'Node': '/dev32271/demods/1/order', 'Description': 'Selects the filter roll off between 6 dB/oct and 48 dB/oct.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'1': '1st order filter 6 dB/oct', '2': '2nd order filter 12 dB/oct', '3': '3rd order filter 18 dB/oct', '4': '4th order filter 24 dB/oct', '5': '5th order filter 30 dB/oct', '6': '6th order filter 36 dB/oct', '7': '7th order filter 42 dB/oct', '8': '8th order filter 48 dB/oct'}})
+
+
+(/dev32271/demods/1/rate, {'Node': '/dev32271/demods/1/rate', 'Description': 'Defines the demodulator sampling rate, the number of samples that are sent to the host computer per second. A rate of about 7-10 higher as compared to the filter bandwidth usually provides sufficient aliasing suppression. This is also the rate of data received by LabOne Data Server and saved to the computer hard disk. This setting has no impact on the sample rate on the auxiliary outputs connectors. Note: the value inserted by the user may be approximated to the nearest value supported by the instrument.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': '1/s'})
+
+
+(/dev32271/demods/1/oscselect, {'Node': '/dev32271/demods/1/oscselect', 'Description': 'Connects the demodulator with the supplied oscillator. Number of available oscillators depends on the installed options.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': 'Oscillator 1', '1': 'Oscillator 2', '2': 'Oscillator 3', '3': 'Oscillator 4'}})
+
+
+(/dev32271/demods/1/harmonic, {'Node': '/dev32271/demods/1/harmonic', 'Description': "Multiplies the demodulator's reference frequency by an integer factor. If the demodulator is used as a phase detector in external reference mode (PLL), the effect is that the internal oscillator locks to the external frequency divided by the integer factor.", 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/demods/1/phaseshift, {'Node': '/dev32271/demods/1/phaseshift', 'Description': 'Phase shift applied to the reference input of the demodulator.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'deg'})
+
+
+(/dev32271/demods/1/sinc, {'Node': '/dev32271/demods/1/sinc', 'Description': 'Enables the sinc filter. When the filter bandwidth is comparable to or larger than the demodulation frequency, the demodulator output may contain frequency components at the frequency of demodulation and its higher harmonics. The sinc is an additional filter that attenuates these unwanted components in the demodulator output.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/demods/1/timeconstant, {'Node': '/dev32271/demods/1/timeconstant', 'Description': 'Sets the integration time constant or in other words, the cutoff frequency of the demodulator low pass filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/demods/1/enable, {'Node': '/dev32271/demods/1/enable', 'Description': 'Enables the data acquisition for the corresponding demodulator. Note: increasing number of active demodulators increases load on the physical connection to the host computer.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": OFF: demodulator inactive', '1': '"on": ON: demodulator active'}})
+
+
+(/dev32271/demods/1/freq, {'Node': '/dev32271/demods/1/freq', 'Description': 'Indicates the frequency used for demodulation and for output generation. The demodulation frequency is calculated with oscillator frequency times the harmonic factor. When the MOD option is used linear combinations of oscillator frequencies including the harmonic factors define the demodulation frequencies.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/demods/1/trigger, {'Node': '/dev32271/demods/1/trigger', 'Description': 'Selects the acquisition mode (i.e. triggering) of the demodulator.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"continuous": Continuous: demodulator data is continuously streamed to the host computer.', '1': '"trigin0_rising", "trigger_input0_rising": Trigger Input 1: rising edge triggered.', '2': '"trigin0_falling", "trigger_input0_falling": Trigger Input 1: falling edge triggered.', '3': '"trigin0_both", "trigger_input0_both": Trigger Input 1: triggering on both rising and falling edge.', '4': '"trigin1_rising", "trigger_input1_rising": Trigger Input 2: rising edge triggered.', '5': '"trigin0or1_rising", "trigger_input0or1_rising": Trigger Input 1 or 2: rising edge triggered on either input.', '8': '"trigin1_falling", "trigger_input1_falling": Trigger Input 2: falling edge triggered.', '10': '"trigin0or1_falling", "trigger_input0or1_falling": Trigger Input 1 or 2: falling edge triggered on either input.', '12': '"trigin1_both", "trigger_input1_both": Trigger Input 2: triggering on both rising and falling edge.', '15': '"trigin0or1_both", "trigger_input0or1_both": Trigger Input 1 or 2: triggering on both rising and falling edge or either trigger input.', '16': '"trigin0_low", "trigger_input0_low": Trigger Input 1: demodulator data is streamed to the host computer when the level is low (TTL).', '32': '"trigin0_high", "trigger_input0_high": Trigger Input 1 for MF: demodulator data is streamed to the host computer when the level is high (TTL).', '64': '"trigin1_low", "trigger_input1_low": Trigger Input 2: demodulator data is streamed to the host computer when the level is low (TTL).', '80': '"trigin0or1_low", "trigger_input0or1_low": Trigger Input 1 or 2: demodulator data is streamed to the host computer when either level is low (TTL).', '128': '"trigin1_high", "trigger_input1_high": Trigger Input 2: demodulator data is streamed to the host computer when the level is high (TTL).', '160': '"trigin0or1_high", "trigger_input0or1_high": Trigger Input 1 or 2: demodulator data is streamed to the host computer when either level is high (TTL).'}})
+
+
+(/dev32271/demods/1/phaseadjust, {'Node': '/dev32271/demods/1/phaseadjust', 'Description': 'Adjust the demodulator phase automatically in order to read 0 degrees.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/extrefs/0/enable, {'Node': '/dev32271/extrefs/0/enable', 'Description': 'Enables the external reference.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/extrefs/0/automode, {'Node': '/dev32271/extrefs/0/automode', 'Description': 'This defines the type of automatic adaptation of parameters in the PID used for Ext Ref.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'2': '"low_bandwidth", "pid_coeffs_filter_low_bw": The PID coefficients, the filter bandwidth and the output limits are automatically set using a low bandwidth.', '3': '"high_bandwidth", "pid_coeffs_filter_high_bw": The PID coefficients, the filter bandwidth and the output limits are automatically set using a high bandwidth.', '4': '"all", "pid_coeffs_filter_auto_bw": The PID coefficient, the filter bandwidth and the output limits are dynamically adapted.'}})
+
+
+(/dev32271/extrefs/0/adcselect, {'Node': '/dev32271/extrefs/0/adcselect', 'Description': 'Indicates the input signal selection for the selected demodulator.', 'Properties': 'Read', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"sigin0", "signal_input0": Signal Input 1 is connected to the corresponding demodulator.', '1': '"currin0", "current_input0": Current Input 1 is connected to the corresponding demodulator.', '2': '"trigin0", "trigger_input0": Trigger Input 1 is connected to the corresponding demodulator.', '3': '"trigin1", "trigger_input1": Trigger Input 2 is connected to the corresponding demodulator.', '4': '"auxout0", "auxiliary_output0": Auxiliary Output 1 is connected to the corresponding demodulator.', '5': '"auxout1", "auxiliary_output1": Auxiliary Output 2 is connected to the corresponding demodulator.', '6': '"auxout2", "auxiliary_output2": Auxiliary Output 3 is connected to the corresponding demodulator.', '7': '"auxout3", "auxiliary_output3": Auxiliary Output 4 is connected to the corresponding demodulator.', '8': '"auxin0", "auxiliary_input0": Auxiliary Input 1 is connected to the corresponding demodulator.', '9': '"auxin1", "auxiliary_input1": Auxiliary Input 2 is connected to the corresponding demodulator.'}})
+
+
+(/dev32271/extrefs/0/demodselect, {'Node': '/dev32271/extrefs/0/demodselect', 'Description': 'Indicates the demodulator connected to the extref channel.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/extrefs/0/oscselect, {'Node': '/dev32271/extrefs/0/oscselect', 'Description': 'Indicates which oscillator is being locked to the external reference.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/extrefs/0/locked, {'Node': '/dev32271/extrefs/0/locked', 'Description': 'Indicates whether the external reference is locked.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/triggers/in/0/level, {'Node': '/dev32271/triggers/in/0/level', 'Description': 'Trigger voltage level at which the trigger input toggles between low and high. Use 50% amplitude for digital input and consider the trigger hysteresis.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/triggers/in/0/autothreshold, {'Node': '/dev32271/triggers/in/0/autothreshold', 'Description': 'Automatically adjust the trigger threshold. The level is adjusted to fall in the center of the applied transitions.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/triggers/in/1/level, {'Node': '/dev32271/triggers/in/1/level', 'Description': 'Trigger voltage level at which the trigger input toggles between low and high. Use 50% amplitude for digital input and consider the trigger hysteresis.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/triggers/in/1/autothreshold, {'Node': '/dev32271/triggers/in/1/autothreshold', 'Description': 'Automatically adjust the trigger threshold. The level is adjusted to fall in the center of the applied transitions.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/triggers/out/0/source, {'Node': '/dev32271/triggers/out/0/source', 'Description': 'Select the signal assigned to the trigger output.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"disabled": The output trigger is disabled.', '1': '"demod1_phase": Oscillator phase of demod 2 (trigger output channel 1) or demod 4 (trigger output channel 2).', '2': '"scope_trigger": Scope Trigger. Requires the DIG Option.', '3': '"scope_not_trigger": Scope /Trigger. Requires the DIG Option.', '4': '"scope_armed": Scope Armed. Requires the DIG Option.', '5': '"scope_not_armed": Scope /Armed. Requires the DIG Option.', '6': '"scope_active": Scope Active. Requires the DIG Option.', '7': '"scope_not_active": Scope /Active. Requires the DIG Option.', '36': '"th_logic_unit0_out": Threshold Logic Unit 1 output.', '37': '"th_logic_unit1_out": Threshold Logic Unit 2 output.', '38': '"th_logic_unit2_out": Threshold Logic Unit 3 output.', '39': '"th_logic_unit3_out": Threshold Logic Unit 4 output.', '52': '"mds_sync_out": MDS Sync Out.'}})
+
+
+(/dev32271/triggers/out/0/pulsewidth, {'Node': '/dev32271/triggers/out/0/pulsewidth', 'Description': 'Defines the minimal pulse width for the case of Scope events written to the trigger outputs of the device.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/triggers/out/1/source, {'Node': '/dev32271/triggers/out/1/source', 'Description': 'Select the signal assigned to the trigger output.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"disabled": The output trigger is disabled.', '1': '"demod1_phase": Oscillator phase of demod 2 (trigger output channel 1) or demod 4 (trigger output channel 2).', '2': '"scope_trigger": Scope Trigger. Requires the DIG Option.', '3': '"scope_not_trigger": Scope /Trigger. Requires the DIG Option.', '4': '"scope_armed": Scope Armed. Requires the DIG Option.', '5': '"scope_not_armed": Scope /Armed. Requires the DIG Option.', '6': '"scope_active": Scope Active. Requires the DIG Option.', '7': '"scope_not_active": Scope /Active. Requires the DIG Option.', '36': '"th_logic_unit0_out": Threshold Logic Unit 1 output.', '37': '"th_logic_unit1_out": Threshold Logic Unit 2 output.', '38': '"th_logic_unit2_out": Threshold Logic Unit 3 output.', '39': '"th_logic_unit3_out": Threshold Logic Unit 4 output.', '52': '"mds_sync_out": MDS Sync Out.'}})
+
+
+(/dev32271/triggers/out/1/pulsewidth, {'Node': '/dev32271/triggers/out/1/pulsewidth', 'Description': 'Defines the minimal pulse width for the case of Scope events written to the trigger outputs of the device.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/status/flags/binary, {'Node': '/dev32271/status/flags/binary', 'Description': 'A set of binary flags giving an indication of the state of various parts of the device. Bit 0: Signal Input 1 overflow, Bit 1: Current Input 1 overflow, Bit 2: Analog PLL fail, Bit 3: Output 1 DAC OK, Bit 4: Output 2 DAC OK, Bit 5: Signal Output 1 clipping, Bit 6: Signal Output 2 clipping, Bit 7: Ext Ref 1 Locked, Bit 8: Ext Ref 2 Locked, Bit 9:Ext Ref 3 Locked, Bit 10:Ext Ref 4 Locked, Bit 11: Sample Loss, Bits 12 - 13: Trigger In 1, Bits 14 - 15: Trigger In 2, Bits 16 - 17: Trigger In 3, Bits 18 - 19: Trigger In 4, Bit 20: PLL 1 locked, Bit 21: PLL 2 locked, Bit 22: PLL 3 locked, Bit 23: PLL 4 locked, Bit 24: Rubidium clock locked, Bit 25: AU Cartesian 1 Overflow, Bit 26: AU Cartesian 2 Overflow, Bit 27: AU Polar 1 Overflow, Bit 28: AU Polar 2 Overflow.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/status/adc0min, {'Node': '/dev32271/status/adc0min', 'Description': 'The minimum value on Signal Input 1 (ADC0) during 100 ms', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/status/adc0max, {'Node': '/dev32271/status/adc0max', 'Description': 'The maximum value on Signal Input 1 (ADC0) during 100 ms.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/status/adc1min, {'Node': '/dev32271/status/adc1min', 'Description': 'The minimum value on Signal Input 2 (ADC1) during 100 ms', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/status/adc1max, {'Node': '/dev32271/status/adc1max', 'Description': 'The maximum value on Signal Input 2 (ADC1) during 100 ms.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/status/time, {'Node': '/dev32271/status/time', 'Description': 'The current timestamp.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/physical/fpga/temp, {'Node': '/dev32271/stats/physical/fpga/temp', 'Description': 'Internal temperature of the FPGA.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '°C'})
+
+
+(/dev32271/stats/physical/fpga/core, {'Node': '/dev32271/stats/physical/fpga/core', 'Description': 'Core voltage of the FPGA.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/fpga/aux, {'Node': '/dev32271/stats/physical/fpga/aux', 'Description': 'Supply voltage of the FPGA.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/stats/physical/overtemperature, {'Node': '/dev32271/stats/physical/overtemperature', 'Description': 'This flag is set to 1 if the temperature of the FPGA exceeds 85°C. It will be reset to 0 after a restart of the device.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/dios/0/input, {'Node': '/dev32271/dios/0/input', 'Description': 'Gives the value of the DIO input for those bytes where drive is disabled.', 'Properties': 'Read, Stream', 'Type': 'ZIDIOSample', 'Unit': 'None'})
+
+
+(/dev32271/auxins/0/sample, {'Node': '/dev32271/auxins/0/sample', 'Description': 'Voltage measured at the Auxiliary Input after averaging. The data rate depends on the averaging value. Note, if the instrument has demodulator functionality, the auxiliary input values are available as fields in a demodulator sample and are aligned by timestamp with the demodulator output.', 'Properties': 'Read, Stream', 'Type': 'ZIAuxInSample', 'Unit': 'V'})
+
+
+(/dev32271/scopes/0/wave, {'Node': '/dev32271/scopes/0/wave', 'Description': 'Contains the scope shot data.', 'Properties': 'Read, Stream', 'Type': 'ZIScopeWave', 'Unit': 'None'})
+
+
+(/dev32271/system/extclk, {'Node': '/dev32271/system/extclk', 'Description': '10 MHz reference clock source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"internal": Internal 10 MHz clock is used as the frequency and time base reference.', '1': '"external": An external 10 MHz clock is used as the frequency and time base reference. Provide a clean and stable 10 MHz reference to the appropriate back panel connector.'}})
+
+
+(/dev32271/system/fwlogenable, {'Node': '/dev32271/system/fwlogenable', 'Description': 'Enables logging to the fwlog node.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/compdelay/calibrate, {'Node': '/dev32271/system/compdelay/calibrate', 'Description': 'Perform automatic calibration of the input delay compensation.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/compdelay/delays/0, {'Node': '/dev32271/system/compdelay/delays/0', 'Description': 'Current values of the compensation delays. 0: Signal Input 0, 1: Signal Input 1, 2: Aux Inputs, 3: Trigger Inputs, 4: Loopbacks', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/compdelay/delays/1, {'Node': '/dev32271/system/compdelay/delays/1', 'Description': 'Current values of the compensation delays. 0: Signal Input 0, 1: Signal Input 1, 2: Aux Inputs, 3: Trigger Inputs, 4: Loopbacks', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preampenable, {'Node': '/dev32271/system/preampenable', 'Description': 'Enables the preamplifier.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/boardrevisions/0, {'Node': '/dev32271/system/boardrevisions/0', 'Description': 'Hardware revision of the FPGA base board', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/compdelay/delays/2, {'Node': '/dev32271/system/compdelay/delays/2', 'Description': 'Current values of the compensation delays. 0: Signal Input 0, 1: Signal Input 1, 2: Aux Inputs, 3: Trigger Inputs, 4: Loopbacks', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/compdelay/delays/3, {'Node': '/dev32271/system/compdelay/delays/3', 'Description': 'Current values of the compensation delays. 0: Signal Input 0, 1: Signal Input 1, 2: Aux Inputs, 3: Trigger Inputs, 4: Loopbacks', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/compdelay/delays/4, {'Node': '/dev32271/system/compdelay/delays/4', 'Description': 'Current values of the compensation delays. 0: Signal Input 0, 1: Signal Input 1, 2: Aux Inputs, 3: Trigger Inputs, 4: Loopbacks', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/shutdown, {'Node': '/dev32271/system/shutdown', 'Description': "Sending a '1' to this node initiates a shutdown of the operating system on the device. It is recommended to trigger this shutdown before switching the device off with the hardware switch at the back side of the device.", 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/enable, {'Node': '/dev32271/scopes/0/enable', 'Description': 'Enables the acquisition of scope shots.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/time, {'Node': '/dev32271/scopes/0/time', 'Description': "Defines the time base of the scope from the divider exponent of the instrument's clock base. The resulting sampling time is 2^n/clockbase.", 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '60 MHz', '1': '30 MHz', '2': '15 MHz', '3': '7.5 MHz', '4': '3.75 MHz', '5': '1.88 MHz', '6': '938 kHz', '7': '469 kHz', '8': '234 kHz', '9': '117 kHz', '10': '58.6 kHz', '11': '29.3 kHz', '12': '14.6 kHz', '13': '7.32 kHz', '14': '3.66 kHz', '15': '1.83 kHz'}})
+
+
+(/dev32271/scopes/0/trigenable, {'Node': '/dev32271/scopes/0/trigenable', 'Description': 'When triggering is enabled scope data are acquired every time the defined trigger condition is met.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": OFF: Continuous scope shot acquisition', '1': '"on": ON: Trigger based scope shot acquisition'}})
+
+
+(/dev32271/scopes/0/trigrising, {'Node': '/dev32271/scopes/0/trigrising', 'Description': 'When set (1), enables rising edge triggering. This settings is synchronized with the settings done in the /TRIGFALLING node.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trigfalling, {'Node': '/dev32271/scopes/0/trigfalling', 'Description': 'When set (1), enables falling edge triggering. This settings is synchronized with the settings done in the /TRIGSLOPE node.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/triglevel, {'Node': '/dev32271/scopes/0/triglevel', 'Description': 'Defines the trigger level.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/scopes/0/length, {'Node': '/dev32271/scopes/0/length', 'Description': 'Defines the length of the recorded Scope shot in number of samples.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trigholdoff, {'Node': '/dev32271/scopes/0/trigholdoff', 'Description': 'Defines the time before the trigger is rearmed after a recording event.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/scopes/0/trigholdoffcount, {'Node': '/dev32271/scopes/0/trigholdoffcount', 'Description': "Defines the trigger event number that will trigger the next recording after a recording event. A value of '1' will start a recording for each trigger event.", 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trigholdoffmode, {'Node': '/dev32271/scopes/0/trigholdoffmode', 'Description': 'Selects the holdoff mode.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"time": Holdoff is defined as time (s).', '1': '"number_of_events": Holdoff is defined as number of events.'}})
+
+
+(/dev32271/scopes/0/trigchannel, {'Node': '/dev32271/scopes/0/trigchannel', 'Description': 'Selects the trigger source signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"sigin0", "signal_input0": Signal Input 1', '1': '"currin0", "current_input0": Current Input 1', '2': '"trigin0", "trigger_input0": Trigger Input 1', '3': '"trigin1", "trigger_input1": Trigger Input 2', '4': '"auxout0", "auxiliary_output0": Aux Output 1. Requires an installed digitizer (DIG) option.', '5': '"auxout1", "auxiliary_output1": Aux Output 2. Requires an installed digitizer (DIG) option.', '6': '"auxout2", "auxiliary_output2": Aux Output 3. Requires an installed digitizer (DIG) option.', '7': '"auxout3", "auxiliary_output3": Aux Output 4. Requires an installed digitizer (DIG) option.', '8': '"auxin0", "auxiliary_input0": Aux Input 1', '9': '"auxin1", "auxiliary_input1": Aux Input 2', '10': '"demod1": Osc φ Demod 2', '11': '"demod3": Osc φ Demod 4', '14': '"trigout0", "trigger_output0": Trigger Output 1', '15': '"trigout1", "trigger_output1": Trigger Output 2', '16': '"demod0_x": Demod 1 X. Requires an installed digitizer (DIG) option.', '17': '"demod1_x": Demod 2 X. Requires an installed digitizer (DIG) option.', '18': '"demod2_x": Demod 3 X. Requires an installed digitizer (DIG) option.', '19': '"demod3_x": Demod 4 X. Requires an installed digitizer (DIG) option.', '32': '"demod0_y": Demod 1 Y. Requires an installed digitizer (DIG) option.', '33': '"demod1_y": Demod 2 Y. Requires an installed digitizer (DIG) option.', '34': '"demod2_y": Demod 3 Y. Requires an installed digitizer (DIG) option.', '35': '"demod3_y": Demod 4 Y. Requires an installed digitizer (DIG) option.', '48': '"demod0_r": Demod 1 R. Requires an installed digitizer (DIG) option.', '49': '"demod1_r": Demod 2 R. Requires an installed digitizer (DIG) option.', '50': '"demod2_r": Demod 3 R. Requires an installed digitizer (DIG) option.', '51': '"demod3_r": Demod 4 R. Requires an installed digitizer (DIG) option.', '64': '"demod0_theta": Demod 1 Θ. Requires an installed digitizer (DIG) option.', '65': '"demod1_theta": Demod 2 Θ. Requires an installed digitizer (DIG) option.', '66': '"demod2_theta": Demod 3 Θ. Requires an installed digitizer (DIG) option.', '67': '"demod3_theta": Demod 4 Θ. Requires an installed digitizer (DIG) option.', '80': '"pid0_value": PID 1 value. Requires an installed digitizer (DIG) option.', '81': '"pid1_value": PID 2 value. Requires an installed digitizer (DIG) option.', '82': '"pid2_value": PID 3 value. Requires an installed digitizer (DIG) option.', '83': '"pid3_value": PID 4 value. Requires an installed digitizer (DIG) option.', '144': '"pid0_shift": PID 1 Shift. Requires an installed digitizer (DIG) option.', '145': '"pid1_shift": PID 2 Shift. Requires an installed digitizer (DIG) option.', '146': '"pid2_shift": PID 3 Shift. Requires an installed digitizer (DIG) option.', '147': '"pid3_shift": PID 4 Shift. Requires an installed digitizer (DIG) option.', '208': '"pid0_error": PID 1 Error. Requires an installed digitizer (DIG) option.', '209': '"pid1_error": PID 2 Error. Requires an installed digitizer (DIG) option.', '210': '"pid2_error": PID 3 Error. Requires an installed digitizer (DIG) option.', '211': '"pid3_error": PID 4 Error. Requires an installed digitizer (DIG) option.', '224': '"tu0_filtered": TU 1 Filtered Value. Requires an installed digitizer (DIG) option.', '225': '"tu1_filtered": TU 2 Filtered Value. Requires an installed digitizer (DIG) option.', '226': '"tu2_filtered": TU 3 Filtered Value. Requires an installed digitizer (DIG) option.', '227': '"tu3_filtered": TU 4 Filtered Value. Requires an installed digitizer (DIG) option.'}})
+
+
+(/dev32271/scopes/0/channels/0/inputselect, {'Node': '/dev32271/scopes/0/channels/0/inputselect', 'Description': 'Selects the scope input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"sigin0", "signal_input0": Signal Input 1', '1': '"currin0", "current_input0": Current Input 1', '2': '"trigin0", "trigger_input0": Trigger Input 1', '3': '"trigin1", "trigger_input1": Trigger Input 2', '4': '"auxout0", "auxiliary_output0": Aux Output 1. Requires an installed digitizer (DIG) option.', '5': '"auxout1", "auxiliary_output1": Aux Output 2. Requires an installed digitizer (DIG) option.', '6': '"auxout2", "auxiliary_output2": Aux Output 3. Requires an installed digitizer (DIG) option.', '7': '"auxout3", "auxiliary_output3": Aux Output 4. Requires an installed digitizer (DIG) option.', '8': '"auxin0", "auxiliary_input0": Aux Input 1', '9': '"auxin1", "auxiliary_input1": Aux Input 2', '10': '"demod1": Osc φ Demod 2', '11': '"demod3": Osc φ Demod 4', '14': '"trigout0", "trigger_output0": Trigger Output 1', '15': '"trigout1", "trigger_output1": Trigger Output 2', '16': '"demod0_x": Demod 1 X. Requires an installed digitizer (DIG) option.', '17': '"demod1_x": Demod 2 X. Requires an installed digitizer (DIG) option.', '18': '"demod2_x": Demod 3 X. Requires an installed digitizer (DIG) option.', '19': '"demod3_x": Demod 4 X. Requires an installed digitizer (DIG) option.', '32': '"demod0_y": Demod 1 Y. Requires an installed digitizer (DIG) option.', '33': '"demod1_y": Demod 2 Y. Requires an installed digitizer (DIG) option.', '34': '"demod2_y": Demod 3 Y. Requires an installed digitizer (DIG) option.', '35': '"demod3_y": Demod 4 Y. Requires an installed digitizer (DIG) option.', '48': '"demod0_r": Demod 1 R. Requires an installed digitizer (DIG) option.', '49': '"demod1_r": Demod 2 R. Requires an installed digitizer (DIG) option.', '50': '"demod2_r": Demod 3 R. Requires an installed digitizer (DIG) option.', '51': '"demod3_r": Demod 4 R. Requires an installed digitizer (DIG) option.', '64': '"demod0_theta": Demod 1 Θ. Requires an installed digitizer (DIG) option.', '65': '"demod1_theta": Demod 2 Θ. Requires an installed digitizer (DIG) option.', '66': '"demod2_theta": Demod 3 Θ. Requires an installed digitizer (DIG) option.', '67': '"demod3_theta": Demod 4 Θ. Requires an installed digitizer (DIG) option.', '80': '"pid0_value": PID 1 value. Requires an installed digitizer (DIG) option.', '81': '"pid1_value": PID 2 value. Requires an installed digitizer (DIG) option.', '82': '"pid2_value": PID 3 value. Requires an installed digitizer (DIG) option.', '83': '"pid3_value": PID 4 value. Requires an installed digitizer (DIG) option.', '144': '"pid0_shift": PID 1 Shift. Requires an installed digitizer (DIG) option.', '145': '"pid1_shift": PID 2 Shift. Requires an installed digitizer (DIG) option.', '146': '"pid2_shift": PID 3 Shift. Requires an installed digitizer (DIG) option.', '147': '"pid3_shift": PID 4 Shift. Requires an installed digitizer (DIG) option.', '160': 'Reserved for future use.', '161': 'Reserved for future use.', '208': '"pid0_error": PID 1 Error. Requires an installed digitizer (DIG) option.', '209': '"pid1_error": PID 2 Error. Requires an installed digitizer (DIG) option.', '210': '"pid2_error": PID 3 Error. Requires an installed digitizer (DIG) option.', '211': '"pid3_error": PID 4 Error. Requires an installed digitizer (DIG) option.', '240': 'Reserved for future use.', '241': 'Reserved for future use.', '242': 'Reserved for future use.', '243': 'Reserved for future use.'}})
+
+
+(/dev32271/scopes/0/channels/0/bwlimit, {'Node': '/dev32271/scopes/0/channels/0/bwlimit', 'Description': 'Selects between sample decimation and sample averaging. Averaging avoids aliasing, but may conceal signal peaks.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"on": On: Selects sample averaging for sample rates lower than the maximal available sampling rate.', '1': '"off": OFF: Selects sample decimation for sample rates lower than the maximal available sampling rate.'}})
+
+
+(/dev32271/scopes/0/channels/0/fullscale, {'Node': '/dev32271/scopes/0/channels/0/fullscale', 'Description': 'Indicates the full scale value of the scope channel.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/scopes/0/channels/0/offset, {'Node': '/dev32271/scopes/0/channels/0/offset', 'Description': 'Indicates the offset value of the scope channel.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/scopes/0/channels/0/limitlower, {'Node': '/dev32271/scopes/0/channels/0/limitlower', 'Description': 'Lower limit of the scope full scale range. For demodulator, PID, Boxcar, and AU signals the limit should be adjusted so that the signal covers the specified range to achieve optimal resolution.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/scopes/0/channels/0/limitupper, {'Node': '/dev32271/scopes/0/channels/0/limitupper', 'Description': 'Upper limit of the scope full scale range. For demodulator, PID, Boxcar, and AU signals the limit should be adjusted so that the signal covers the specified range to achieve optimal resolution.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/scopes/0/channels/1/inputselect, {'Node': '/dev32271/scopes/0/channels/1/inputselect', 'Description': 'Selects the scope input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"sigin0", "signal_input0": Signal Input 1', '1': '"currin0", "current_input0": Current Input 1', '2': '"trigin0", "trigger_input0": Trigger Input 1', '3': '"trigin1", "trigger_input1": Trigger Input 2', '4': '"auxout0", "auxiliary_output0": Aux Output 1. Requires an installed digitizer (DIG) option.', '5': '"auxout1", "auxiliary_output1": Aux Output 2. Requires an installed digitizer (DIG) option.', '6': '"auxout2", "auxiliary_output2": Aux Output 3. Requires an installed digitizer (DIG) option.', '7': '"auxout3", "auxiliary_output3": Aux Output 4. Requires an installed digitizer (DIG) option.', '8': '"auxin0", "auxiliary_input0": Aux Input 1', '9': '"auxin1", "auxiliary_input1": Aux Input 2', '10': '"demod1": Osc φ Demod 2', '11': '"demod3": Osc φ Demod 4', '14': '"trigout0", "trigger_output0": Trigger Output 1', '15': '"trigout1", "trigger_output1": Trigger Output 2', '16': '"demod0_x": Demod 1 X. Requires an installed digitizer (DIG) option.', '17': '"demod1_x": Demod 2 X. Requires an installed digitizer (DIG) option.', '18': '"demod2_x": Demod 3 X. Requires an installed digitizer (DIG) option.', '19': '"demod3_x": Demod 4 X. Requires an installed digitizer (DIG) option.', '32': '"demod0_y": Demod 1 Y. Requires an installed digitizer (DIG) option.', '33': '"demod1_y": Demod 2 Y. Requires an installed digitizer (DIG) option.', '34': '"demod2_y": Demod 3 Y. Requires an installed digitizer (DIG) option.', '35': '"demod3_y": Demod 4 Y. Requires an installed digitizer (DIG) option.', '48': '"demod0_r": Demod 1 R. Requires an installed digitizer (DIG) option.', '49': '"demod1_r": Demod 2 R. Requires an installed digitizer (DIG) option.', '50': '"demod2_r": Demod 3 R. Requires an installed digitizer (DIG) option.', '51': '"demod3_r": Demod 4 R. Requires an installed digitizer (DIG) option.', '64': '"demod0_theta": Demod 1 Θ. Requires an installed digitizer (DIG) option.', '65': '"demod1_theta": Demod 2 Θ. Requires an installed digitizer (DIG) option.', '66': '"demod2_theta": Demod 3 Θ. Requires an installed digitizer (DIG) option.', '67': '"demod3_theta": Demod 4 Θ. Requires an installed digitizer (DIG) option.', '80': '"pid0_value": PID 1 value. Requires an installed digitizer (DIG) option.', '81': '"pid1_value": PID 2 value. Requires an installed digitizer (DIG) option.', '82': '"pid2_value": PID 3 value. Requires an installed digitizer (DIG) option.', '83': '"pid3_value": PID 4 value. Requires an installed digitizer (DIG) option.', '144': '"pid0_shift": PID 1 Shift. Requires an installed digitizer (DIG) option.', '145': '"pid1_shift": PID 2 Shift. Requires an installed digitizer (DIG) option.', '146': '"pid2_shift": PID 3 Shift. Requires an installed digitizer (DIG) option.', '147': '"pid3_shift": PID 4 Shift. Requires an installed digitizer (DIG) option.', '160': 'Reserved for future use.', '161': 'Reserved for future use.', '208': '"pid0_error": PID 1 Error. Requires an installed digitizer (DIG) option.', '209': '"pid1_error": PID 2 Error. Requires an installed digitizer (DIG) option.', '210': '"pid2_error": PID 3 Error. Requires an installed digitizer (DIG) option.', '211': '"pid3_error": PID 4 Error. Requires an installed digitizer (DIG) option.', '240': 'Reserved for future use.', '241': 'Reserved for future use.', '242': 'Reserved for future use.', '243': 'Reserved for future use.'}})
+
+
+(/dev32271/scopes/0/channels/1/bwlimit, {'Node': '/dev32271/scopes/0/channels/1/bwlimit', 'Description': 'Selects between sample decimation and sample averaging. Averaging avoids aliasing, but may conceal signal peaks.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"on": On: Selects sample averaging for sample rates lower than the maximal available sampling rate.', '1': '"off": OFF: Selects sample decimation for sample rates lower than the maximal available sampling rate.'}})
+
+
+(/dev32271/scopes/0/channels/1/fullscale, {'Node': '/dev32271/scopes/0/channels/1/fullscale', 'Description': 'Indicates the full scale value of the scope channel.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/scopes/0/channels/1/offset, {'Node': '/dev32271/scopes/0/channels/1/offset', 'Description': 'Indicates the offset value of the scope channel.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/scopes/0/channels/1/limitlower, {'Node': '/dev32271/scopes/0/channels/1/limitlower', 'Description': 'Lower limit of the scope full scale range. For demodulator, PID, Boxcar, and AU signals the limit should be adjusted so that the signal covers the specified range to achieve optimal resolution.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/scopes/0/channels/1/limitupper, {'Node': '/dev32271/scopes/0/channels/1/limitupper', 'Description': 'Upper limit of the scope full scale range. For demodulator, PID, Boxcar, and AU signals the limit should be adjusted so that the signal covers the specified range to achieve optimal resolution.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/scopes/0/channel, {'Node': '/dev32271/scopes/0/channel', 'Description': 'Activates the scope channels.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'1': 'Only channel 1 is active.', '2': 'Only channel 2 is active.', '3': '"both": Both, channel 1 and 2 are active.'}})
+
+
+(/dev32271/scopes/0/single, {'Node': '/dev32271/scopes/0/single', 'Description': 'Puts the Scope into single shot mode.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trighysteresis/absolute, {'Node': '/dev32271/scopes/0/trighysteresis/absolute', 'Description': 'Defines the voltage the source signal must deviate from the trigger level before the trigger is rearmed again. Set to 0 to turn it off. The sign is defined by the Edge setting.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/scopes/0/trighysteresis/relative, {'Node': '/dev32271/scopes/0/trighysteresis/relative', 'Description': 'Hysteresis relative to the adjusted full scale signal input range. A hysteresis value larger than 1 (100%) is allowed.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trighysteresis/mode, {'Node': '/dev32271/scopes/0/trighysteresis/mode', 'Description': 'Selects the mode to define the hysteresis strength. The relative mode will work best over the full input range as long as the analog input signal does not suffer from excessive noise.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"absolute": Selects absolute hysteresis.', '1': '"relative": Selects a hysteresis relative to the adjusted full scale signal input range.'}})
+
+
+(/dev32271/scopes/0/trigforce, {'Node': '/dev32271/scopes/0/trigforce', 'Description': 'Forces a trigger event.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trigstate, {'Node': '/dev32271/scopes/0/trigstate', 'Description': 'When 1, indicates that the trigger signal satisfies the conditions of the trigger.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trigslope, {'Node': '/dev32271/scopes/0/trigslope', 'Description': 'Sets on which slope of the trigger signal the scope should trigger. This setting is synchronized with the settings done in the /TRIGFALLING and /TRIGRISING nodes.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"none": None', '1': '"rising": Rising edge triggered.', '2': '"falling": Falling edge triggered.', '3': '"both": Triggers on both the rising and falling edge.'}})
+
+
+(/dev32271/scopes/0/triggate/enable, {'Node': '/dev32271/scopes/0/triggate/enable', 'Description': 'If enabled the trigger will be gated by the trigger gating input signal. This feature requires the DIG option.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/triggate/inputselect, {'Node': '/dev32271/scopes/0/triggate/inputselect', 'Description': 'Select the signal source used for trigger gating if gating is enabled. This feature requires the DIG option.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"trigin0_high", "trigger_input0_high": Only trigger if the Trigger Input 1 is at high level.', '1': '"trigin0_low", "trigger_input0_low": Only trigger if the Trigger Input 1 is at low level.', '2': '"trigin1_high", "trigger_input1_high": Only trigger if the Trigger Input 2 is at high level.', '3': '"trigin1_low", "trigger_input1_low": Only trigger if the Trigger Input 2 is at low level.'}})
+
+
+(/dev32271/scopes/0/segments/enable, {'Node': '/dev32271/scopes/0/segments/enable', 'Description': 'Enable segmented scope recording. This allows for full bandwidth recording of scope shots with a minimum dead time between individual shots. This functionality requires the DIG option.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/segments/count, {'Node': '/dev32271/scopes/0/segments/count', 'Description': 'Specifies the number of segments to be recorded in device memory. The maximum scope shot size is given by the available memory divided by the number of segments. This functionality requires the DIG option.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trigreference, {'Node': '/dev32271/scopes/0/trigreference', 'Description': 'Trigger reference position relative to the acquired data. Default is 50% (0.5) which results in a reference point in the middle of the acquired data.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/scopes/0/trigdelay, {'Node': '/dev32271/scopes/0/trigdelay', 'Description': 'Trigger position relative to reference. A positive delay results in less data being acquired before the trigger point, a negative delay results in more data being acquired before the trigger point.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/dios/0/extclk, {'Node': '/dev32271/dios/0/extclk', 'Description': 'Select DIO internal or external clocking.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"internal": The DIO is internally clocked with a fixed frequency of 60 MHz.', '1': '"external": The DIO is externally clocked with a clock signal connected to DIO Pin 68. The available range is from 1 Hz up to the internal clock frequency.'}})
+
+
+(/dev32271/dios/0/decimation, {'Node': '/dev32271/dios/0/decimation', 'Description': 'Sets the decimation factor for DIO data streamed to the host computer.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/dios/0/mode, {'Node': '/dev32271/dios/0/mode', 'Description': 'Select DIO mode', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"manual": Enables manual control of the DIO output bits.', '3': '"threshold_unit": Enables setting of DIO output values by the threshold unit.'}})
+
+
+(/dev32271/dios/0/drive, {'Node': '/dev32271/dios/0/drive', 'Description': 'When on (1), the corresponding 8-bit bus is in output mode. When off (0), it is in input mode. Bit 0 corresponds to the least significant byte. For example, the value 1 drives the least significant byte, the value 8 drives the most significant byte.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/dios/0/output, {'Node': '/dev32271/dios/0/output', 'Description': "Sets the value of the DIO output for those bytes where 'drive' is enabled.", 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/dios/0/auxdrive, {'Node': '/dev32271/dios/0/auxdrive', 'Description': 'Not used. Reserved for future use.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/sigins/0/diff, {'Node': '/dev32271/sigins/0/diff', 'Description': 'Switches between single ended (OFF) and differential (ON) measurements.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": OFF: Single ended voltage input', '1': '"on": ON: Differential voltage input'}})
+
+
+(/dev32271/sigins/0/ac, {'Node': '/dev32271/sigins/0/ac', 'Description': 'Defines the input coupling for the Signal Inputs. AC coupling inserts a high-pass filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"dc": OFF: DC coupling', '1': '"ac": ON: AC coupling'}})
+
+
+(/dev32271/sigins/0/imp50, {'Node': '/dev32271/sigins/0/imp50', 'Description': 'Switches between 50 Ohm (ON) and 10 M Ohm (OFF).', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"10_MOhm": OFF: 10 M Ohm', '1': '"50_Ohm": ON: 50 Ohm'}})
+
+
+(/dev32271/sigins/0/float, {'Node': '/dev32271/sigins/0/float', 'Description': 'Switches the input between floating (ON) and connected to ground (OFF). This setting applies both to the voltage and the current input. It is recommended to discharge the test device before connecting or to enable this setting only after the signal source has been connected to the Signal Input in grounded mode.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": OFF: GND connected', '1': '"on": ON: Floating'}})
+
+
+(/dev32271/sigins/0/on, {'Node': '/dev32271/sigins/0/on', 'Description': 'Enables the signal input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/sigins/0/range, {'Node': '/dev32271/sigins/0/range', 'Description': 'Defines the gain of the analog input amplifier. The range should exceed the incoming signal by roughly a factor two including a potential DC offset. The instrument selects the next higher available range relative to a value inserted by the user. A suitable choice of this setting optimizes the accuracy and signal-to-noise ratio by ensuring that the full dynamic range of the input ADC is used.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/sigins/0/min, {'Node': '/dev32271/sigins/0/min', 'Description': 'Indicates the minimum normalized voltage measured on this channel. It can be between -1 and 1. To prevent signal clipping and overvoltage, it is advised to keep it between -0.9 and 0.9.', 'Properties': 'Read, Write', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/sigins/0/max, {'Node': '/dev32271/sigins/0/max', 'Description': 'Indicates the maximum normalized voltage measured on this channel. It can be between -1 and 1. To prevent signal clipping and overvoltage, it is advised to keep it between -0.9 and 0.9.', 'Properties': 'Read, Write', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/sigins/0/autorange, {'Node': '/dev32271/sigins/0/autorange', 'Description': 'Automatic adjustment of the Range to about two times the maximum signal input amplitude measured over about 100 ms.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/sigins/0/scaling, {'Node': '/dev32271/sigins/0/scaling', 'Description': 'Applies the given scaling factor to the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/sigins/0/rangestep/trigger, {'Node': '/dev32271/sigins/0/rangestep/trigger', 'Description': 'Switches to the next appropriate input range such that the range fits best with the measured input signal amplitude.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/currins/0/range, {'Node': '/dev32271/currins/0/range', 'Description': 'Defines the gain of the current input amplifier. The range should exceed the incoming signal by roughly a factor of two including a potential DC offset. The instrument selects the next higher available range relative to a value inserted by the user. A suitable choice of this setting optimizes the accuracy and signal-to-noise ratio by ensuring that the full dynamic range of the input ADC is used.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'A'})
+
+
+(/dev32271/currins/0/float, {'Node': '/dev32271/currins/0/float', 'Description': 'Switches the input between floating (ON) and connected grounds (OFF). This setting applies both to the voltage and the current input. It is recommended to discharge the test device before connecting or to enable this setting only after the signal source has been connected to the Signal Input in grounded mode.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": OFF: GND connected', '1': '"on": ON: Floating'}})
+
+
+(/dev32271/currins/0/on, {'Node': '/dev32271/currins/0/on', 'Description': 'Enables the current input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/currins/0/min, {'Node': '/dev32271/currins/0/min', 'Description': 'Indicates the minimum normalized current measured on this channel. It can be between -1 and 1. To prevent signal clipping and overcurrent, it is advised to keep it between -0.9 and 0.9.', 'Properties': 'Read, Write', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/currins/0/max, {'Node': '/dev32271/currins/0/max', 'Description': 'Indicates the maximum normalized current measured on this channel. It can be between -1 and 1. To prevent signal clipping and overcurrent, it is advised to keep it between -0.9 and 0.9.', 'Properties': 'Read, Write', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/currins/0/autorange, {'Node': '/dev32271/currins/0/autorange', 'Description': 'Automatic adjustment of the Range to about two times the maximum current input amplitude measured over about 100 ms.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/currins/0/scaling, {'Node': '/dev32271/currins/0/scaling', 'Description': 'Applies the given scale factor to the current input.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/currins/0/rangestep/trigger, {'Node': '/dev32271/currins/0/rangestep/trigger', 'Description': 'Switches to the next appropriate input range such that the range fits best with the measured input current.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/sigouts/0/imp50, {'Node': '/dev32271/sigouts/0/imp50', 'Description': 'Select the load impedance between 50 Ohm and HiZ. The impedance of the output is always 50 Ohm. For a load impedance of 50 Ohm the displayed voltage is half the output voltage to reflect the voltage seen at the load.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"high_impedance": HiZ', '1': '"50_Ohm": 50 Ohm'}})
+
+
+(/dev32271/sigouts/0/diff, {'Node': '/dev32271/sigouts/0/diff', 'Description': 'Switch between single-ended output (OFF) and differential output (ON). In differential mode the signal swing is defined between Signal Output +V / -V.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/sigouts/0/on, {'Node': '/dev32271/sigouts/0/on', 'Description': 'Enabling/Disabling the Signal Output. Corresponds to the blue LED indicator on the instrument front panel.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/sigouts/0/range, {'Node': '/dev32271/sigouts/0/range', 'Description': 'Sets the output voltage range. The instrument selects the next higher available range.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/sigouts/0/over, {'Node': '/dev32271/sigouts/0/over', 'Description': 'Indicates that the signal output is overloaded.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/sigouts/0/offset, {'Node': '/dev32271/sigouts/0/offset', 'Description': 'Defines the DC voltage that is added to the dynamic part of the output signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/sigouts/0/add, {'Node': '/dev32271/sigouts/0/add', 'Description': 'The signal supplied to the Aux Input 1 is added to the signal output. For differential output the added signal is a common mode offset.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/sigouts/0/enables/1, {'Node': '/dev32271/sigouts/0/enables/1', 'Description': 'Enables individual output signal amplitude. When the MD option is used, it is possible to generate signals being the linear combination of the available demodulator frequencies.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'V'})
+
+
+(/dev32271/sigouts/0/amplitudes/1, {'Node': '/dev32271/sigouts/0/amplitudes/1', 'Description': 'Sets the peak amplitude that the oscillator assigned to the given demodulation channel contributes to the signal output.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/sigouts/0/autorange, {'Node': '/dev32271/sigouts/0/autorange', 'Description': 'If enabled, selects the most suited output range automatically.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/auxins/0/averaging, {'Node': '/dev32271/auxins/0/averaging', 'Description': "Defines the number of samples on the input to average as a power of two. Possible values are in the range [0, 16]. A value of 0 corresponds to the sampling rate of the auxiliary input's ADC.", 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/auxins/0/values/0, {'Node': '/dev32271/auxins/0/values/0', 'Description': 'Voltage measured at the Auxiliary Input after averaging. The value of this node is updated at a low rate (50 Hz); the streaming node auxins/n/sample is updated at a high rate defined by the averaging.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxins/0/values/1, {'Node': '/dev32271/auxins/0/values/1', 'Description': 'Voltage measured at the Auxiliary Input after averaging. The value of this node is updated at a low rate (50 Hz); the streaming node auxins/n/sample is updated at a high rate defined by the averaging.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/system/preset/default, {'Node': '/dev32271/system/preset/default', 'Description': 'Indicates the preset which is used as default preset at start-up of the device.', 'Properties': 'Read, Write', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"factory": Select factory preset as default preset.', '1': 'Select the preset stored in internal flash memory at position 1 as default preset.', '2': 'Select the preset stored in internal flash memory at position 2 as default preset.', '3': 'Select the preset stored in internal flash memory at position 3 as default preset.', '4': 'Select the preset stored in internal flash memory at position 4 as default preset.', '5': 'Select the preset stored in internal flash memory at position 5 as default preset.', '6': 'Select the preset stored in internal flash memory at position 6 as default preset.'}})
+
+
+(/dev32271/system/preset/index, {'Node': '/dev32271/system/preset/index', 'Description': 'Select between factory preset or presets stored in internal flash memory.', 'Properties': 'Read, Write', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"factory": Select factory preset.', '1': 'Select the preset stored in internal flash memory at position 1.', '2': 'Select the preset stored in internal flash memory at position 2.', '3': 'Select the preset stored in internal flash memory at position 3.', '4': 'Select the preset stored in internal flash memory at position 4.', '5': 'Select the preset stored in internal flash memory at position 5.', '6': 'Select the preset stored in internal flash memory at position 6.'}})
+
+
+(/dev32271/system/preset/load, {'Node': '/dev32271/system/preset/load', 'Description': 'Load the selected preset.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/save, {'Node': '/dev32271/system/preset/save', 'Description': 'Save the actual setting as preset.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/erase, {'Node': '/dev32271/system/preset/erase', 'Description': 'Erase the selected preset.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/busy, {'Node': '/dev32271/system/preset/busy', 'Description': 'Indicates if presets are currently loaded.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/error, {'Node': '/dev32271/system/preset/error', 'Description': 'Indicates if the last operation was illegal. Successful: 0, Error: 1.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/0/valid, {'Node': '/dev32271/system/preset/records/0/valid', 'Description': 'True if a valid preset is stored.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/0/timestamp, {'Node': '/dev32271/system/preset/records/0/timestamp', 'Description': 'Not used.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/0/features, {'Node': '/dev32271/system/preset/records/0/features', 'Description': 'Properties of the preset.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/0/label, {'Node': '/dev32271/system/preset/records/0/label', 'Description': 'Name of this preset.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/1/valid, {'Node': '/dev32271/system/preset/records/1/valid', 'Description': 'True if a valid preset is stored.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/1/timestamp, {'Node': '/dev32271/system/preset/records/1/timestamp', 'Description': 'Not used.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/1/features, {'Node': '/dev32271/system/preset/records/1/features', 'Description': 'Properties of the preset.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/1/label, {'Node': '/dev32271/system/preset/records/1/label', 'Description': 'Name of this preset.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/2/valid, {'Node': '/dev32271/system/preset/records/2/valid', 'Description': 'True if a valid preset is stored.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/2/timestamp, {'Node': '/dev32271/system/preset/records/2/timestamp', 'Description': 'Not used.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/2/features, {'Node': '/dev32271/system/preset/records/2/features', 'Description': 'Properties of the preset.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/2/label, {'Node': '/dev32271/system/preset/records/2/label', 'Description': 'Name of this preset.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/3/valid, {'Node': '/dev32271/system/preset/records/3/valid', 'Description': 'True if a valid preset is stored.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/3/timestamp, {'Node': '/dev32271/system/preset/records/3/timestamp', 'Description': 'Not used.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/3/features, {'Node': '/dev32271/system/preset/records/3/features', 'Description': 'Properties of the preset.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/3/label, {'Node': '/dev32271/system/preset/records/3/label', 'Description': 'Name of this preset.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/4/valid, {'Node': '/dev32271/system/preset/records/4/valid', 'Description': 'True if a valid preset is stored.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/4/timestamp, {'Node': '/dev32271/system/preset/records/4/timestamp', 'Description': 'Not used.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/4/features, {'Node': '/dev32271/system/preset/records/4/features', 'Description': 'Properties of the preset.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/4/label, {'Node': '/dev32271/system/preset/records/4/label', 'Description': 'Name of this preset.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/5/valid, {'Node': '/dev32271/system/preset/records/5/valid', 'Description': 'True if a valid preset is stored.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/5/timestamp, {'Node': '/dev32271/system/preset/records/5/timestamp', 'Description': 'Not used.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/5/features, {'Node': '/dev32271/system/preset/records/5/features', 'Description': 'Properties of the preset.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/5/label, {'Node': '/dev32271/system/preset/records/5/label', 'Description': 'Name of this preset.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/6/valid, {'Node': '/dev32271/system/preset/records/6/valid', 'Description': 'True if a valid preset is stored.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/6/timestamp, {'Node': '/dev32271/system/preset/records/6/timestamp', 'Description': 'Not used.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/6/features, {'Node': '/dev32271/system/preset/records/6/features', 'Description': 'Properties of the preset.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/preset/records/6/label, {'Node': '/dev32271/system/preset/records/6/label', 'Description': 'Name of this preset.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/fwlog, {'Node': '/dev32271/system/fwlog', 'Description': 'Returns log output of the firmware.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/stats/physical/temperatures/5, {'Node': '/dev32271/stats/physical/temperatures/5', 'Description': 'Internal temperature measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '°C'})
+
+
+(/dev32271/stats/physical/temperatures/6, {'Node': '/dev32271/stats/physical/temperatures/6', 'Description': 'Internal temperature measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '°C'})
+
+
+(/dev32271/system/nics/0/saveip, {'Node': '/dev32271/system/nics/0/saveip', 'Description': 'If written, this action will program the defined static IP address to the device.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/defaultip4, {'Node': '/dev32271/system/nics/0/defaultip4', 'Description': 'IPv4 address of the device to use if static IP is enabled.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/defaultmask, {'Node': '/dev32271/system/nics/0/defaultmask', 'Description': 'IPv4 mask in case of static IP.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/defaultgateway, {'Node': '/dev32271/system/nics/0/defaultgateway', 'Description': 'Default gateway configuration for the network connection.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/static, {'Node': '/dev32271/system/nics/0/static', 'Description': 'Enable this flag if the device is used in a network with fixed IP assignment without a DHCP server.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/jumbo, {'Node': '/dev32271/system/nics/0/jumbo', 'Description': 'Stored setting for jumbo frames. Will be applied after reboot.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/mac, {'Node': '/dev32271/system/nics/0/mac', 'Description': 'Current MAC address of the device network interface.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/ip4, {'Node': '/dev32271/system/nics/0/ip4', 'Description': 'Current IPv4 of the device.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/mask, {'Node': '/dev32271/system/nics/0/mask', 'Description': 'Current network mask.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/0/gateway, {'Node': '/dev32271/system/nics/0/gateway', 'Description': 'Current network gateway.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/saveip, {'Node': '/dev32271/system/nics/1/saveip', 'Description': 'If written, this action will program the defined static IP address to the device.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/defaultip4, {'Node': '/dev32271/system/nics/1/defaultip4', 'Description': 'IPv4 address of the device to use if static IP is enabled.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/defaultmask, {'Node': '/dev32271/system/nics/1/defaultmask', 'Description': 'IPv4 mask in case of static IP.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/defaultgateway, {'Node': '/dev32271/system/nics/1/defaultgateway', 'Description': 'Default gateway configuration for the network connection.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/static, {'Node': '/dev32271/system/nics/1/static', 'Description': 'Enable this flag if the device is used in a network with fixed IP assignment without a DHCP server.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/jumbo, {'Node': '/dev32271/system/nics/1/jumbo', 'Description': 'Stored setting for jumbo frames. Will be applied after reboot.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/mac, {'Node': '/dev32271/system/nics/1/mac', 'Description': 'Current MAC address of the device network interface.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/ip4, {'Node': '/dev32271/system/nics/1/ip4', 'Description': 'Current IPv4 of the device.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/mask, {'Node': '/dev32271/system/nics/1/mask', 'Description': 'Current network mask.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/gateway, {'Node': '/dev32271/system/nics/1/gateway', 'Description': 'Current network gateway.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/wifi/available, {'Node': '/dev32271/system/nics/1/wifi/available', 'Description': 'Indicates if a supported WiFi USB dongle is connected to the device.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/wifi/mode, {'Node': '/dev32271/system/nics/1/wifi/mode', 'Description': 'Select the WiFi operation mode', 'Properties': 'Read, Write', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"disabled": WiFi operation is disabled.', '1': '"access_point": Create a new WiFi network and operate the device as an access point.', '2': '"client": Join an existing WiFi network as a client.'}})
+
+
+(/dev32271/system/nics/1/wifi/ssidlist, {'Node': '/dev32271/system/nics/1/wifi/ssidlist', 'Description': 'Contains a list of visible WiFi network SSIDs.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/wifi/ap/ssid, {'Node': '/dev32271/system/nics/1/wifi/ap/ssid', 'Description': 'Set the SSID of the network to create.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/wifi/ap/password, {'Node': '/dev32271/system/nics/1/wifi/ap/password', 'Description': 'Set the password of the network to create.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/wifi/ap/channel, {'Node': '/dev32271/system/nics/1/wifi/ap/channel', 'Description': 'Select the WiFi channel of the network to create (in access point mode).', 'Properties': 'Read, Write', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'1': 'WiFi channel 1 (2.412 GHz)', '6': 'WiFi channel 6 (2.437 GHz)', '11': 'WiFi channel 11 (2.462 GHz)'}})
+
+
+(/dev32271/system/nics/1/wifi/client/ssid, {'Node': '/dev32271/system/nics/1/wifi/client/ssid', 'Description': 'Set the SSID of the network to join.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/wifi/client/password, {'Node': '/dev32271/system/nics/1/wifi/client/password', 'Description': 'Set the password of the network to join.', 'Properties': 'Read, Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/nics/1/wifi/enable, {'Node': '/dev32271/system/nics/1/wifi/enable', 'Description': 'Enable Wi-Fi network with given settings.', 'Properties': 'Read, Write', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": Switch off the Wi-Fi communication.', '1': '"on": Switch on the Wi-Fi communication.'}})
+
+
+(/dev32271/system/nics/1/wifi/program, {'Node': '/dev32271/system/nics/1/wifi/program', 'Description': 'Program the specified Wi-Fi settings to the instrument.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/update/labone/data, {'Node': '/dev32271/system/update/labone/data', 'Description': 'Node which accepts the Binary file to update the device.', 'Properties': 'Read, Write', 'Type': 'ZIVectorData', 'Unit': 'None'})
+
+
+(/dev32271/system/update/labone/start, {'Node': '/dev32271/system/update/labone/start', 'Description': 'If set to 1 the device starts the update.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/update/labone/busy, {'Node': '/dev32271/system/update/labone/busy', 'Description': 'Device is updating.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/update/labone/done, {'Node': '/dev32271/system/update/labone/done', 'Description': 'Updating has finished.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/update/labone/error, {'Node': '/dev32271/system/update/labone/error', 'Description': 'An error occurred during the update.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/update/labone/progress, {'Node': '/dev32271/system/update/labone/progress', 'Description': 'A value between 0 and 1 indicating the update progress.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/jumbo, {'Node': '/dev32271/system/jumbo', 'Description': 'Enables jumbo frames (4k) on the TCP/IP interface. This will reduce the load on the PC and is required to achieve maximal throughput. Make sure that jumbo frames (4k) are enabled on the network card as well. If one of the devices on the network is not able to work with jumbo frames, the connection will fail.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/stall, {'Node': '/dev32271/system/stall', 'Description': 'Indicates if the network connection is stalled.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/identify, {'Node': '/dev32271/system/identify', 'Description': 'Setting this node to 1 will cause the device to blink the power led for a few seconds.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/saveports, {'Node': '/dev32271/system/saveports', 'Description': 'Flag indicating that the TCP and UDP ports should be saved.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/porttcp, {'Node': '/dev32271/system/porttcp', 'Description': 'Returns the current TCP port used for communication to the dataserver.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/portudp, {'Node': '/dev32271/system/portudp', 'Description': 'Returns the current UDP port used for communication to the dataserver.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/features/options, {'Node': '/dev32271/features/options', 'Description': 'Returns enabled options.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/features/code, {'Node': '/dev32271/features/code', 'Description': 'Node providing a mechanism to write feature codes.', 'Properties': 'Write', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/properties/timebase, {'Node': '/dev32271/system/properties/timebase', 'Description': 'Minimal time difference between two timestamps. The value is equal to 1/(maximum sampling rate).', 'Properties': 'Read', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/system/properties/freqresolution, {'Node': '/dev32271/system/properties/freqresolution', 'Description': 'The number of bits used to represent a frequency.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/properties/negativefreq, {'Node': '/dev32271/system/properties/negativefreq', 'Description': 'Indicates whether negative frequencies are supported.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/properties/minfreq, {'Node': '/dev32271/system/properties/minfreq', 'Description': 'The minimum oscillator frequency that can be set.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/properties/maxfreq, {'Node': '/dev32271/system/properties/maxfreq', 'Description': 'The maximum oscillator frequency that can be set.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/properties/mintimeconstant, {'Node': '/dev32271/system/properties/mintimeconstant', 'Description': 'The minimum demodulator time constant that can be set. Only relevant for lock-in amplifiers.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/system/properties/maxtimeconstant, {'Node': '/dev32271/system/properties/maxtimeconstant', 'Description': 'The maximum demodulator time constant that can be set. Only relevant for lock-in amplifiers.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/system/properties/freqscaling, {'Node': '/dev32271/system/properties/freqscaling', 'Description': 'The scale factor to use to convert a frequency represented as a freqresolution-bit integer to a floating point value.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/demods/0/sample, {'Node': '/dev32271/demods/0/sample', 'Description': 'Contains streamed demodulator samples with sample interval defined by the demodulator data rate.', 'Properties': 'Read, Stream', 'Type': 'ZIDemodSample', 'Unit': 'Dependent'})
+
+
+(/dev32271/demods/1/sample, {'Node': '/dev32271/demods/1/sample', 'Description': 'Contains streamed demodulator samples with sample interval defined by the demodulator data rate.', 'Properties': 'Read, Stream', 'Type': 'ZIDemodSample', 'Unit': 'Dependent'})
+
+
+(/dev32271/stats/cpuload, {'Node': '/dev32271/stats/cpuload', 'Description': 'Indicates the total CPU load on the machine where the data server is running.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '%'})
+
+
+(/dev32271/stats/memload, {'Node': '/dev32271/stats/memload', 'Description': 'Indicates the total memory usage of the machine where the data server is running.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '%'})
+
+
+(/dev32271/stats/dataservercpuload, {'Node': '/dev32271/stats/dataservercpuload', 'Description': 'Indicates the CPU load of the data server.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '%'})
+
+
+(/dev32271/stats/dataservermemload, {'Node': '/dev32271/stats/dataservermemload', 'Description': 'Indicates the memory usage of the data server.', 'Properties': 'Read', 'Type': 'Double', 'Unit': '%'})
+
+
+(/dev32271/system/impedance/filter, {'Node': '/dev32271/system/impedance/filter', 'Description': 'Switch between application-based or manually configured impedance settings. A parameter set given by an Application mode can be fine-tuned by changing to Advanced mode. Changing back to Application mode will reset the parameters.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"application": Application: The impedance settings are adjusted to fit best the selected application.', '1': '"advanced": Advanced: The impedance settings are manually configured.'}})
+
+
+(/dev32271/system/impedance/application, {'Node': '/dev32271/system/impedance/application', 'Description': 'Select the Impedance application', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"lcr": LCR Impedance Measurement: General-purpose settings for measuring components at finite frequency.', '1': '"dc": DC Impedance Measurement: Settings for measuring resistance at zero frequency.'}})
+
+
+(/dev32271/system/impedance/precision, {'Node': '/dev32271/system/impedance/precision', 'Description': 'Select the Impedance precision and measurement speed by automatically adjusting the filter bandwidth. If the sweeper module is in impedance application mode the precision setting will also control the sweeper measurement speed.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"low": Low -> fast settling: Medium accuracy/precision is optimized for fast response.', '1': '"high": High -> medium settling: High accuracy/precision takes more settling time.', '2': '"very_high": Very high -> slow settling: Very high accuracy/precision uses long settling time due to very low bandwidth.'}})
+
+
+(/dev32271/system/impedance/calib/user/data, {'Node': '/dev32271/system/impedance/calib/user/data', 'Description': 'Contains the user compensation data in binary form.', 'Properties': 'Read, Write', 'Type': 'ZIVectorData', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/calib/user/valid, {'Node': '/dev32271/system/impedance/calib/user/valid', 'Description': 'Indicates whether the user compensation data is valid (1 = valid, 0 = invalid).', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/calib/user/info, {'Node': '/dev32271/system/impedance/calib/user/info', 'Description': 'Contains general information about the user compensation data.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/calib/internal/store, {'Node': '/dev32271/system/impedance/calib/internal/store', 'Description': 'Store the compensation data persistently on the device. The compensation will be loaded automatically on every power-up.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/calib/internal/data, {'Node': '/dev32271/system/impedance/calib/internal/data', 'Description': 'Contains the user compensation data in binary form.', 'Properties': 'Read, Write', 'Type': 'ZIVectorData', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/calib/internal/valid, {'Node': '/dev32271/system/impedance/calib/internal/valid', 'Description': 'Indicates whether the device internal calibration data is valid (1 = valid, 0 = invalid).', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/calib/internal/info, {'Node': '/dev32271/system/impedance/calib/internal/info', 'Description': 'Contains general information about the device internal compensation data.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/calib/cablelength, {'Node': '/dev32271/system/impedance/calib/cablelength', 'Description': 'Length of cables (One way) used in measurement set up.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'm'})
+
+
+(/dev32271/system/impedance/calib/internal/allowsmoothing, {'Node': '/dev32271/system/impedance/calib/internal/allowsmoothing', 'Description': 'Indicates whether smoothing can de applied to the device internal compensation data.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/calib/user/allowsmoothing, {'Node': '/dev32271/system/impedance/calib/user/allowsmoothing', 'Description': 'Indicates whether smoothing can de applied to the user calibration data.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/0/freq, {'Node': '/dev32271/system/impedance/freqlimit4t/0/freq', 'Description': 'Indicates the limit of a frequency range for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/0/range, {'Node': '/dev32271/system/impedance/freqlimit4t/0/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/0/freq, {'Node': '/dev32271/system/impedance/freqlimit2t/0/freq', 'Description': 'Indicates the limit of a frequency range for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/0/range, {'Node': '/dev32271/system/impedance/freqlimit2t/0/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/1/freq, {'Node': '/dev32271/system/impedance/freqlimit4t/1/freq', 'Description': 'Indicates the limit of a frequency range for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/1/range, {'Node': '/dev32271/system/impedance/freqlimit4t/1/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/1/freq, {'Node': '/dev32271/system/impedance/freqlimit2t/1/freq', 'Description': 'Indicates the limit of a frequency range for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/1/range, {'Node': '/dev32271/system/impedance/freqlimit2t/1/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/2/freq, {'Node': '/dev32271/system/impedance/freqlimit4t/2/freq', 'Description': 'Indicates the limit of a frequency range for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/2/range, {'Node': '/dev32271/system/impedance/freqlimit4t/2/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/2/freq, {'Node': '/dev32271/system/impedance/freqlimit2t/2/freq', 'Description': 'Indicates the limit of a frequency range for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/2/range, {'Node': '/dev32271/system/impedance/freqlimit2t/2/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/3/freq, {'Node': '/dev32271/system/impedance/freqlimit4t/3/freq', 'Description': 'Indicates the limit of a frequency range for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/3/range, {'Node': '/dev32271/system/impedance/freqlimit4t/3/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/3/freq, {'Node': '/dev32271/system/impedance/freqlimit2t/3/freq', 'Description': 'Indicates the limit of a frequency range for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/3/range, {'Node': '/dev32271/system/impedance/freqlimit2t/3/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/4/freq, {'Node': '/dev32271/system/impedance/freqlimit4t/4/freq', 'Description': 'Indicates the limit of a frequency range for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/4/range, {'Node': '/dev32271/system/impedance/freqlimit4t/4/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/4/freq, {'Node': '/dev32271/system/impedance/freqlimit2t/4/freq', 'Description': 'Indicates the limit of a frequency range for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/4/range, {'Node': '/dev32271/system/impedance/freqlimit2t/4/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/5/freq, {'Node': '/dev32271/system/impedance/freqlimit4t/5/freq', 'Description': 'Indicates the limit of a frequency range for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/5/range, {'Node': '/dev32271/system/impedance/freqlimit4t/5/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/5/freq, {'Node': '/dev32271/system/impedance/freqlimit2t/5/freq', 'Description': 'Indicates the limit of a frequency range for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/5/range, {'Node': '/dev32271/system/impedance/freqlimit2t/5/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/6/freq, {'Node': '/dev32271/system/impedance/freqlimit4t/6/freq', 'Description': 'Indicates the limit of a frequency range for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/6/range, {'Node': '/dev32271/system/impedance/freqlimit4t/6/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/6/freq, {'Node': '/dev32271/system/impedance/freqlimit2t/6/freq', 'Description': 'Indicates the limit of a frequency range for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/6/range, {'Node': '/dev32271/system/impedance/freqlimit2t/6/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/7/freq, {'Node': '/dev32271/system/impedance/freqlimit4t/7/freq', 'Description': 'Indicates the limit of a frequency range for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit4t/7/range, {'Node': '/dev32271/system/impedance/freqlimit4t/7/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 4-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/7/freq, {'Node': '/dev32271/system/impedance/freqlimit2t/7/freq', 'Description': 'Indicates the limit of a frequency range for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/system/impedance/freqlimit2t/7/range, {'Node': '/dev32271/system/impedance/freqlimit2t/7/range', 'Description': 'Indicates the minimum input current range that can be used at frequencies at or above the value in the corresponding freq node for 2-terminal impedance measurements.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/0/value, {'Node': '/dev32271/auxouts/0/value', 'Description': 'Voltage present on the Auxiliary Output. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/0/limitlower, {'Node': '/dev32271/auxouts/0/limitlower', 'Description': 'Lower limit for the signal at the Auxiliary Output. A smaller value will be clipped.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/0/limitupper, {'Node': '/dev32271/auxouts/0/limitupper', 'Description': 'Upper limit for the signal at the Auxiliary Output. A larger value will be clipped.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/0/outputselect, {'Node': '/dev32271/auxouts/0/outputselect', 'Description': 'Select the signal source to be represented on the Auxiliary Output.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'-1': '"manual": Select Manual as the output option.', '0': '"demod_x": Select Demod X as the output option.', '1': '"demod_y": Select Demod Y as the output option.', '2': '"demod_r": Select Demod R as the output option.', '3': '"demod_theta": Select Demod Theta as the output option.', '5': '"pid": Select PID Out as the output option.', '9': '"pid_shift": Select PID Shift as the output option.', '10': '"pid_error": Select PID Error as the output option.', '11': '"tu_filtered": Select TU Filtered Value as the output option.', '13': '"tu_output": Select TU Output Value as the output option.'}})
+
+
+(/dev32271/auxouts/0/demodselect, {'Node': '/dev32271/auxouts/0/demodselect', 'Description': 'Select the channel number of the selected signal source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/0/preoffset, {'Node': '/dev32271/auxouts/0/preoffset', 'Description': 'Add a pre-offset to the signal before scaling is applied. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/auxouts/0/scale, {'Node': '/dev32271/auxouts/0/scale', 'Description': 'Multiplication factor to scale the signal. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/0/offset, {'Node': '/dev32271/auxouts/0/offset', 'Description': 'Add the specified offset voltage to the signal after scaling. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/0/tipprotect/enable, {'Node': '/dev32271/auxouts/0/tipprotect/enable', 'Description': 'Enable the Tip Protect unit.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": Switch off the Tip Protect unit.', '1': '"on": Switch on the Tip Protect unit.'}})
+
+
+(/dev32271/auxouts/0/tipprotect/source, {'Node': '/dev32271/auxouts/0/tipprotect/source', 'Description': 'Select the input source for Tip Protect.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"tu_output0": Select Threshold Unit 1 as the source signal.', '1': '"tu_output1": Select Threshold Unit 2 as the source signal.', '2': '"tu_output2": Select Threshold Unit 3 as the source signal.', '3': '"tu_output3": Select Threshold Unit 4 as the source signal.'}})
+
+
+(/dev32271/auxouts/0/tipprotect/polarity, {'Node': '/dev32271/auxouts/0/tipprotect/polarity', 'Description': 'Select the active level of Source signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"low": Active when the source signal is at low level.', '1': '"high": Active when the source signal is at high level.'}})
+
+
+(/dev32271/auxouts/0/tipprotect/value, {'Node': '/dev32271/auxouts/0/tipprotect/value', 'Description': 'Signal value written to the Aux Output port when Tip Protect is active. The value overwrites Aux Output Internal value and the Lower and Upper Limits.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/1/value, {'Node': '/dev32271/auxouts/1/value', 'Description': 'Voltage present on the Auxiliary Output. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/1/limitlower, {'Node': '/dev32271/auxouts/1/limitlower', 'Description': 'Lower limit for the signal at the Auxiliary Output. A smaller value will be clipped.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/1/limitupper, {'Node': '/dev32271/auxouts/1/limitupper', 'Description': 'Upper limit for the signal at the Auxiliary Output. A larger value will be clipped.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/1/outputselect, {'Node': '/dev32271/auxouts/1/outputselect', 'Description': 'Select the signal source to be represented on the Auxiliary Output.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'-1': '"manual": Select Manual as the output option.', '0': '"demod_x": Select Demod X as the output option.', '1': '"demod_y": Select Demod Y as the output option.', '2': '"demod_r": Select Demod R as the output option.', '3': '"demod_theta": Select Demod Theta as the output option.', '5': '"pid": Select PID Out as the output option.', '9': '"pid_shift": Select PID Shift as the output option.', '10': '"pid_error": Select PID Error as the output option.', '11': '"tu_filtered": Select TU Filtered Value as the output option.', '13': '"tu_output": Select TU Output Value as the output option.'}})
+
+
+(/dev32271/auxouts/1/demodselect, {'Node': '/dev32271/auxouts/1/demodselect', 'Description': 'Select the channel number of the selected signal source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/1/preoffset, {'Node': '/dev32271/auxouts/1/preoffset', 'Description': 'Add a pre-offset to the signal before scaling is applied. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/auxouts/1/scale, {'Node': '/dev32271/auxouts/1/scale', 'Description': 'Multiplication factor to scale the signal. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/1/offset, {'Node': '/dev32271/auxouts/1/offset', 'Description': 'Add the specified offset voltage to the signal after scaling. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/1/tipprotect/enable, {'Node': '/dev32271/auxouts/1/tipprotect/enable', 'Description': 'Enable the Tip Protect unit.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": Switch off the Tip Protect unit.', '1': '"on": Switch on the Tip Protect unit.'}})
+
+
+(/dev32271/auxouts/1/tipprotect/source, {'Node': '/dev32271/auxouts/1/tipprotect/source', 'Description': 'Select the input source for Tip Protect.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"tu_output0": Select Threshold Unit 1 as the source signal.', '1': '"tu_output1": Select Threshold Unit 2 as the source signal.', '2': '"tu_output2": Select Threshold Unit 3 as the source signal.', '3': '"tu_output3": Select Threshold Unit 4 as the source signal.'}})
+
+
+(/dev32271/auxouts/1/tipprotect/polarity, {'Node': '/dev32271/auxouts/1/tipprotect/polarity', 'Description': 'Select the active level of Source signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"low": Active when the source signal is at low level.', '1': '"high": Active when the source signal is at high level.'}})
+
+
+(/dev32271/auxouts/1/tipprotect/value, {'Node': '/dev32271/auxouts/1/tipprotect/value', 'Description': 'Signal value written to the Aux Output port when Tip Protect is active. The value overwrites Aux Output Internal value and the Lower and Upper Limits.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/2/value, {'Node': '/dev32271/auxouts/2/value', 'Description': 'Voltage present on the Auxiliary Output. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/2/limitlower, {'Node': '/dev32271/auxouts/2/limitlower', 'Description': 'Lower limit for the signal at the Auxiliary Output. A smaller value will be clipped.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/2/limitupper, {'Node': '/dev32271/auxouts/2/limitupper', 'Description': 'Upper limit for the signal at the Auxiliary Output. A larger value will be clipped.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/2/outputselect, {'Node': '/dev32271/auxouts/2/outputselect', 'Description': 'Select the signal source to be represented on the Auxiliary Output.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'-1': '"manual": Select Manual as the output option.', '0': '"demod_x": Select Demod X as the output option.', '1': '"demod_y": Select Demod Y as the output option.', '2': '"demod_r": Select Demod R as the output option.', '3': '"demod_theta": Select Demod Theta as the output option.', '5': '"pid": Select PID Out as the output option.', '9': '"pid_shift": Select PID Shift as the output option.', '10': '"pid_error": Select PID Error as the output option.', '11': '"tu_filtered": Select TU Filtered Value as the output option.', '13': '"tu_output": Select TU Output Value as the output option.'}})
+
+
+(/dev32271/auxouts/2/demodselect, {'Node': '/dev32271/auxouts/2/demodselect', 'Description': 'Select the channel number of the selected signal source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/2/preoffset, {'Node': '/dev32271/auxouts/2/preoffset', 'Description': 'Add a pre-offset to the signal before scaling is applied. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/auxouts/2/scale, {'Node': '/dev32271/auxouts/2/scale', 'Description': 'Multiplication factor to scale the signal. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/2/offset, {'Node': '/dev32271/auxouts/2/offset', 'Description': 'Add the specified offset voltage to the signal after scaling. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/2/tipprotect/enable, {'Node': '/dev32271/auxouts/2/tipprotect/enable', 'Description': 'Enable the Tip Protect unit.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": Switch off the Tip Protect unit.', '1': '"on": Switch on the Tip Protect unit.'}})
+
+
+(/dev32271/auxouts/2/tipprotect/source, {'Node': '/dev32271/auxouts/2/tipprotect/source', 'Description': 'Select the input source for Tip Protect.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"tu_output0": Select Threshold Unit 1 as the source signal.', '1': '"tu_output1": Select Threshold Unit 2 as the source signal.', '2': '"tu_output2": Select Threshold Unit 3 as the source signal.', '3': '"tu_output3": Select Threshold Unit 4 as the source signal.'}})
+
+
+(/dev32271/auxouts/2/tipprotect/polarity, {'Node': '/dev32271/auxouts/2/tipprotect/polarity', 'Description': 'Select the active level of Source signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"low": Active when the source signal is at low level.', '1': '"high": Active when the source signal is at high level.'}})
+
+
+(/dev32271/auxouts/2/tipprotect/value, {'Node': '/dev32271/auxouts/2/tipprotect/value', 'Description': 'Signal value written to the Aux Output port when Tip Protect is active. The value overwrites Aux Output Internal value and the Lower and Upper Limits.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/3/value, {'Node': '/dev32271/auxouts/3/value', 'Description': 'Voltage present on the Auxiliary Output. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/3/limitlower, {'Node': '/dev32271/auxouts/3/limitlower', 'Description': 'Lower limit for the signal at the Auxiliary Output. A smaller value will be clipped.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/3/limitupper, {'Node': '/dev32271/auxouts/3/limitupper', 'Description': 'Upper limit for the signal at the Auxiliary Output. A larger value will be clipped.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/3/outputselect, {'Node': '/dev32271/auxouts/3/outputselect', 'Description': 'Select the signal source to be represented on the Auxiliary Output.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'-1': '"manual": Select Manual as the output option.', '0': '"demod_x": Select Demod X as the output option.', '1': '"demod_y": Select Demod Y as the output option.', '2': '"demod_r": Select Demod R as the output option.', '3': '"demod_theta": Select Demod Theta as the output option.', '5': '"pid": Select PID Out as the output option.', '9': '"pid_shift": Select PID Shift as the output option.', '10': '"pid_error": Select PID Error as the output option.', '11': '"tu_filtered": Select TU Filtered Value as the output option.', '13': '"tu_output": Select TU Output Value as the output option.'}})
+
+
+(/dev32271/auxouts/3/demodselect, {'Node': '/dev32271/auxouts/3/demodselect', 'Description': 'Select the channel number of the selected signal source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/3/preoffset, {'Node': '/dev32271/auxouts/3/preoffset', 'Description': 'Add a pre-offset to the signal before scaling is applied. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/auxouts/3/scale, {'Node': '/dev32271/auxouts/3/scale', 'Description': 'Multiplication factor to scale the signal. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/auxouts/3/offset, {'Node': '/dev32271/auxouts/3/offset', 'Description': 'Add the specified offset voltage to the signal after scaling. Auxiliary Output Value = (Signal+Preoffset)*Scale + Offset', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/auxouts/3/tipprotect/enable, {'Node': '/dev32271/auxouts/3/tipprotect/enable', 'Description': 'Enable the Tip Protect unit.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": Switch off the Tip Protect unit.', '1': '"on": Switch on the Tip Protect unit.'}})
+
+
+(/dev32271/auxouts/3/tipprotect/source, {'Node': '/dev32271/auxouts/3/tipprotect/source', 'Description': 'Select the input source for Tip Protect.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"tu_output0": Select Threshold Unit 1 as the source signal.', '1': '"tu_output1": Select Threshold Unit 2 as the source signal.', '2': '"tu_output2": Select Threshold Unit 3 as the source signal.', '3': '"tu_output3": Select Threshold Unit 4 as the source signal.'}})
+
+
+(/dev32271/auxouts/3/tipprotect/polarity, {'Node': '/dev32271/auxouts/3/tipprotect/polarity', 'Description': 'Select the active level of Source signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"low": Active when the source signal is at low level.', '1': '"high": Active when the source signal is at high level.'}})
+
+
+(/dev32271/auxouts/3/tipprotect/value, {'Node': '/dev32271/auxouts/3/tipprotect/value', 'Description': 'Signal value written to the Aux Output port when Tip Protect is active. The value overwrites Aux Output Internal value and the Lower and Upper Limits.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/tu/thresholds/0/input, {'Node': '/dev32271/tu/thresholds/0/input', 'Description': 'Select the signal source to be used in the threshold unit.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"demod_x": Demod X', '1': '"demod_y": Demod Y', '2': '"demod_r": Demod R', '3': '"demod_theta": Demod Theta', '5': '"pid_out": PID Out', '6': '"boxcar": Boxcar', '7': '"au_cartesian": AU Cartesian', '8': '"au_polar": AU Polar', '9': '"pid_shift": PID Shift', '10': '"pid_error": PID Error', '50': '"dio": DIO', '51': '"trigin", "trigger_input": Trigger In', '52': '"trigout", "trigger_output": Trigger Out', '53': '"input_overload_v": Input Overload (V)', '54': '"input_overload_i": Input Overload (I)', '55': '"output_overload": Output Overload', '56': '"auxin_overload", "auxiliary_input_overload": Aux input Overload', '57': '"auxout_overload", "auxiliary_output_overload": Aux Output Overload', '58': '"pid_output_overload": PID Output Overload', '59': '"tu_output": TU Output Value'}})
+
+
+(/dev32271/tu/thresholds/0/inputchannel, {'Node': '/dev32271/tu/thresholds/0/inputchannel', 'Description': 'Select the channel according to the selected signal source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/0/filter/enable, {'Node': '/dev32271/tu/thresholds/0/filter/enable', 'Description': 'Enables the low-pass filter applied to the analog input signal', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/0/filter/abs, {'Node': '/dev32271/tu/thresholds/0/filter/abs', 'Description': 'Takes the absolute value of an analog input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/0/filter/timeconstant, {'Node': '/dev32271/tu/thresholds/0/filter/timeconstant', 'Description': 'Defines the characteristic time constant (cut off) of the low-pass filter applied to the analog input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/0/filter/filteredvalue, {'Node': '/dev32271/tu/thresholds/0/filter/filteredvalue', 'Description': 'Shows the value after the low-pass filter.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/0/filter/mode, {'Node': '/dev32271/tu/thresholds/0/filter/mode', 'Description': 'Selects the analysis mode defining the output signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"above_upper": Enable if the Signal is above Upper Threshold.', '1': '"below_lower": Enable if the Signal is below Lower Threshold.', '2': '"outside_range": Enable if the Signal is outside the range [Lower Threshold, Upper Threshold].', '3': '"crossing_both_rising": Enable if the Signal crosses Upper Threshold from below Lower Threshold. The difference between Upper an Lower Threshold defines the threshold hysteresis.', '4': '"crossing_both_falling": Enable if the Signal crosses Lower Threshold from above Upper Threshold. The difference between Upper an Lower Threshold defines the threshold hysteresis.'}})
+
+
+(/dev32271/tu/thresholds/0/filter/thresholdlow, {'Node': '/dev32271/tu/thresholds/0/filter/thresholdlow', 'Description': 'Lower threshold used to generate the output. In Rising Edge mode, this parameter defines the hysteretic behavior as the output state is reset only when the signal crosses Lower Threshold from above.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/0/filter/thresholdhigh, {'Node': '/dev32271/tu/thresholds/0/filter/thresholdhigh', 'Description': 'Upper threshold used to generate the output. In Falling Edge mode, this parameter defines the hysteretic behavior as the output state is reset only when the signal crosses Upper Threshold from below.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/0/activationtime, {'Node': '/dev32271/tu/thresholds/0/activationtime', 'Description': 'Minimum duration of threshold violation needed before the output is activated. This can be used as a glitch filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/0/deactivationtime, {'Node': '/dev32271/tu/thresholds/0/deactivationtime', 'Description': 'Minimum duration of threshold compliance needed before the output is deactivated.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/0/value, {'Node': '/dev32271/tu/thresholds/0/value', 'Description': 'Shows the threshold value at the threshold output. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/0/internalvalue, {'Node': '/dev32271/tu/thresholds/0/internalvalue', 'Description': 'Shows the value after threshold but before minimum time. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/0/filter/sourcesaturated, {'Node': '/dev32271/tu/thresholds/0/filter/sourcesaturated', 'Description': 'Flag indicating whether the source value is saturated. Values are: 0: not saturated; 1: saturation at lower bound; 2: saturation at upper bound; 3: saturation at both lower and upper bounds.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/1/input, {'Node': '/dev32271/tu/thresholds/1/input', 'Description': 'Select the signal source to be used in the threshold unit.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"demod_x": Demod X', '1': '"demod_y": Demod Y', '2': '"demod_r": Demod R', '3': '"demod_theta": Demod Theta', '5': '"pid_out": PID Out', '6': '"boxcar": Boxcar', '7': '"au_cartesian": AU Cartesian', '8': '"au_polar": AU Polar', '9': '"pid_shift": PID Shift', '10': '"pid_error": PID Error', '50': '"dio": DIO', '51': '"trigin", "trigger_input": Trigger In', '52': '"trigout", "trigger_output": Trigger Out', '53': '"input_overload_v": Input Overload (V)', '54': '"input_overload_i": Input Overload (I)', '55': '"output_overload": Output Overload', '56': '"auxin_overload", "auxiliary_input_overload": Aux input Overload', '57': '"auxout_overload", "auxiliary_output_overload": Aux Output Overload', '58': '"pid_output_overload": PID Output Overload', '59': '"tu_output": TU Output Value'}})
+
+
+(/dev32271/tu/thresholds/1/inputchannel, {'Node': '/dev32271/tu/thresholds/1/inputchannel', 'Description': 'Select the channel according to the selected signal source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/1/filter/enable, {'Node': '/dev32271/tu/thresholds/1/filter/enable', 'Description': 'Enables the low-pass filter applied to the analog input signal', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/1/filter/abs, {'Node': '/dev32271/tu/thresholds/1/filter/abs', 'Description': 'Takes the absolute value of an analog input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/1/filter/timeconstant, {'Node': '/dev32271/tu/thresholds/1/filter/timeconstant', 'Description': 'Defines the characteristic time constant (cut off) of the low-pass filter applied to the analog input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/1/filter/filteredvalue, {'Node': '/dev32271/tu/thresholds/1/filter/filteredvalue', 'Description': 'Shows the value after the low-pass filter.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/1/filter/mode, {'Node': '/dev32271/tu/thresholds/1/filter/mode', 'Description': 'Selects the analysis mode defining the output signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"above_upper": Enable if the Signal is above Upper Threshold.', '1': '"below_lower": Enable if the Signal is below Lower Threshold.', '2': '"outside_range": Enable if the Signal is outside the range [Lower Threshold, Upper Threshold].', '3': '"crossing_both_rising": Enable if the Signal crosses Upper Threshold from below Lower Threshold. The difference between Upper an Lower Threshold defines the threshold hysteresis.', '4': '"crossing_both_falling": Enable if the Signal crosses Lower Threshold from above Upper Threshold. The difference between Upper an Lower Threshold defines the threshold hysteresis.'}})
+
+
+(/dev32271/tu/thresholds/1/filter/thresholdlow, {'Node': '/dev32271/tu/thresholds/1/filter/thresholdlow', 'Description': 'Lower threshold used to generate the output. In Rising Edge mode, this parameter defines the hysteretic behavior as the output state is reset only when the signal crosses Lower Threshold from above.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/1/filter/thresholdhigh, {'Node': '/dev32271/tu/thresholds/1/filter/thresholdhigh', 'Description': 'Upper threshold used to generate the output. In Falling Edge mode, this parameter defines the hysteretic behavior as the output state is reset only when the signal crosses Upper Threshold from below.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/1/activationtime, {'Node': '/dev32271/tu/thresholds/1/activationtime', 'Description': 'Minimum duration of threshold violation needed before the output is activated. This can be used as a glitch filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/1/deactivationtime, {'Node': '/dev32271/tu/thresholds/1/deactivationtime', 'Description': 'Minimum duration of threshold compliance needed before the output is deactivated.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/1/value, {'Node': '/dev32271/tu/thresholds/1/value', 'Description': 'Shows the threshold value at the threshold output. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/1/internalvalue, {'Node': '/dev32271/tu/thresholds/1/internalvalue', 'Description': 'Shows the value after threshold but before minimum time. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/1/filter/sourcesaturated, {'Node': '/dev32271/tu/thresholds/1/filter/sourcesaturated', 'Description': 'Flag indicating whether the source value is saturated. Values are: 0: not saturated; 1: saturation at lower bound; 2: saturation at upper bound; 3: saturation at both lower and upper bounds.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/2/input, {'Node': '/dev32271/tu/thresholds/2/input', 'Description': 'Select the signal source to be used in the threshold unit.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"demod_x": Demod X', '1': '"demod_y": Demod Y', '2': '"demod_r": Demod R', '3': '"demod_theta": Demod Theta', '5': '"pid_out": PID Out', '6': '"boxcar": Boxcar', '7': '"au_cartesian": AU Cartesian', '8': '"au_polar": AU Polar', '9': '"pid_shift": PID Shift', '10': '"pid_error": PID Error', '50': '"dio": DIO', '51': '"trigin", "trigger_input": Trigger In', '52': '"trigout", "trigger_output": Trigger Out', '53': '"input_overload_v": Input Overload (V)', '54': '"input_overload_i": Input Overload (I)', '55': '"output_overload": Output Overload', '56': '"auxin_overload", "auxiliary_input_overload": Aux input Overload', '57': '"auxout_overload", "auxiliary_output_overload": Aux Output Overload', '58': '"pid_output_overload": PID Output Overload', '59': '"tu_output": TU Output Value'}})
+
+
+(/dev32271/tu/thresholds/2/inputchannel, {'Node': '/dev32271/tu/thresholds/2/inputchannel', 'Description': 'Select the channel according to the selected signal source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/2/filter/enable, {'Node': '/dev32271/tu/thresholds/2/filter/enable', 'Description': 'Enables the low-pass filter applied to the analog input signal', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/2/filter/abs, {'Node': '/dev32271/tu/thresholds/2/filter/abs', 'Description': 'Takes the absolute value of an analog input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/2/filter/timeconstant, {'Node': '/dev32271/tu/thresholds/2/filter/timeconstant', 'Description': 'Defines the characteristic time constant (cut off) of the low-pass filter applied to the analog input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/2/filter/filteredvalue, {'Node': '/dev32271/tu/thresholds/2/filter/filteredvalue', 'Description': 'Shows the value after the low-pass filter.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/2/filter/mode, {'Node': '/dev32271/tu/thresholds/2/filter/mode', 'Description': 'Selects the analysis mode defining the output signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"above_upper": Enable if the Signal is above Upper Threshold.', '1': '"below_lower": Enable if the Signal is below Lower Threshold.', '2': '"outside_range": Enable if the Signal is outside the range [Lower Threshold, Upper Threshold].', '3': '"crossing_both_rising": Enable if the Signal crosses Upper Threshold from below Lower Threshold. The difference between Upper an Lower Threshold defines the threshold hysteresis.', '4': '"crossing_both_falling": Enable if the Signal crosses Lower Threshold from above Upper Threshold. The difference between Upper an Lower Threshold defines the threshold hysteresis.'}})
+
+
+(/dev32271/tu/thresholds/2/filter/thresholdlow, {'Node': '/dev32271/tu/thresholds/2/filter/thresholdlow', 'Description': 'Lower threshold used to generate the output. In Rising Edge mode, this parameter defines the hysteretic behavior as the output state is reset only when the signal crosses Lower Threshold from above.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/2/filter/thresholdhigh, {'Node': '/dev32271/tu/thresholds/2/filter/thresholdhigh', 'Description': 'Upper threshold used to generate the output. In Falling Edge mode, this parameter defines the hysteretic behavior as the output state is reset only when the signal crosses Upper Threshold from below.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/2/activationtime, {'Node': '/dev32271/tu/thresholds/2/activationtime', 'Description': 'Minimum duration of threshold violation needed before the output is activated. This can be used as a glitch filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/2/deactivationtime, {'Node': '/dev32271/tu/thresholds/2/deactivationtime', 'Description': 'Minimum duration of threshold compliance needed before the output is deactivated.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/2/value, {'Node': '/dev32271/tu/thresholds/2/value', 'Description': 'Shows the threshold value at the threshold output. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/2/internalvalue, {'Node': '/dev32271/tu/thresholds/2/internalvalue', 'Description': 'Shows the value after threshold but before minimum time. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/2/filter/sourcesaturated, {'Node': '/dev32271/tu/thresholds/2/filter/sourcesaturated', 'Description': 'Flag indicating whether the source value is saturated. Values are: 0: not saturated; 1: saturation at lower bound; 2: saturation at upper bound; 3: saturation at both lower and upper bounds.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/3/input, {'Node': '/dev32271/tu/thresholds/3/input', 'Description': 'Select the signal source to be used in the threshold unit.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"demod_x": Demod X', '1': '"demod_y": Demod Y', '2': '"demod_r": Demod R', '3': '"demod_theta": Demod Theta', '5': '"pid_out": PID Out', '6': '"boxcar": Boxcar', '7': '"au_cartesian": AU Cartesian', '8': '"au_polar": AU Polar', '9': '"pid_shift": PID Shift', '10': '"pid_error": PID Error', '50': '"dio": DIO', '51': '"trigin", "trigger_input": Trigger In', '52': '"trigout", "trigger_output": Trigger Out', '53': '"input_overload_v": Input Overload (V)', '54': '"input_overload_i": Input Overload (I)', '55': '"output_overload": Output Overload', '56': '"auxin_overload", "auxiliary_input_overload": Aux input Overload', '57': '"auxout_overload", "auxiliary_output_overload": Aux Output Overload', '58': '"pid_output_overload": PID Output Overload', '59': '"tu_output": TU Output Value'}})
+
+
+(/dev32271/tu/thresholds/3/inputchannel, {'Node': '/dev32271/tu/thresholds/3/inputchannel', 'Description': 'Select the channel according to the selected signal source.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/3/filter/enable, {'Node': '/dev32271/tu/thresholds/3/filter/enable', 'Description': 'Enables the low-pass filter applied to the analog input signal', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/3/filter/abs, {'Node': '/dev32271/tu/thresholds/3/filter/abs', 'Description': 'Takes the absolute value of an analog input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/thresholds/3/filter/timeconstant, {'Node': '/dev32271/tu/thresholds/3/filter/timeconstant', 'Description': 'Defines the characteristic time constant (cut off) of the low-pass filter applied to the analog input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/3/filter/filteredvalue, {'Node': '/dev32271/tu/thresholds/3/filter/filteredvalue', 'Description': 'Shows the value after the low-pass filter.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/3/filter/mode, {'Node': '/dev32271/tu/thresholds/3/filter/mode', 'Description': 'Selects the analysis mode defining the output signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"above_upper": Enable if the Signal is above Upper Threshold.', '1': '"below_lower": Enable if the Signal is below Lower Threshold.', '2': '"outside_range": Enable if the Signal is outside the range [Lower Threshold, Upper Threshold].', '3': '"crossing_both_rising": Enable if the Signal crosses Upper Threshold from below Lower Threshold. The difference between Upper an Lower Threshold defines the threshold hysteresis.', '4': '"crossing_both_falling": Enable if the Signal crosses Lower Threshold from above Upper Threshold. The difference between Upper an Lower Threshold defines the threshold hysteresis.'}})
+
+
+(/dev32271/tu/thresholds/3/filter/thresholdlow, {'Node': '/dev32271/tu/thresholds/3/filter/thresholdlow', 'Description': 'Lower threshold used to generate the output. In Rising Edge mode, this parameter defines the hysteretic behavior as the output state is reset only when the signal crosses Lower Threshold from above.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/3/filter/thresholdhigh, {'Node': '/dev32271/tu/thresholds/3/filter/thresholdhigh', 'Description': 'Upper threshold used to generate the output. In Falling Edge mode, this parameter defines the hysteretic behavior as the output state is reset only when the signal crosses Upper Threshold from below.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/3/activationtime, {'Node': '/dev32271/tu/thresholds/3/activationtime', 'Description': 'Minimum duration of threshold violation needed before the output is activated. This can be used as a glitch filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/3/deactivationtime, {'Node': '/dev32271/tu/thresholds/3/deactivationtime', 'Description': 'Minimum duration of threshold compliance needed before the output is deactivated.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/thresholds/3/value, {'Node': '/dev32271/tu/thresholds/3/value', 'Description': 'Shows the threshold value at the threshold output. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/3/internalvalue, {'Node': '/dev32271/tu/thresholds/3/internalvalue', 'Description': 'Shows the value after threshold but before minimum time. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/thresholds/3/filter/sourcesaturated, {'Node': '/dev32271/tu/thresholds/3/filter/sourcesaturated', 'Description': 'Flag indicating whether the source value is saturated. Values are: 0: not saturated; 1: saturation at lower bound; 2: saturation at upper bound; 3: saturation at both lower and upper bounds.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'Dependent'})
+
+
+(/dev32271/tu/logicunits/0/inputs/0/channel, {'Node': '/dev32271/tu/logicunits/0/inputs/0/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/inputs/0/not, {'Node': '/dev32271/tu/logicunits/0/inputs/0/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/ops/0/value, {'Node': '/dev32271/tu/logicunits/0/ops/0/value', 'Description': 'Logical operation applied to the signals to the left and right of the control.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": No logical operation selected. No additional signals will be used to generate the output.', '1': '"and": Use a logical AND operation.', '2': '"or": Use a logical OR operation.', '3': '"xor": Use a logical XOR operation.'}})
+
+
+(/dev32271/tu/logicunits/0/inputs/1/channel, {'Node': '/dev32271/tu/logicunits/0/inputs/1/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/inputs/1/not, {'Node': '/dev32271/tu/logicunits/0/inputs/1/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/ops/1/value, {'Node': '/dev32271/tu/logicunits/0/ops/1/value', 'Description': 'Logical operation applied to the signals to the left and right of the control.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": No logical operation selected. No additional signals will be used to generate the output.', '1': '"and": Use a logical AND operation.', '2': '"or": Use a logical OR operation.', '3': '"xor": Use a logical XOR operation.'}})
+
+
+(/dev32271/tu/logicunits/0/inputs/2/channel, {'Node': '/dev32271/tu/logicunits/0/inputs/2/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/inputs/2/not, {'Node': '/dev32271/tu/logicunits/0/inputs/2/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/pulsewidth, {'Node': '/dev32271/tu/logicunits/0/pulsewidth', 'Description': 'Minimum pulse width for the generated output signal. The width of pulses shorter than this time will be extended.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/logicunits/0/keep, {'Node': '/dev32271/tu/logicunits/0/keep', 'Description': 'Hold the output state indefinitely once it has changed to the activated state.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/invert, {'Node': '/dev32271/tu/logicunits/0/invert', 'Description': 'Changes the output signal to low-active.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/value, {'Node': '/dev32271/tu/logicunits/0/value', 'Description': 'Shows the output value of the logic unit. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/0/internalvalue, {'Node': '/dev32271/tu/logicunits/0/internalvalue', 'Description': 'Show the value after logical combination but before output settings. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/inputs/0/channel, {'Node': '/dev32271/tu/logicunits/1/inputs/0/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/inputs/0/not, {'Node': '/dev32271/tu/logicunits/1/inputs/0/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/ops/0/value, {'Node': '/dev32271/tu/logicunits/1/ops/0/value', 'Description': 'Logical operation applied to the signals to the left and right of the control.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": No logical operation selected. No additional signals will be used to generate the output.', '1': '"and": Use a logical AND operation.', '2': '"or": Use a logical OR operation.', '3': '"xor": Use a logical XOR operation.'}})
+
+
+(/dev32271/tu/logicunits/1/inputs/1/channel, {'Node': '/dev32271/tu/logicunits/1/inputs/1/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/inputs/1/not, {'Node': '/dev32271/tu/logicunits/1/inputs/1/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/ops/1/value, {'Node': '/dev32271/tu/logicunits/1/ops/1/value', 'Description': 'Logical operation applied to the signals to the left and right of the control.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": No logical operation selected. No additional signals will be used to generate the output.', '1': '"and": Use a logical AND operation.', '2': '"or": Use a logical OR operation.', '3': '"xor": Use a logical XOR operation.'}})
+
+
+(/dev32271/tu/logicunits/1/inputs/2/channel, {'Node': '/dev32271/tu/logicunits/1/inputs/2/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/inputs/2/not, {'Node': '/dev32271/tu/logicunits/1/inputs/2/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/pulsewidth, {'Node': '/dev32271/tu/logicunits/1/pulsewidth', 'Description': 'Minimum pulse width for the generated output signal. The width of pulses shorter than this time will be extended.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/logicunits/1/keep, {'Node': '/dev32271/tu/logicunits/1/keep', 'Description': 'Hold the output state indefinitely once it has changed to the activated state.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/invert, {'Node': '/dev32271/tu/logicunits/1/invert', 'Description': 'Changes the output signal to low-active.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/value, {'Node': '/dev32271/tu/logicunits/1/value', 'Description': 'Shows the output value of the logic unit. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/1/internalvalue, {'Node': '/dev32271/tu/logicunits/1/internalvalue', 'Description': 'Show the value after logical combination but before output settings. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/inputs/0/channel, {'Node': '/dev32271/tu/logicunits/2/inputs/0/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/inputs/0/not, {'Node': '/dev32271/tu/logicunits/2/inputs/0/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/ops/0/value, {'Node': '/dev32271/tu/logicunits/2/ops/0/value', 'Description': 'Logical operation applied to the signals to the left and right of the control.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": No logical operation selected. No additional signals will be used to generate the output.', '1': '"and": Use a logical AND operation.', '2': '"or": Use a logical OR operation.', '3': '"xor": Use a logical XOR operation.'}})
+
+
+(/dev32271/tu/logicunits/2/inputs/1/channel, {'Node': '/dev32271/tu/logicunits/2/inputs/1/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/inputs/1/not, {'Node': '/dev32271/tu/logicunits/2/inputs/1/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/ops/1/value, {'Node': '/dev32271/tu/logicunits/2/ops/1/value', 'Description': 'Logical operation applied to the signals to the left and right of the control.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": No logical operation selected. No additional signals will be used to generate the output.', '1': '"and": Use a logical AND operation.', '2': '"or": Use a logical OR operation.', '3': '"xor": Use a logical XOR operation.'}})
+
+
+(/dev32271/tu/logicunits/2/inputs/2/channel, {'Node': '/dev32271/tu/logicunits/2/inputs/2/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/inputs/2/not, {'Node': '/dev32271/tu/logicunits/2/inputs/2/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/pulsewidth, {'Node': '/dev32271/tu/logicunits/2/pulsewidth', 'Description': 'Minimum pulse width for the generated output signal. The width of pulses shorter than this time will be extended.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/logicunits/2/keep, {'Node': '/dev32271/tu/logicunits/2/keep', 'Description': 'Hold the output state indefinitely once it has changed to the activated state.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/invert, {'Node': '/dev32271/tu/logicunits/2/invert', 'Description': 'Changes the output signal to low-active.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/value, {'Node': '/dev32271/tu/logicunits/2/value', 'Description': 'Shows the output value of the logic unit. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/2/internalvalue, {'Node': '/dev32271/tu/logicunits/2/internalvalue', 'Description': 'Show the value after logical combination but before output settings. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/inputs/0/channel, {'Node': '/dev32271/tu/logicunits/3/inputs/0/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/inputs/0/not, {'Node': '/dev32271/tu/logicunits/3/inputs/0/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/ops/0/value, {'Node': '/dev32271/tu/logicunits/3/ops/0/value', 'Description': 'Logical operation applied to the signals to the left and right of the control.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": No logical operation selected. No additional signals will be used to generate the output.', '1': '"and": Use a logical AND operation.', '2': '"or": Use a logical OR operation.', '3': '"xor": Use a logical XOR operation.'}})
+
+
+(/dev32271/tu/logicunits/3/inputs/1/channel, {'Node': '/dev32271/tu/logicunits/3/inputs/1/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/inputs/1/not, {'Node': '/dev32271/tu/logicunits/3/inputs/1/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/ops/1/value, {'Node': '/dev32271/tu/logicunits/3/ops/1/value', 'Description': 'Logical operation applied to the signals to the left and right of the control.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"off": No logical operation selected. No additional signals will be used to generate the output.', '1': '"and": Use a logical AND operation.', '2': '"or": Use a logical OR operation.', '3': '"xor": Use a logical XOR operation.'}})
+
+
+(/dev32271/tu/logicunits/3/inputs/2/channel, {'Node': '/dev32271/tu/logicunits/3/inputs/2/channel', 'Description': 'Selects threshold channel to be used as input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/inputs/2/not, {'Node': '/dev32271/tu/logicunits/3/inputs/2/not', 'Description': 'Inverts the input signal.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/pulsewidth, {'Node': '/dev32271/tu/logicunits/3/pulsewidth', 'Description': 'Minimum pulse width for the generated output signal. The width of pulses shorter than this time will be extended.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/tu/logicunits/3/keep, {'Node': '/dev32271/tu/logicunits/3/keep', 'Description': 'Hold the output state indefinitely once it has changed to the activated state.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/invert, {'Node': '/dev32271/tu/logicunits/3/invert', 'Description': 'Changes the output signal to low-active.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/value, {'Node': '/dev32271/tu/logicunits/3/value', 'Description': 'Shows the output value of the logic unit. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/tu/logicunits/3/internalvalue, {'Node': '/dev32271/tu/logicunits/3/internalvalue', 'Description': 'Show the value after logical combination but before output settings. The value integrated over some time. Values are 1: low, 2: high, 3: was low and high in the period.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/features/serial, {'Node': '/dev32271/features/serial', 'Description': 'Device serial number.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/features/devtype, {'Node': '/dev32271/features/devtype', 'Description': 'Returns the device type.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/fpgarevision, {'Node': '/dev32271/system/fpgarevision', 'Description': 'HDL firmware revision.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/system/fwrevision, {'Node': '/dev32271/system/fwrevision', 'Description': 'Revision of the device-internal controller software.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/status/fifolevel, {'Node': '/dev32271/status/fifolevel', 'Description': 'USB FIFO level: Indicates the USB FIFO fill level inside the device. When 100%, data is lost', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/clockbase, {'Node': '/dev32271/clockbase', 'Description': 'Returns the internal clock frequency of the device.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/system/owner, {'Node': '/dev32271/system/owner', 'Description': 'Returns the current owner of the device (IP).', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/kerneltype, {'Node': '/dev32271/system/kerneltype', 'Description': 'Returns the type of the data server kernel (mdk or hpk).', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/activeinterface, {'Node': '/dev32271/system/activeinterface', 'Description': 'Currently active interface of the device.', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/system/interfacespeed, {'Node': '/dev32271/system/interfacespeed', 'Description': 'Speed of the currently active interface (USB only).', 'Properties': 'Read', 'Type': 'String', 'Unit': 'None'})
+
+
+(/dev32271/stats/cmdstream/bytesreceived, {'Node': '/dev32271/stats/cmdstream/bytesreceived', 'Description': 'Number of bytes received on the command stream from the device since session start.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'B'})
+
+
+(/dev32271/stats/cmdstream/bytessent, {'Node': '/dev32271/stats/cmdstream/bytessent', 'Description': 'Number of bytes sent on the command stream from the device since session start.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'B'})
+
+
+(/dev32271/stats/cmdstream/packetsreceived, {'Node': '/dev32271/stats/cmdstream/packetsreceived', 'Description': 'Number of packets received on the command stream from the device since session start.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/cmdstream/packetssent, {'Node': '/dev32271/stats/cmdstream/packetssent', 'Description': 'Number of packets sent on the command stream to the device since session start.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/cmdstream/packetslost, {'Node': '/dev32271/stats/cmdstream/packetslost', 'Description': 'Number of command packets lost since device start. Command packets contain device settings that are sent to and received from the device.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/cmdstream/bandwidth, {'Node': '/dev32271/stats/cmdstream/bandwidth', 'Description': 'Command streaming bandwidth usage on the physical network connection between device and data server.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Mbit/s'})
+
+
+(/dev32271/stats/cmdstream/processing, {'Node': '/dev32271/stats/cmdstream/processing', 'Description': 'Number of buffers being processed for command packets. Small values indicate proper performance. For a TCP/IP interface, command packets are sent using the TCP protocol.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/cmdstream/pending, {'Node': '/dev32271/stats/cmdstream/pending', 'Description': 'Number of buffers ready for receiving command packets from the device.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/datastream/bytesreceived, {'Node': '/dev32271/stats/datastream/bytesreceived', 'Description': 'Number of bytes received on the data stream from the device since session start.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'B'})
+
+
+(/dev32271/stats/datastream/packetsreceived, {'Node': '/dev32271/stats/datastream/packetsreceived', 'Description': 'Number of packets received on the data stream from the device since session start.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/datastream/packetslost, {'Node': '/dev32271/stats/datastream/packetslost', 'Description': 'Number of data packets lost since device start. Data packets contain measurement data.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/datastream/bandwidth, {'Node': '/dev32271/stats/datastream/bandwidth', 'Description': 'Data streaming bandwidth usage on the physical network connection between device and data server.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Mbit/s'})
+
+
+(/dev32271/stats/datastream/processing, {'Node': '/dev32271/stats/datastream/processing', 'Description': 'Number of buffers being processed for data packets. Small values indicate proper performance. For a TCP/IP interface, data packets are sent using the UDP protocol.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/stats/datastream/pending, {'Node': '/dev32271/stats/datastream/pending', 'Description': 'Number of buffers ready for receiving data packets from the device.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/status/flags/packetlosstcp, {'Node': '/dev32271/status/flags/packetlosstcp', 'Description': 'Flag indicating if tcp packages have been lost.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/status/flags/packetlossudp, {'Node': '/dev32271/status/flags/packetlossudp', 'Description': 'Flag indicating if udp packages have been lost.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/enable, {'Node': '/dev32271/imps/0/enable', 'Description': 'Enable impedance calculation for demodulator data.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/mode, {'Node': '/dev32271/imps/0/mode', 'Description': 'Select impedance measurement mode.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '4 Terminal: This method uses the current and the voltage drop across the DUT to calculate the DUT impedance. This method results in very accurate measurements as influences of series resistors on the output and current input are excluded.', '1': '2 Terminal: This method uses the driving voltage and the measured current to calculate the DUT impedance. The 2 Terminal method can be beneficial when measuring very high impedance where the parasitics of the voltage measurement are limiting the frequency range.'}})
+
+
+(/dev32271/imps/0/model, {'Node': '/dev32271/imps/0/model', 'Description': 'Representation of the complex impedance value Z by two real values accessible as Parameter 1 and Parameter 2 on all user interface displays.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"r_c_parallel": Rp || Cp: Impedance value Z is represented by a resistive element Rp in parallel with a capacitive element Cp.', '1': '"r_c_series": Rs + Cs: Impedance value Z is represented by a resistive element Rs in series with a capacitive element Cs.', '2': '"r_l_series": Rs + Ls: Impedance value Z is represented by a resistive element Rs in series with an inductive element Ls.', '3': '"g_b_parallel", "admittance": G B: Impedance value Z is represented by conductance G = Real(Y) and Susceptance B = Imag(Y) of the admittance Y = 1/Z.', '4': '"d_c_series": D Cs: Impedance value Z is represented by a dissipation factor D = -Real(Z)/Imag(Z) (loss tangent) and a series capacitive element.', '5': '"q_c_series": Q Cs: Impedance value Z is represented by a quality factor Q = -Imag(Z)/Real(Z) and a series capacitive element.', '6': '"d_l_series": D Ls: Impedance value Z is represented by a dissipation factor D = Real(Z)/Imag(Z) (loss tangent) and a series inductive element.', '7': '"q_l_series": Q Ls: Impedance value Z is represented by a quality factor Q = Imag(Z)/Real(Z) and a series inductive element.', '8': '"r_l_parallel": Rp || Lp: Impedance value Z is represented by a resistive element Rp in parallel with an inductive element Lp.', '9': '"d_c_parallel": D Cp: Impedance value Z is represented by a dissipation factor D = Real(Z)/Imag(Z) (loss tangent) and a parallel capacitive element Cp.', '10': '"dielectric": Dielectic: Impedance value Z is represented by an equivalent dieletric material with a complex permittivity.'}})
+
+
+(/dev32271/imps/0/voltage/demodselect, {'Node': '/dev32271/imps/0/voltage/demodselect', 'Description': 'Demodulator used for voltage measurement in case of a four-terminal impedance measurement.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/current/demodselect, {'Node': '/dev32271/imps/0/current/demodselect', 'Description': 'Demodulator used for current demodulation.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/demod/oscselect, {'Node': '/dev32271/imps/0/demod/oscselect', 'Description': 'Oscillator used to generate the frequency of the excitation voltage on the Hcur (+V) connector.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': 'Oscillator 1', '1': 'Oscillator 2', '2': 'Oscillator 3', '3': 'Oscillator 4'}})
+
+
+(/dev32271/imps/0/demod/harmonic, {'Node': '/dev32271/imps/0/demod/harmonic', 'Description': "Multiplies the demodulator's reference frequency with the integer factor defined by this field.", 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/voltage/inputselect, {'Node': '/dev32271/imps/0/voltage/inputselect', 'Description': 'Select the voltage input used for a four-terminal impedance measurement.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"voltage_input0": Voltage Input 1', '8': '"auxin0", "auxiliary_input0": Aux In 1', '9': '"auxin1", "auxiliary_input1": Aux In 2'}})
+
+
+(/dev32271/imps/0/current/inputselect, {'Node': '/dev32271/imps/0/current/inputselect', 'Description': 'Select the current input used for two- and four-terminal impedance measurements.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"currin0", "current_input0": Current Input 1', '8': '"auxin0", "auxiliary_input0": Aux In 1', '9': '"auxin1", "auxiliary_input1": Aux In 2'}})
+
+
+(/dev32271/imps/0/voltage/invert, {'Node': '/dev32271/imps/0/voltage/invert', 'Description': 'If enabled, the voltage input signal is inverted.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/current/invert, {'Node': '/dev32271/imps/0/current/invert', 'Description': 'If enabled, the current input signal is inverted. This is useful to switch the polarity of an input signal which can be caused by additional current amplifiers.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/output/select, {'Node': '/dev32271/imps/0/output/select', 'Description': 'Selects the output channel that the excitation voltage drives.', 'Properties': 'Read', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"sigout0", "signal_output0": Signal Output 1'}})
+
+
+(/dev32271/imps/0/demod/order, {'Node': '/dev32271/imps/0/demod/order', 'Description': 'Selects the filter roll off between 6 dB/oct and 48 dB/oct of the current demodulator.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'1': '1st order filter 6 dB/oct', '2': '2nd order filter 12 dB/oct', '3': '3rd order filter 18 dB/oct', '4': '4th order filter 24 dB/oct', '5': '5th order filter 30 dB/oct', '6': '6th order filter 36 dB/oct', '7': '7th order filter 42 dB/oct', '8': '8th order filter 48 dB/oct'}})
+
+
+(/dev32271/imps/0/demod/timeconstant, {'Node': '/dev32271/imps/0/demod/timeconstant', 'Description': 'Defines low pass filter time constant.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 's'})
+
+
+(/dev32271/imps/0/demod/sinc, {'Node': '/dev32271/imps/0/demod/sinc', 'Description': 'Enables the sinc filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/demod/rate, {'Node': '/dev32271/imps/0/demod/rate', 'Description': 'Impedance data streaming rate. The same data rate is applied to the demodulators that are used for the impedance measurement.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': '1/s'})
+
+
+(/dev32271/imps/0/interpolation, {'Node': '/dev32271/imps/0/interpolation', 'Description': 'Select the interpolation method of the compensation data. The interpolation method is particularly important if the derivative changes strongly e.g at cut-off frequencies.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': '"linear": Linear: The linear interpolation is fastest but may create compensation errors in between the frequency points used for compensation.', '1': '"pchip": Piecewise Cubic Hermite (PCHIP): The piecewise cubic Hermite interpolation will result in very accurate results but requires more calculation power.'}})
+
+
+(/dev32271/imps/0/output/demod, {'Node': '/dev32271/imps/0/output/demod', 'Description': 'Demodulator unit used to generate the excitation voltage on the Signal Output.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/freq, {'Node': '/dev32271/imps/0/freq', 'Description': 'Frequency control for the oscillator used for impedance measurement.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/confidence/enable, {'Node': '/dev32271/imps/0/confidence/enable', 'Description': 'Enables/disables all confidence indicators to check the reliability of the measured data. To enable individual indicators, open the advanced tab.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/suppression/ratio, {'Node': '/dev32271/imps/0/confidence/suppression/ratio', 'Description': 'Error amplification limit for which a secondary parameter is marked unreliable. Larger gain values mean larger warning tolerances. A gain value between 10 and 100 is best.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/suppression/enable, {'Node': '/dev32271/imps/0/confidence/suppression/enable', 'Description': 'The Suppression Confidence Indicator indicates if one of the two parameters of a circuit representation cannot be calculated reliably from the measured impedance. This is the case if a small variation in one (dominant) representation parameter creates a strong variation of the other (suppressed) representation parameter. Such an error amplification indicates that the measurement of the secondary parameter is unreliable.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/opendetect/ratio, {'Node': '/dev32271/imps/0/confidence/opendetect/ratio', 'Description': 'Open terminal detection ratio. An open terminal is reported if the excitation calculated from current and voltage drop differs more than the specified factor from the driving voltage.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/opendetect/enable, {'Node': '/dev32271/imps/0/confidence/opendetect/enable', 'Description': 'Enables the open terminal detection for 4-terminal measurements.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/compensation/ratio, {'Node': '/dev32271/imps/0/confidence/compensation/ratio', 'Description': 'Strength of the compensation that will trigger the strong compensation warning.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/compensation/enable, {'Node': '/dev32271/imps/0/confidence/compensation/enable', 'Description': 'Enables the indication of strong compensation in the plots. A strong compensation diminishes the measurement accuracy of the parameter.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/underflow/ratio, {'Node': '/dev32271/imps/0/confidence/underflow/ratio', 'Description': 'The underflow condition is met if the measured amplitude is lower than the specified ratio relative to full scale.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/underflow/enable, {'Node': '/dev32271/imps/0/confidence/underflow/enable', 'Description': 'Enables the underflow detection for current and voltage.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/freqlimit/enable, {'Node': '/dev32271/imps/0/confidence/freqlimit/enable', 'Description': 'Enables the frequency limit detection based on the used current input range. Only relevant when Range Control is set to Manual.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/qfactor/enable, {'Node': '/dev32271/imps/0/confidence/qfactor/enable', 'Description': 'Enables the detection of negative Q or D factors. Negative Q or D factors mean the measured impedance does not correspond to the chosen Representation. This can be due to an erroneous compensation, a bad choice of the Representation, or noise.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/overflow/enable, {'Node': '/dev32271/imps/0/confidence/overflow/enable', 'Description': 'Enables the overload detection for current and voltage.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/lowdut2t/ratio, {'Node': '/dev32271/imps/0/confidence/lowdut2t/ratio', 'Description': 'When measuring with 2 point contacts, too low impedance of DUT will trigger the Low DUT 2T warning.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/lowdut2t/enable, {'Node': '/dev32271/imps/0/confidence/lowdut2t/enable', 'Description': 'Enables a warning when meassuring a low impedance (100k) with a 2 point contact.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/confidence/oneperiod/enable, {'Node': '/dev32271/imps/0/confidence/oneperiod/enable', 'Description': 'Enables the detection of unreliable data points where data sample loss leads to an invalid one-period average. Try reducing the data transfer rate.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/bias/enable, {'Node': '/dev32271/imps/0/bias/enable', 'Description': 'Enables the DC bias voltage.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/bias/value, {'Node': '/dev32271/imps/0/bias/value', 'Description': 'DC bias voltage applied across the device under test. Both positive and negative bias voltages are supported. In a 4-terminal measurement, the bias voltage is limited by the maximum common voltage input range of the device. In a 2-terminal measurement, the bias voltage can be larger because the voltage inputs are not connected.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/imps/0/mut/area, {'Node': '/dev32271/imps/0/mut/area', 'Description': 'The area of the MUT. Only relevant when using the dielectric model.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'm²'})
+
+
+(/dev32271/imps/0/mut/thickness, {'Node': '/dev32271/imps/0/mut/thickness', 'Description': 'The thickness of the MUT. Only relevant when using the dielectric model.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'm'})
+
+
+(/dev32271/imps/0/calib/user/enable, {'Node': '/dev32271/imps/0/calib/user/enable', 'Description': 'Enables the user compensation of the impedance data. The user compensation is correcting parasitics and delays caused by the external setup. The user compensation is applied on top of the internal impedance calibration.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/calib/user/active, {'Node': '/dev32271/imps/0/calib/user/active', 'Description': 'Indicates that a valid user compensation is active. If active the impedance data streams deliver amplitude and phase corrected data based on the impedance user compensation.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/calib/user/smooth, {'Node': '/dev32271/imps/0/calib/user/smooth', 'Description': 'Enables smoothing of the compensation data. This results in lower noise in the measured data.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/calib/internal/enable, {'Node': '/dev32271/imps/0/calib/internal/enable', 'Description': 'Enables the internal calibration. This ensures that the input range gains match over the full frequency range. With enabled internal calibration the device fulfills the impedance accuracy specification. The internal calibration is a prerequisite to apply a user compensation.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/calib/internal/active, {'Node': '/dev32271/imps/0/calib/internal/active', 'Description': 'Indicates if the internal calibration is applied to the measurement data.', 'Properties': 'Read', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/calib/internal/smooth, {'Node': '/dev32271/imps/0/calib/internal/smooth', 'Description': 'Enables smoothing of the internal calibration data. This results in lower noise in the measured data.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/discard/enable, {'Node': '/dev32271/imps/0/discard/enable', 'Description': 'Discarding impedance samples outside the indicated range.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/discard/limitlower, {'Node': '/dev32271/imps/0/discard/limitlower', 'Description': 'Threshold for abs(Z) below which the impedance samples are discarded.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/discard/limitupper, {'Node': '/dev32271/imps/0/discard/limitupper', 'Description': 'Threshold for abs(Z) above which the impedance samples are discarded.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/current/pid/enable, {'Node': '/dev32271/imps/0/current/pid/enable', 'Description': 'If enabled, the PID value is used for the impedance calculation instead of the measured value at the current input.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/auto/output, {'Node': '/dev32271/imps/0/auto/output', 'Description': 'If enabled, the drive voltage amplitude is controlled by the device. If disabled it can be set manually.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/auto/suppress, {'Node': '/dev32271/imps/0/auto/suppress', 'Description': 'Indicates disabled periodic auto range control. A running sweeper module takes over the range control and thus disables the periodic range checks.', 'Properties': 'Read, Write', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/auto/inputrange, {'Node': '/dev32271/imps/0/auto/inputrange', 'Description': 'Select input range control mode.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (enumerated)', 'Unit': 'None', 'Options': {'0': 'Manual: In manual mode the current and voltage input ranges are adjusted manually and separately. Use this mode with care as overload will result in inaccurate impedance results.', '1': 'Auto: Dynamically adjust the input range according to the measured input signal strength. This optimizes the dynamic range and precision of impedance measurements.', '2': 'Zone: This ranging option allows you to manually set the switching frequency limits for all eight current input ranges.'}})
+
+
+(/dev32271/imps/0/output/amplitude, {'Node': '/dev32271/imps/0/output/amplitude', 'Description': 'Drive amplitude on the Signal Output.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/imps/0/output/range, {'Node': '/dev32271/imps/0/output/range', 'Description': 'Selects the output voltage range.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/imps/0/output/on, {'Node': '/dev32271/imps/0/output/on', 'Description': 'Main switch for the Signal Output corresponding to the blue LED indicator on the instrument front panel.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/current/range, {'Node': '/dev32271/imps/0/current/range', 'Description': "Input current range used for the impedance measurement. Small current input ranges have a reduced bandwidth. In the Range Control modes 'Auto' and 'Impedance', the current range is switched automatically to a higher range if the frequency is too high.", 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'A'})
+
+
+(/dev32271/imps/0/voltage/range, {'Node': '/dev32271/imps/0/voltage/range', 'Description': 'Input voltage range for the impedance measurement.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V'})
+
+
+(/dev32271/imps/0/zoneranging/1n/lower, {'Node': '/dev32271/imps/0/zoneranging/1n/lower', 'Description': 'Lower frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/10n/lower, {'Node': '/dev32271/imps/0/zoneranging/10n/lower', 'Description': 'Lower frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/100n/lower, {'Node': '/dev32271/imps/0/zoneranging/100n/lower', 'Description': 'Lower frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/1u/lower, {'Node': '/dev32271/imps/0/zoneranging/1u/lower', 'Description': 'Lower frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/10u/lower, {'Node': '/dev32271/imps/0/zoneranging/10u/lower', 'Description': 'Lower frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/100u/lower, {'Node': '/dev32271/imps/0/zoneranging/100u/lower', 'Description': 'Lower frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/1m/lower, {'Node': '/dev32271/imps/0/zoneranging/1m/lower', 'Description': 'Lower frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/10m/lower, {'Node': '/dev32271/imps/0/zoneranging/10m/lower', 'Description': 'Lower frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/1n/upper, {'Node': '/dev32271/imps/0/zoneranging/1n/upper', 'Description': 'Upper frequency limit where the current input range will be enabled.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/10n/upper, {'Node': '/dev32271/imps/0/zoneranging/10n/upper', 'Description': 'Upper frequency limit where the current input range will be enabled.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/100n/upper, {'Node': '/dev32271/imps/0/zoneranging/100n/upper', 'Description': 'Upper frequency limit where the current input range will be enabled.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/1u/upper, {'Node': '/dev32271/imps/0/zoneranging/1u/upper', 'Description': 'Upper frequency limit where the current input range will be enabled.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/10u/upper, {'Node': '/dev32271/imps/0/zoneranging/10u/upper', 'Description': 'Upper frequency limit where the current input range will be enabled.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/100u/upper, {'Node': '/dev32271/imps/0/zoneranging/100u/upper', 'Description': 'Upper frequency limit where the current input range will be enabled.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/1m/upper, {'Node': '/dev32271/imps/0/zoneranging/1m/upper', 'Description': 'Upper frequency limit where the current input range will be enabled.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/zoneranging/10m/upper, {'Node': '/dev32271/imps/0/zoneranging/10m/upper', 'Description': 'Upper frequency limit where the current input range will be enabled.', 'Properties': 'Read', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/ac, {'Node': '/dev32271/imps/0/ac', 'Description': 'Defines the input coupling for the Signal Inputs. AC coupling inserts a high-pass filter.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/auto/bw, {'Node': '/dev32271/imps/0/auto/bw', 'Description': 'Enable automatic bandwidth control. If enabled the optimum bandwidth is calculated based on the frequency and measurement data.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/maxbandwidth, {'Node': '/dev32271/imps/0/maxbandwidth', 'Description': 'Limit of the maximum bandwidth used on the demodulator filter. Values above 1 kHz can heavily diminish measurement accuracy in the high-frequency region where the amplitude is no more constant over frequency.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'Hz'})
+
+
+(/dev32271/imps/0/omegasuppression, {'Node': '/dev32271/imps/0/omegasuppression', 'Description': 'Suppression of the omega and 2-omega components. Small omega suppression can diminish measurements of very low or high impedance because the DC component can become dominant. Large omega suppression will have a significant impact on sweep time especially for low filter orders.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'dB'})
+
+
+(/dev32271/imps/0/sample, {'Node': '/dev32271/imps/0/sample', 'Description': 'Streaming node containing the impedance measurement sample data.', 'Properties': 'Read, Stream', 'Type': 'ZIImpedanceSample', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/voltage/scaling, {'Node': '/dev32271/imps/0/voltage/scaling', 'Description': 'The scaling factor will be applied to the voltage meaurement done with an Aux In input.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'V/V'})
+
+
+(/dev32271/imps/0/current/scaling, {'Node': '/dev32271/imps/0/current/scaling', 'Description': 'The scaling factor will be applied to the current measurement done with an Aux In input.', 'Properties': 'Read, Write, Setting', 'Type': 'Double', 'Unit': 'A/V'})
+
+
+(/dev32271/imps/0/oneperiod/enable, {'Node': '/dev32271/imps/0/oneperiod/enable', 'Description': 'Enables one-period averaging for low frequency impedance measurements. The LED is green when active.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+
+(/dev32271/imps/0/oneperiod/active, {'Node': '/dev32271/imps/0/oneperiod/active', 'Description': 'Enables one-period averaging for low frequency impedance measurements. The LED is green when active.', 'Properties': 'Read, Write, Setting', 'Type': 'Integer (64 bit)', 'Unit': 'None'})
+
+

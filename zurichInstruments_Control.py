@@ -113,7 +113,10 @@ class ziDevice:
                    '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
         self.consts['Aux Output Signal'] = \
             input("Please enter Aux Output Signal (\n" +"\n".join(options) + "\n): ") or 36
-    
+
+        self.consts['Demodulation rate'] = \
+            input("Please enter Demodulation Rate): ") or 60000
+
         return 0
     
     def setConstants(self):
@@ -159,35 +162,70 @@ class ziDevice:
 
         self.session.daq_server.set('/dev32271/triggers/out/0/source', 
                                     self.consts['Aux Output Signal'])
-
+                
+        self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
+                                    self.consts['Demodulation rate'])
+        
         return 0
     
-    def pullData(self, plot=True):
-    
-        self.device.demods[0].enable(True)
-        time.sleep(2)
-        self.device.imps[0].enable(True)
-        time.sleep(2)
-    
-        self.device.demods[0].sample.subscribe()
-        dataDemods = self.session.poll()
-        self.device.demods[0].sample.unsubscribe()
-        time.sleep(2)
+    def pullData(self, plot=True, trigger=False):
+        if trigger:
+            daq_module = self.session.modules.daq
+            
+            daq_module.type(6)
+            daq_module.triggernode('/dev32271/demods/0/sample.TrigOut1')
+            daq_module.clearhistory(1)
+            daq_module.bandwidth(0)
+            daq_module.grid.cols(2**16)
+            daq_module.grid.repetitions(1)
+            daq_module.endless(0)
+            daq_module.subscribe('/dev32271/demods/0/sample.AuxIn0.avg')
+            daq_module.subscribe('/dev32271/demods/0/sample.R.avg')
+            daq_module.subscribe('/dev32271/imps/0/sample.Param0.avg')
+            daq_module.subscribe('/dev32271/imps/0/sample.Param1.avg')
+            time.sleep(1)
+            
+            daq_module.execute()
+            time.sleep(1)
+            
+            allData = daq_module.read()
+            time.sleep(1)
+            
+            daq_module.unsubscribe('*')
+            
+            data = dict()
+            data['timestampImps'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
+            data['timestampDemods'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
+            data['ImpedanceRe'] = np.array(list(allData['/dev32271/imps/0/sample.param0.avg'][0])[-4][0], copy=True)
+            data['ImpedanceIm'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-4][0], copy=True)
+            data['AuxInput1'] = np.array(list(allData['/dev32271/demods/0/sample.auxin0.avg'][0])[-4][0], copy=True)
+            data['AbsZ'] = np.sqrt(data['ImpedanceRe']**2 + data['ImpedanceIM']**2)
         
-        self.device.imps[0].sample.subscribe()
-        dataImps = self.session.poll()
-        self.device.imps[0].sample.unsubscribe()
-        time.sleep(2)
+        else:
+            self.device.demods[0].enable(True)
+            time.sleep(2)
+            self.device.imps[0].enable(True)
+            time.sleep(2)
         
-        #  60 x 10^6 samples/s
-        data = dict()
-        data['timestampImps'] = np.array(dataImps[self.device.imps[0].sample]['timestamp'], copy=True)
-        data['timestampDemods'] = np.array(dataDemods[self.device.demods[0].sample]['timestamp'], copy=True)
-        data['ImpedanceRe'] = np.array(dataImps[self.device.imps[0].sample]['param0'], copy=True)
-        data['ImpedanceIm'] = np.array(dataImps[self.device.imps[0].sample]['param1'], copy=True) 
-        data['AbsZ'] = np.array(np.abs(dataImps[self.device.imps[0].sample]['z']), copy=True)
-        data['AuxInput1'] = np.array(dataDemods[self.device.demods[0].sample]['auxin0'], copy=True)
-        
+            self.device.demods[0].sample.subscribe()
+            dataDemods = self.session.poll()
+            self.device.demods[0].sample.unsubscribe()
+            time.sleep(2)
+            
+            self.device.imps[0].sample.subscribe()
+            dataImps = self.session.poll()
+            self.device.imps[0].sample.unsubscribe()
+            time.sleep(2)
+            
+            #  60 x 10^6 samples/s
+            data = dict()
+            data['timestampImps'] = np.array(dataImps[self.device.imps[0].sample]['timestamp'], copy=True)
+            data['timestampDemods'] = np.array(dataDemods[self.device.demods[0].sample]['timestamp'], copy=True)
+            data['ImpedanceRe'] = np.array(dataImps[self.device.imps[0].sample]['param0'], copy=True)
+            data['ImpedanceIm'] = np.array(dataImps[self.device.imps[0].sample]['param1'], copy=True) 
+            data['AbsZ'] = np.array(np.abs(dataImps[self.device.imps[0].sample]['z']), copy=True)
+            data['AuxInput1'] = np.array(dataDemods[self.device.demods[0].sample]['auxin0'], copy=True)
+            
         if plot:
             fig, ax = plt.subplots(ncols=2, nrows=2)
             ax[0,0].plot(dataImps[self.device.imps[0].sample]['timestamp'],dataImps[self.device.imps[0].sample]['param0']) # Impedance (Re)
@@ -197,6 +235,7 @@ class ziDevice:
             # plt.plot(dataDemods[device.demods[0].sample]['timestamp'],dataDemods[device.demods[0].sample]['phase']) # Not sure!
             # plt.plot(dataDemods[device.demods[0].sample]['timestamp'],dataDemods[device.demods[0].sample]['y']) # Not sure!
             plt.show()
+        
         return data
 
 

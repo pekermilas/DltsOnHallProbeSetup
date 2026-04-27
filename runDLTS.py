@@ -41,8 +41,9 @@ if __name__ == '__main__':
     for i in range(len(tempDev.tempGrid)):
         tempDev.goToTemp(tempDev.tempGrid[i])
         time.sleep(1)
-        data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False)
+        data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False, trigger=True)
     # 
 
     # tempDev.disconnTController()
     # impdDev.close()
+    impdDev.session.disconnect_device('dev32271')
