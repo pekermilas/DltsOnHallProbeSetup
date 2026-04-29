@@ -83,19 +83,19 @@ class ziDevice:
                    '54: Input(I) Overload, 53: Input(V) Overload, 52: Trigger Out, 51: Trigger In, 50: DIO', 
                    '3: Demod Theta, 2: Demod R, 1: Demod Y, 0: Demod X']
         self.consts['Threshold Input Signal'] = \
-            input("Please enter Threshold Input Signal (\n" +"\n".join(options) + "\n): ") or 59
+            input("Please enter Threshold Input Signal (\n" +"\n".join(options) + "): ") or 59
 
         self.consts['State Enable Time'] = \
             input("Please enter State Enable Time (s): ") or 0.006
         self.consts['State Disable Time'] = \
             input("Please enter State Disable Time (s): ") or 0.003
         self.consts['Logic Unit Not'] = \
-            input("Please enter Logic Unit Not (0: Off, 1: On ): ") or 1
+            input("Please enter Logic Unit Not (0: Off, 1: On): ") or 1
 
         options = ['0: Demod X, 1: Demod Y,2: Demod R, 3: Demod Theta',
                    '11: TU Filtered Value, 12: Manual, 13: TU Output Value']
         self.consts['Aux Output Signal'] = \
-            input("Please enter Aux Output Signal (\n" +"\n".join(options) + "\n): ") or 13
+            input("Please enter Aux Output Signal (\n" +"\n".join(options) + "): ") or 13
             
         self.consts['Aux Output Scale'] = \
             input("Please enter Aux Output Scale (V): ") or -2
@@ -112,10 +112,10 @@ class ziDevice:
         options = ['0: Off, 1: Osc Phi Demod 2, 36: Threshold 1, 37: Threshold 2',
                    '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
         self.consts['Aux Output Signal'] = \
-            input("Please enter Aux Output Signal (\n" +"\n".join(options) + "\n): ") or 36
+            input("Please enter Aux Output Signal (\n" +"\n".join(options) + "): ") or 36
 
         self.consts['Demodulation rate'] = \
-            input("Please enter Demodulation Rate): ") or 60000
+            input("Please enter Demodulation Rate: ") or 60000
 
         return 0
     
@@ -169,6 +169,7 @@ class ziDevice:
         return 0
     
     def pullData(self, plot=True, trigger=False):
+        data = None
         if trigger:
             daq_module = self.session.modules.daq
             
@@ -176,22 +177,28 @@ class ziDevice:
             daq_module.triggernode('/dev32271/demods/0/sample.TrigOut1')
             daq_module.clearhistory(1)
             daq_module.bandwidth(0)
-            daq_module.grid.cols(2**16)
+            # daq_module.grid.cols(2**16)
+            daq_module.grid.cols(1024)
             daq_module.grid.repetitions(1)
             daq_module.endless(0)
+            self.device.imps[0].enable(True)
             daq_module.subscribe('/dev32271/demods/0/sample.AuxIn0.avg')
             daq_module.subscribe('/dev32271/demods/0/sample.R.avg')
             daq_module.subscribe('/dev32271/imps/0/sample.Param0.avg')
             daq_module.subscribe('/dev32271/imps/0/sample.Param1.avg')
+            daq_module.forcetrigger()
             time.sleep(1)
             
             daq_module.execute()
-            time.sleep(1)
+            time.sleep(10)
             
             allData = daq_module.read()
-            time.sleep(1)
+            time.sleep(5)
             
             daq_module.unsubscribe('*')
+            # print(list(allData))
+            # print(allData)
+            # data = allData
             
             data = dict()
             data['timestampImps'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
@@ -199,8 +206,7 @@ class ziDevice:
             data['ImpedanceRe'] = np.array(list(allData['/dev32271/imps/0/sample.param0.avg'][0])[-4][0], copy=True)
             data['ImpedanceIm'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-4][0], copy=True)
             data['AuxInput1'] = np.array(list(allData['/dev32271/demods/0/sample.auxin0.avg'][0])[-4][0], copy=True)
-            data['AbsZ'] = np.sqrt(data['ImpedanceRe']**2 + data['ImpedanceIM']**2)
-        
+            data['AbsZ'] = np.sqrt(data['ImpedanceRe']**2 + data['ImpedanceIm']**2)
         else:
             self.device.demods[0].enable(True)
             time.sleep(2)
