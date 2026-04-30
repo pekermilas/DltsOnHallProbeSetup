@@ -98,21 +98,20 @@ class ziDevice:
             input("Please enter Aux Output Signal (\n" +"\n".join(options) + "): ") or 13
             
         self.consts['Aux Output Scale'] = \
-            input("Please enter Aux Output Scale (V): ") or -2
+            input("Please enter Aux Output Scale (V): ") or -1
         self.consts['Aux Output Offset'] = \
-            input("Please enter Aux Output Offset (V): ") or -2
+            input("Please enter Aux Output Offset (V): ") or -0.5
         self.consts['Aux Output Lower Limit'] = \
             input("Please enter Aux Output Lower Limit (V): ") or -10
         self.consts['Aux Output Upper Limit'] = \
             input("Please enter Aux Output Upper Limit (V): ") or 0
-
         self.consts['Signal Output Add'] = \
             input("Please enter Signal Output Add (0: False, 1: True): ") or 1
 
         options = ['0: Off, 1: Osc Phi Demod 2, 36: Threshold 1, 37: Threshold 2',
                    '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
-        self.consts['Aux Output Signal'] = \
-            input("Please enter Aux Output Signal (\n" +"\n".join(options) + "): ") or 36
+        self.consts['Trigger Source Signal'] = \
+            input("Please enter Trigger Source Signal (\n" +"\n".join(options) + "): ") or 36
 
         self.consts['Demodulation rate'] = \
             input("Please enter Demodulation Rate: ") or 60000
@@ -136,7 +135,6 @@ class ziDevice:
                                     self.consts['Data Transfer Rate'])
         self.session.daq_server.set('/dev32271/imps/0/mode', 
                                     self.consts['Equivalent Circuit Mode'])
-        
         self.session.daq_server.set('/dev32271/tu/thresholds/0/input', 
                                     self.consts['Threshold Input Signal'])
         self.session.daq_server.set('/dev32271/tu/thresholds/0/activationtime', 
@@ -145,7 +143,6 @@ class ziDevice:
                                     self.consts['State Disable Time'])
         self.session.daq_server.set('/dev32271/tu/logicunits/0/inputs/0/not', 
                                     self.consts['Logic Unit Not'])
-        
         self.session.daq_server.set('/dev32271/auxouts/0/outputselect', 
                                     self.consts['Aux Output Signal'])
         self.session.daq_server.set('/dev32271/auxouts/0/scale', 
@@ -156,19 +153,16 @@ class ziDevice:
                                     self.consts['Aux Output Lower Limit'])
         self.session.daq_server.set('/dev32271/auxouts/0/limitupper', 
                                     self.consts['Aux Output Upper Limit'])
-        
         self.session.daq_server.set('/dev32271/sigouts/0/add', 
                                     self.consts['Signal Output Add'])
-
         self.session.daq_server.set('/dev32271/triggers/out/0/source', 
-                                    self.consts['Aux Output Signal'])
-                
+                                    self.consts['Trigger Source Signal'])
         self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
                                     self.consts['Demodulation rate'])
         
         return 0
     
-    def pullData(self, plot=True, trigger=False):
+    def pullData(self, plot=True, trigger=False, numPoints=1024):
         data = None
         if trigger:
             daq_module = self.session.modules.daq
@@ -178,7 +172,7 @@ class ziDevice:
             daq_module.clearhistory(1)
             daq_module.bandwidth(0)
             # daq_module.grid.cols(2**16)
-            daq_module.grid.cols(1024)
+            daq_module.grid.cols(numPoints)
             daq_module.grid.repetitions(1)
             daq_module.endless(0)
             self.device.imps[0].enable(True)
@@ -234,12 +228,11 @@ class ziDevice:
             
         if plot:
             fig, ax = plt.subplots(ncols=2, nrows=2)
-            ax[0,0].plot(dataImps[self.device.imps[0].sample]['timestamp'],dataImps[self.device.imps[0].sample]['param0']) # Impedance (Re)
-            ax[0,1].plot(dataImps[self.device.imps[0].sample]['timestamp'],dataImps[self.device.imps[0].sample]['param1']) # Impedance (Im)
-            ax[1,0].plot(dataImps[self.device.imps[0].sample]['timestamp'],np.abs(dataImps[self.device.imps[0].sample]['z']))      # Abs(Z)
-            ax[1,1].plot(dataDemods[self.device.demods[0].sample]['timestamp'],dataDemods[self.device.demods[0].sample]['auxin0']) # Aux Input 1
-            # plt.plot(dataDemods[device.demods[0].sample]['timestamp'],dataDemods[device.demods[0].sample]['phase']) # Not sure!
-            # plt.plot(dataDemods[device.demods[0].sample]['timestamp'],dataDemods[device.demods[0].sample]['y']) # Not sure!
+            ax[0,0].plot(data['timestampDemods'],data['AuxInput1']) # Input
+            ax[0,1].plot(data['timestampImps'],data['ImpedanceRe']) # Impedance (Re)
+            ax[1,0].plot(data['timestampImps'],data['ImpedanceIm']) # Impedance (Im)
+            ax[1,1].plot(data['timestampImps'],data['AbsZ']) # Impedance (Im)
+            
             plt.show()
         
         return data
