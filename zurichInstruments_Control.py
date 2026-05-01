@@ -171,7 +171,6 @@ class ziDevice:
             daq_module.triggernode('/dev32271/demods/0/sample.TrigOut1')
             daq_module.clearhistory(1)
             daq_module.bandwidth(0)
-            # daq_module.grid.cols(2**16)
             daq_module.grid.cols(numPoints)
             daq_module.grid.repetitions(1)
             daq_module.endless(0)
@@ -190,13 +189,13 @@ class ziDevice:
             time.sleep(5)
             
             daq_module.unsubscribe('*')
-            # print(list(allData))
-            # print(allData)
-            # data = allData
             
             data = dict()
-            data['timestampImps'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
-            data['timestampDemods'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
+            # FIX ticks here. Triggered data doesn't report ticks. It reports actual times in seconds!!!
+            data['tickStampImps'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
+            data['tickStampDemods'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
+            data['timeStampImps'] = (data['tickStampImps']/(60*10**6)) - (data['tickStampImps']/(60*10**6))[0]
+            data['timeStampDemods'] = (data['tickStampDemods']/(60*10**6)) - (data['tickStampDemods']/(60*10**6))[0]
             data['ImpedanceRe'] = np.array(list(allData['/dev32271/imps/0/sample.param0.avg'][0])[-4][0], copy=True)
             data['ImpedanceIm'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-4][0], copy=True)
             data['AuxInput1'] = np.array(list(allData['/dev32271/demods/0/sample.auxin0.avg'][0])[-4][0], copy=True)
@@ -219,8 +218,10 @@ class ziDevice:
             
             #  60 x 10^6 samples/s
             data = dict()
-            data['timestampImps'] = np.array(dataImps[self.device.imps[0].sample]['timestamp'], copy=True)
-            data['timestampDemods'] = np.array(dataDemods[self.device.demods[0].sample]['timestamp'], copy=True)
+            data['tickStampImps'] = np.array(dataImps[self.device.imps[0].sample]['timestamp'], copy=True)
+            data['tickStampDemods'] = np.array(dataDemods[self.device.demods[0].sample]['timestamp'], copy=True)
+            data['timeStampImps'] = (data['tickStampImps']/(60*10**6)) - (data['tickStampImps']/(60*10**6))[0]
+            data['timeStampDemods'] = (data['tickStampDemods']/(60*10**6)) - (data['tickStampDemods']/(60*10**6))[0]
             data['ImpedanceRe'] = np.array(dataImps[self.device.imps[0].sample]['param0'], copy=True)
             data['ImpedanceIm'] = np.array(dataImps[self.device.imps[0].sample]['param1'], copy=True) 
             data['AbsZ'] = np.array(np.abs(dataImps[self.device.imps[0].sample]['z']), copy=True)
@@ -228,10 +229,10 @@ class ziDevice:
             
         if plot:
             fig, ax = plt.subplots(ncols=2, nrows=2)
-            ax[0,0].plot(data['timestampDemods'],data['AuxInput1']) # Input
-            ax[0,1].plot(data['timestampImps'],data['ImpedanceRe']) # Impedance (Re)
-            ax[1,0].plot(data['timestampImps'],data['ImpedanceIm']) # Impedance (Im)
-            ax[1,1].plot(data['timestampImps'],data['AbsZ']) # Impedance (Im)
+            ax[0,0].plot(data['timeStampDemods'],data['AuxInput1']) # Input
+            ax[0,1].plot(data['timeStampImps'],data['ImpedanceRe']) # Impedance (Re)
+            ax[1,0].plot(data['timeStampImps'],data['ImpedanceIm']) # Impedance (Im)
+            ax[1,1].plot(data['timeStampImps'],data['AbsZ']) # Impedance (Im)
             
             plt.show()
         
