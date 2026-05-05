@@ -39,8 +39,11 @@ if __name__ == '__main__':
     
     # Set impedance analyzer parameters
     impdDev.device.factory_reset()
-    impdDev.getConstants()
-    impdDev.setConstants()
+    impdDev.assignParam()
+    # impdDev.setParams()
+    
+    # a,b,c = impdDev.checkParams()
+    # # print(impdDev.checkParams()[0])
     
     # # Set temperature controller parameters
     # tempDev.setTempGrid()
@@ -60,8 +63,12 @@ if __name__ == '__main__':
     # tempDev.disconnTController()
     # impdDev.session.disconnect_device('dev32271')
 
-    # impdDev.close()
-    data = impdDev.pullData(plot=True, trigger=False, numPoints=2**12)
+
+
+    # # impdDev.close()
+    # data = impdDev.pullData(plot=True, trigger=False, numPoints=2**12)
+
+
 
     # # PLOT TOOLS are needed!!!!
     

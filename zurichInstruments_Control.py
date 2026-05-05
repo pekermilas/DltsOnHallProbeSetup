@@ -44,7 +44,7 @@ class ziDevice:
         self.session = None
         self.device = None
         self.rm = None
-        self.consts = dict()
+        self.params = dict()
         
     def connectDevice(self):
         discovery = zi.ziDiscovery()
@@ -61,168 +61,225 @@ class ziDevice:
         
         return 0
         
-    def getConstants(self):
-        self.consts['Oscillation Frequency'] = \
-            input("Please enter Oscillation Frequency (Hz): ") or 501000
-        self.consts['Max bandwidth'] = \
-            input("Please enter Maximum Bandwidth (Hz): ") or 10000
-        self.consts['Input Control'] = \
-            input("Please enter Input Control (0:Manual, 1:Auto, 2:Current Zone): ") or 0
-        self.consts['Current Range'] = \
-            input("Please enter Input Current Range (A): ") or 0.010
-        self.consts['Voltage Range'] = \
-            input("Please enter Input Voltage Range (V): ") or 3
-        self.consts['Omega Suppression'] = \
-            input("Please enter Omega Suppression (dB): ") or 80
-        self.consts['Data Transfer Rate'] = \
-            input("Please enter Data Transfer Rate (Sa/s): ") or 60000
-        self.consts['Equivalent Circuit Mode'] = \
-            input("Please enter Equivalent Circuit Mode (0: 4-Terminal, 1: 2-Terminal): ") or 0
-
-        options = ['59: TU Output Value, 58: Aux Output Overload, 56: Aux Input Overload, 55: Output Overload', 
-                   '54: Input(I) Overload, 53: Input(V) Overload, 52: Trigger Out, 51: Trigger In, 50: DIO', 
-                   '3: Demod Theta, 2: Demod R, 1: Demod Y, 0: Demod X']
-        self.consts['Threshold Input Signal'] = \
-            input("Please enter Threshold Input Signal (\n" +"\n".join(options) + "): ") or 59
-
-        self.consts['State Enable Time'] = \
-            input("Please enter State Enable Time (s): ") or 0.006
-        self.consts['State Disable Time'] = \
-            input("Please enter State Disable Time (s): ") or 0.003
-        self.consts['Logic Unit Not'] = \
-            input("Please enter Logic Unit Not (0: Off, 1: On): ") or 1
-
-        options = ['0: Demod X, 1: Demod Y,2: Demod R, 3: Demod Theta',
-                   '11: TU Filtered Value, 12: Manual, 13: TU Output Value']
-        self.consts['Aux Output Signal'] = \
-            input("Please enter Aux Output Signal (\n" +"\n".join(options) + "): ") or 13
-            
-        self.consts['Aux Output Scale'] = \
-            input("Please enter Aux Output Scale (V): ") or -1
-        self.consts['Aux Output Offset'] = \
-            input("Please enter Aux Output Offset (V): ") or -0.5
-        self.consts['Aux Output Lower Limit'] = \
-            input("Please enter Aux Output Lower Limit (V): ") or -10
-        self.consts['Aux Output Upper Limit'] = \
-            input("Please enter Aux Output Upper Limit (V): ") or 0
-        self.consts['Signal Output Add'] = \
-            input("Please enter Signal Output Add (0: False, 1: True): ") or 1
-
-        options = ['0: Off, 1: Osc Phi Demod 2, 36: Threshold 1, 37: Threshold 2',
-                   '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
-        self.consts['Trigger Source Signal'] = \
-            input("Please enter Trigger Source Signal (\n" +"\n".join(options) + "): ") or 36
-
-        self.consts['Demodulation rate'] = \
-            input("Please enter Demodulation Rate: ") or 60000
+    def assignParam(self, pName='Oscillation Frequency'):
+        pList = ['Oscillation Frequency', 'Max bandwidth', 'Input Control', 'Current Range',
+                 'Voltage Range', 'Omega Suppression', 'Data Transfer Rate', 'Equivalent Circuit Mode',
+                 'Threshold Input Signal', 'State Enable Time', 'State Disable Time', 'Logic Unit Not',
+                 'Aux Output Signal', 'Aux Output Scale', 'Aux Output Offset', 'Aux Output Lower Limit',
+                 'Aux Output Upper Limit', 'Signal Output Add']
+        if pName in pList:
+            if pName == 'Oscillation Frequency':
+                self.params[pName] = input("Please enter Oscillation Frequency (Hz): ") or 501000
+            if pName == 'Max bandwidth':
+                self.params[pName] = input("Please enter Maximum Bandwidth (Hz): ") or 10000
+            if pName == 'Input Control':
+                self.params[pName] = input("Please enter Input Control (0:Manual, 1:Auto, 2:Current Zone): ") or 0
+            if pName == 'Current Range':
+                self.params[pName] = input("Please enter Input Current Range (A): ") or 0.010
+            if pName == 'Voltage Range':
+                self.params[pName] = input("Please enter Input Voltage Range (V): ") or 3
+            if pName == 'Omega Suppression':
+                self.params[pName] = input("Please enter Omega Suppression (dB): ") or 80
+            if pName == 'Data Transfer Rate':
+                self.params[pName] = input("Please enter Data Transfer Rate (Sa/s): ") or 60000
+            if pName == 'Equivalent Circuit Mode':
+                self.params[pName] = input("Please enter Equivalent Circuit Mode (0: 4-Terminal, 1: 2-Terminal): ") or 0
+            if pName == 'Threshold Input Signal':
+                options = ['59: TU Output Value, 58: Aux Output Overload, 56: Aux Input Overload, 55: Output Overload', 
+                           '54: Input(I) Overload, 53: Input(V) Overload, 52: Trigger Out, 51: Trigger In, 50: DIO', 
+                           '3: Demod Theta, 2: Demod R, 1: Demod Y, 0: Demod X']
+                self.params[pName] = input("Please enter Threshold Input Signal (\n" +"\n".join(options) + "): ") or 59
+            if pName == 'State Enable Time':
+                self.params[pName] = input("Please enter State Enable Time (s): ") or 0.006
+            if pName == 'State Disable Time':
+                self.params[pName] = input("Please enter State Disable Time (s): ") or 0.003
+            if pName == 'Logic Unit Not':
+                self.params[pName] = input("Please enter Logic Unit Not (0: Off, 1: On): ") or 1
+            if pName == 'Aux Output Signal':
+                options = ['0: Demod X, 1: Demod Y,2: Demod R, 3: Demod Theta',
+                           '11: TU Filtered Value, 12: Manual, 13: TU Output Value']
+                self.params[pName] = input("Please enter Aux Output Signal (\n" +"\n".join(options) + "): ") or 13
+            if pName == 'Aux Output Scale':
+                self.params[pName] = input("Please enter Aux Output Scale (V): ") or -1
+            if pName == 'Aux Output Offset':
+                self.params[pName] = input("Please enter Aux Output Offset (V): ") or -0.5
+            if pName == 'Aux Output Lower Limit':
+                self.params[pName] = input("Please enter Aux Output Lower Limit (V): ") or -10
+            if pName == 'Aux Output Upper Limit':
+                self.params[pName] = input("Please enter Aux Output Upper Limit (V): ") or 0
+            if pName == 'Signal Output Add':
+                self.params[pName] = input("Please enter Signal Output Add (0: False, 1: True): ") or 1
+            if pName == 'Trigger Source Signal':
+                options = ['0: Off, 1: Osc Phi Demod 2, 36: Threshold 1, 37: Threshold 2',
+                           '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
+                self.params[pName] = input("Please enter Trigger Source Signal (\n" +"\n".join(options) + "): ") or 36
 
         return 0
     
-    def setConstants(self):
-        self.session.daq_server.set('/dev32271/imps/0/freq', 
-                                    self.consts['Oscillation Frequency'])
-        self.session.daq_server.set('/dev32271/imps/0/maxbandwidth', 
-                                    self.consts['Max bandwidth'])
-        self.session.daq_server.set('/dev32271/imps/0/auto/inputrange', 
-                                    self.consts['Input Control'])
-        self.session.daq_server.set('/dev32271/imps/0/current/range', 
-                                    self.consts['Current Range'])
-        self.session.daq_server.set('/dev32271/imps/0/voltage/range', 
-                                    self.consts['Voltage Range'])
-        self.session.daq_server.set('/dev32271/imps/0/omegasuppression', 
-                                    self.consts['Omega Suppression'])
-        self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
-                                    self.consts['Data Transfer Rate'])
-        self.session.daq_server.set('/dev32271/imps/0/mode', 
-                                    self.consts['Equivalent Circuit Mode'])
-        self.session.daq_server.set('/dev32271/tu/thresholds/0/input', 
-                                    self.consts['Threshold Input Signal'])
-        self.session.daq_server.set('/dev32271/tu/thresholds/0/activationtime', 
-                                    self.consts['State Enable Time'])
-        self.session.daq_server.set('/dev32271/tu/thresholds/0/deactivationtime', 
-                                    self.consts['State Disable Time'])
-        self.session.daq_server.set('/dev32271/tu/logicunits/0/inputs/0/not', 
-                                    self.consts['Logic Unit Not'])
-        self.session.daq_server.set('/dev32271/auxouts/0/outputselect', 
-                                    self.consts['Aux Output Signal'])
-        self.session.daq_server.set('/dev32271/auxouts/0/scale', 
-                                    self.consts['Aux Output Scale'])
-        self.session.daq_server.set('/dev32271/auxouts/0/offset', 
-                                    self.consts['Aux Output Offset'])
-        self.session.daq_server.set('/dev32271/auxouts/0/limitlower', 
-                                    self.consts['Aux Output Lower Limit'])
-        self.session.daq_server.set('/dev32271/auxouts/0/limitupper', 
-                                    self.consts['Aux Output Upper Limit'])
-        self.session.daq_server.set('/dev32271/sigouts/0/add', 
-                                    self.consts['Signal Output Add'])
-        self.session.daq_server.set('/dev32271/triggers/out/0/source', 
-                                    self.consts['Trigger Source Signal'])
-        
-        self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
-                                    self.consts['Demodulation rate'])
-        
-        if not self.session.daq_server.get('/dev32271/imps/0/freq') == self.consts['Oscillation Frequency']:
-            self.session.daq_server.set('/dev32271/imps/0/freq', 
-                                        self.consts['Oscillation Frequency'])
-        if not self.session.daq_server.get('/dev32271/imps/0/maxbandwidth') == self.consts['Max bandwidth']:
-            self.session.daq_server.set('/dev32271/imps/0/maxbandwidth', 
-                                        self.consts['Max bandwidth'])
-        if not self.session.daq_server.get('/dev32271/imps/0/auto/inputrange') == self.consts['Input Control']:
-            self.session.daq_server.set('/dev32271/imps/0/auto/inputrange', 
-                                        self.consts['Input Control'])
-        if not self.session.daq_server.get('/dev32271/imps/0/current/range') == self.consts['Current Range']:
-            self.session.daq_server.set('/dev32271/imps/0/current/range', 
-                                        self.consts['Current Range'])
-        if not self.session.daq_server.get('/dev32271/imps/0/voltage/range') == self.consts['Voltage Range']:
-            self.session.daq_server.set('/dev32271/imps/0/voltage/range', 
-                                        self.consts['Voltage Range'])
-        if not self.session.daq_server.get('/dev32271/imps/0/omegasuppression') == self.consts['Omega Suppression']:
-            self.session.daq_server.set('/dev32271/imps/0/omegasuppression', 
-                                        self.consts['Omega Suppression'])
-        if not self.session.daq_server.get('/dev32271/imps/0/demod/rate') == self.consts['Data Transfer Rate']:
-            self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
-                                        self.consts['Data Transfer Rate'])
-        if not self.session.daq_server.get('/dev32271/imps/0/mode') == self.consts['Equivalent Circuit Mode']:
-            self.session.daq_server.set('/dev32271/imps/0/mode', 
-                                        self.consts['Equivalent Circuit Mode'])
-        if not self.session.daq_server.get('/dev32271/tu/thresholds/0/input') == self.consts['Threshold Input Signal']:
-            self.session.daq_server.set('/dev32271/tu/thresholds/0/input', 
-                                        self.consts['Threshold Input Signal'])
-        if not self.session.daq_server.get('/dev32271/tu/thresholds/0/activationtime') == self.consts['State Enable Time']:
-            self.session.daq_server.set('/dev32271/tu/thresholds/0/activationtime', 
-                                        self.consts['State Enable Time'])
-        if not self.session.daq_server.get('/dev32271/tu/thresholds/0/deactivationtime') == self.consts['State Disable Time']:
-            self.session.daq_server.set('/dev32271/tu/thresholds/0/deactivationtime', 
-                                        self.consts['State Disable Time'])
-        if not self.session.daq_server.get('/dev32271/tu/logicunits/0/inputs/0/not') == self.consts['Logic Unit Not']:
-            self.session.daq_server.set('/dev32271/tu/logicunits/0/inputs/0/not', 
-                                        self.consts['Logic Unit Not'])
-        if not self.session.daq_server.get('/dev32271/auxouts/0/outputselect') == self.consts['Aux Output Signal']:
-            self.session.daq_server.set('/dev32271/auxouts/0/outputselect', 
-                                        self.consts['Aux Output Signal'])
-        if not self.session.daq_server.get('/dev32271/auxouts/0/scale') == self.consts['Aux Output Scale']:
-            self.session.daq_server.set('/dev32271/auxouts/0/scale', 
-                                        self.consts['Aux Output Scale'])
-        if not self.session.daq_server.get('/dev32271/auxouts/0/offset') == self.consts['Aux Output Offset']:
-            self.session.daq_server.set('/dev32271/auxouts/0/offset', 
-                                        self.consts['Aux Output Offset'])
-        if not self.session.daq_server.get('/dev32271/auxouts/0/limitlower') == self.consts['Aux Output Lower Limit']:
-            self.session.daq_server.set('/dev32271/auxouts/0/limitlower', 
-                                        self.consts['Aux Output Lower Limit'])
-        if not self.session.daq_server.get('/dev32271/auxouts/0/limitupper') == self.consts['Aux Output Upper Limit']:
-            self.session.daq_server.set('/dev32271/auxouts/0/limitupper', 
-                                        self.consts['Aux Output Upper Limit'])
-        if not self.session.daq_server.get('/dev32271/sigouts/0/add') == self.consts['Signal Output Add']:
-            self.session.daq_server.set('/dev32271/sigouts/0/add', 
-                                        self.consts['Signal Output Add'])
-        if not self.session.daq_server.get('/dev32271/triggers/out/0/source') == self.consts['Trigger Source Signal']:
-            self.session.daq_server.set('/dev32271/triggers/out/0/source', 
-                                        self.consts['Trigger Source Signal'])
-        if not self.session.daq_server.get('/dev32271/imps/0/demod/rate') == self.consts['Demodulation rate']:
-            self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
-                                        self.consts['Demodulation rate'])
+    # def setParams(self):
+    #     if len(self.params)>0:
+    #         self.session.daq_server.set('/dev32271/imps/0/freq', 
+    #                                     self.params['Oscillation Frequency'])
+    #         self.session.daq_server.set('/dev32271/imps/0/maxbandwidth', 
+    #                                     self.params['Max bandwidth'])
+    #         self.session.daq_server.set('/dev32271/imps/0/auto/inputrange', 
+    #                                     self.params['Input Control'])
+    #         self.session.daq_server.set('/dev32271/imps/0/current/range', 
+    #                                     self.params['Current Range'])
+    #         self.session.daq_server.set('/dev32271/imps/0/voltage/range', 
+    #                                     self.params['Voltage Range'])
+    #         self.session.daq_server.set('/dev32271/imps/0/omegasuppression', 
+    #                                     self.params['Omega Suppression'])
+    #         self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
+    #                                     self.params['Data Transfer Rate'])
+    #         self.session.daq_server.set('/dev32271/imps/0/mode', 
+    #                                     self.params['Equivalent Circuit Mode'])
+    #         self.session.daq_server.set('/dev32271/tu/thresholds/0/input', 
+    #                                     self.params['Threshold Input Signal'])
+    #         self.session.daq_server.set('/dev32271/tu/thresholds/0/activationtime', 
+    #                                     self.params['State Enable Time'])
+    #         self.session.daq_server.set('/dev32271/tu/thresholds/0/deactivationtime', 
+    #                                     self.params['State Disable Time'])
+    #         self.session.daq_server.set('/dev32271/tu/logicunits/0/inputs/0/not', 
+    #                                     self.params['Logic Unit Not'])
+    #         self.session.daq_server.set('/dev32271/auxouts/0/outputselect', 
+    #                                     self.params['Aux Output Signal'])
+    #         self.session.daq_server.set('/dev32271/auxouts/0/scale', 
+    #                                     self.params['Aux Output Scale'])
+    #         self.session.daq_server.set('/dev32271/auxouts/0/offset', 
+    #                                     self.params['Aux Output Offset'])
+    #         self.session.daq_server.set('/dev32271/auxouts/0/limitlower', 
+    #                                     self.params['Aux Output Lower Limit'])
+    #         self.session.daq_server.set('/dev32271/auxouts/0/limitupper', 
+    #                                     self.params['Aux Output Upper Limit'])
+    #         self.session.daq_server.set('/dev32271/sigouts/0/add', 
+    #                                     self.params['Signal Output Add'])
+    #         self.session.daq_server.set('/dev32271/triggers/out/0/source', 
+    #                                     self.params['Trigger Source Signal'])
+    #     else:
+    #         print("Run getConstants first!")
             
-        return 0
+    #     return 0
+
+    # def checkParams(self):
+    #     givenParams = self.params.copy()
+    #     inuseParams = dict.fromkeys(givenParams.keys(), 0)
+    #     if len(self.params)>0:
+    #         inuseParams[list(givenParams.keys())[0]] = \
+    #             self.session.daq_server.get('*')['dev32271']['imps']['0']['freq']['value'][0]
+    #         inuseParams[list(givenParams.keys())[1]] = \
+    #             self.session.daq_server.get('*')['dev32271']['imps']['0']['maxbandwidth']['value'][0]
+    #         inuseParams[list(givenParams.keys())[2]] = \
+    #             self.session.daq_server.get('*')['dev32271']['imps']['0']['auto']['inputrange']['value'][0]
+    #         inuseParams[list(givenParams.keys())[3]] = \
+    #             self.session.daq_server.get('*')['dev32271']['imps']['0']['current']['range']['value'][0]
+    #         inuseParams[list(givenParams.keys())[4]] = \
+    #             self.session.daq_server.get('*')['dev32271']['imps']['0']['voltage']['range']['value'][0]
+    #         inuseParams[list(givenParams.keys())[5]] = \
+    #             self.session.daq_server.get('*')['dev32271']['imps']['0']['omegasuppression']['value'][0]
+    #         inuseParams[list(givenParams.keys())[6]] = \
+    #             self.session.daq_server.get('*')['dev32271']['imps']['0']['demod']['rate']['value'][0]
+    #         inuseParams[list(givenParams.keys())[7]] = \
+    #             self.session.daq_server.get('*')['dev32271']['imps']['0']['mode']['value'][0]
+    #         inuseParams[list(givenParams.keys())[8]] = \
+    #             self.session.daq_server.get('*')['dev32271']['tu']['thresholds']['0']['input']['value'][0]
+    #         inuseParams[list(givenParams.keys())[9]] = \
+    #             self.session.daq_server.get('*')['dev32271']['tu']['thresholds']['0']['activationtime']['value'][0]
+    #         inuseParams[list(givenParams.keys())[10]] = \
+    #             self.session.daq_server.get('*')['dev32271']['tu']['thresholds']['0']['deactivationtime']['value'][0]
+    #         inuseParams[list(givenParams.keys())[11]] = \
+    #             self.session.daq_server.get('*')['dev32271']['tu']['logicunits']['0']['inputs']['0']['not']['value'][0]
+    #         inuseParams[list(givenParams.keys())[12]] = \
+    #             self.session.daq_server.get('*')['dev32271']['auxouts']['0']['outputselect']['value'][0]
+    #         inuseParams[list(givenParams.keys())[13]] = \
+    #             self.session.daq_server.get('*')['dev32271']['auxouts']['0']['scale']['value'][0]
+    #         inuseParams[list(givenParams.keys())[14]] = \
+    #             self.session.daq_server.get('*')['dev32271']['auxouts']['0']['offset']['value'][0]
+    #         inuseParams[list(givenParams.keys())[15]] = \
+    #             self.session.daq_server.get('*')['dev32271']['auxouts']['0']['limitlower']['value'][0]
+    #         inuseParams[list(givenParams.keys())[16]] = \
+    #             self.session.daq_server.get('*')['dev32271']['auxouts']['0']['limitupper']['value'][0]
+    #         inuseParams[list(givenParams.keys())[17]] = \
+    #             self.session.daq_server.get('*')['dev32271']['sigouts']['0']['add']['value'][0]
+    #         inuseParams[list(givenParams.keys())[18]] = \
+    #             self.session.daq_server.get('*')['dev32271']['triggers']['out']['0']['source']['value'][0]
+    #     else:
+    #         print("Assign paramters first!")
+        
+    #     match = np.array([True] * len(list(givenParams.keys())))
+    #     for i in range(len(list(givenParams.keys()))):
+    #         k = list(givenParams.keys())[i]
+    #         if not np.isclose(inuseParams[k], givenParams[k], rtol=1e-03):
+    #             match[i] = False
+        
+    #     return match, givenParams, inuseParams
+
+    # # def reloadParams(self):
+    # #     if len(self.consts)>0:
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/freq') == self.consts['Oscillation Frequency']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/freq', 
+    # #                                         self.consts['Oscillation Frequency'])
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/maxbandwidth') == self.consts['Max bandwidth']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/maxbandwidth', 
+    # #                                         self.consts['Max bandwidth'])
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/auto/inputrange') == self.consts['Input Control']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/auto/inputrange', 
+    # #                                         self.consts['Input Control'])
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/current/range') == self.consts['Current Range']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/current/range', 
+    # #                                         self.consts['Current Range'])
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/voltage/range') == self.consts['Voltage Range']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/voltage/range', 
+    # #                                         self.consts['Voltage Range'])
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/omegasuppression') == self.consts['Omega Suppression']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/omegasuppression', 
+    # #                                         self.consts['Omega Suppression'])
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/demod/rate') == self.consts['Data Transfer Rate']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
+    # #                                         self.consts['Data Transfer Rate'])
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/mode') == self.consts['Equivalent Circuit Mode']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/mode', 
+    # #                                         self.consts['Equivalent Circuit Mode'])
+    # #         if not self.session.daq_server.get('/dev32271/tu/thresholds/0/input') == self.consts['Threshold Input Signal']:
+    # #             self.session.daq_server.set('/dev32271/tu/thresholds/0/input', 
+    # #                                         self.consts['Threshold Input Signal'])
+    # #         if not self.session.daq_server.get('/dev32271/tu/thresholds/0/activationtime') == self.consts['State Enable Time']:
+    # #             self.session.daq_server.set('/dev32271/tu/thresholds/0/activationtime', 
+    # #                                         self.consts['State Enable Time'])
+    # #         if not self.session.daq_server.get('/dev32271/tu/thresholds/0/deactivationtime') == self.consts['State Disable Time']:
+    # #             self.session.daq_server.set('/dev32271/tu/thresholds/0/deactivationtime', 
+    # #                                         self.consts['State Disable Time'])
+    # #         if not self.session.daq_server.get('/dev32271/tu/logicunits/0/inputs/0/not') == self.consts['Logic Unit Not']:
+    # #             self.session.daq_server.set('/dev32271/tu/logicunits/0/inputs/0/not', 
+    # #                                         self.consts['Logic Unit Not'])
+    # #         if not self.session.daq_server.get('/dev32271/auxouts/0/outputselect') == self.consts['Aux Output Signal']:
+    # #             self.session.daq_server.set('/dev32271/auxouts/0/outputselect', 
+    # #                                         self.consts['Aux Output Signal'])
+    # #         if not self.session.daq_server.get('/dev32271/auxouts/0/scale') == self.consts['Aux Output Scale']:
+    # #             self.session.daq_server.set('/dev32271/auxouts/0/scale', 
+    # #                                         self.consts['Aux Output Scale'])
+    # #         if not self.session.daq_server.get('/dev32271/auxouts/0/offset') == self.consts['Aux Output Offset']:
+    # #             self.session.daq_server.set('/dev32271/auxouts/0/offset', 
+    # #                                         self.consts['Aux Output Offset'])
+    # #         if not self.session.daq_server.get('/dev32271/auxouts/0/limitlower') == self.consts['Aux Output Lower Limit']:
+    # #             self.session.daq_server.set('/dev32271/auxouts/0/limitlower', 
+    # #                                         self.consts['Aux Output Lower Limit'])
+    # #         if not self.session.daq_server.get('/dev32271/auxouts/0/limitupper') == self.consts['Aux Output Upper Limit']:
+    # #             self.session.daq_server.set('/dev32271/auxouts/0/limitupper', 
+    # #                                         self.consts['Aux Output Upper Limit'])
+    # #         if not self.session.daq_server.get('/dev32271/sigouts/0/add') == self.consts['Signal Output Add']:
+    # #             self.session.daq_server.set('/dev32271/sigouts/0/add', 
+    # #                                         self.consts['Signal Output Add'])
+    # #         if not self.session.daq_server.get('/dev32271/triggers/out/0/source') == self.consts['Trigger Source Signal']:
+    # #             self.session.daq_server.set('/dev32271/triggers/out/0/source', 
+    # #                                         self.consts['Trigger Source Signal'])
+    # #         if not self.session.daq_server.get('/dev32271/imps/0/demod/rate') == self.consts['Demodulation rate']:
+    # #             self.session.daq_server.set('/dev32271/imps/0/demod/rate', 
+    # #                                         self.consts['Demodulation rate'])
+    # #     else:
+    # #         print("Assign constants first!")
+            
+    # #     return 0
     
     def pullData(self, plot=True, trigger=False, numPoints=1024):
         data = None
