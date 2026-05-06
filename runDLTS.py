@@ -20,48 +20,45 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import json
+from pathlib import Path
 
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
 
-class NumpyEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super().default(obj)
+# class NumpyEncoder(json.JSONEncoder):
+#     def default(self, obj):
+#         if isinstance(obj, np.ndarray):
+#             return obj.tolist()
+#         return super().default(obj)
 
 if __name__ == '__main__':
     
-    # tempDev = tsC.mK2000B()
-    # tempDev.connectTempController()
+    tempDev = tsC.mK2000B()
+    tempDev.connectTempController()
     impdDev = ziC.ziDevice()
     impdDev.connectDevice()
     
     # Set impedance analyzer parameters
     impdDev.device.factory_reset()
-    impdDev.assignParam()
-    # impdDev.setParams()
+    impdDev.loadParams()
     
-    # a,b,c = impdDev.checkParams()
-    # # print(impdDev.checkParams()[0])
+    # Set temperature controller parameters
+    tempDev.setTempGrid()
     
-    # # Set temperature controller parameters
-    # tempDev.setTempGrid()
-    
-    # data = dict()
-    # for i in range(len(tempDev.tempGrid)):
-    #     tempDev.goToTemp(tempDev.tempGrid[i])
-    #     time.sleep(1)
-    #     data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False, trigger=True, numPoints=2**12)
+    data = dict()
+    for i in range(len(tempDev.tempGrid)):
+        tempDev.goToTemp(tempDev.tempGrid[i])
+        time.sleep(1)
+        impdDev.reloadParams()
+        data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False, trigger=True, numPoints=2**12)
 
-    # fName = 'C:/Users/spencer/Desktop/DATA/DLTS/05012026/readable.txt'    
-
-    # with open(fName, 'w') as f:
-    #     json.dump(data, f, cls=NumpyEncoder, indent=4)
+    fName = Path('C:/Users/spencer/Desktop/DATA/DLTS/05062026/readable.txt')
     
-    # tempDev.goToRoomTemp(Tr=30)
-    # tempDev.disconnTController()
-    # impdDev.session.disconnect_device('dev32271')
+    impdDev.writeData(data, fName)
+    
+    tempDev.goToRoomTemp(Tr=30)
+    tempDev.disconnTController()
+    impdDev.session.disconnect_device('dev32271')
 
 
 
