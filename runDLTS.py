@@ -24,6 +24,7 @@ from pathlib import Path
 
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
+import impedanceAnalysis_Tools as iaT
 
 # class NumpyEncoder(json.JSONEncoder):
 #     def default(self, obj):
@@ -52,7 +53,7 @@ if __name__ == '__main__':
         impdDev.reloadParams()
         data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False, trigger=True, numPoints=2**12)
 
-    fName = Path('C:/Users/spencer/Desktop/DATA/DLTS/05062026/readable.txt')
+    fName = 'C:/Users/spencer/Desktop/DATA/DLTS/05062026/readable.txt'
     
     impdDev.writeData(data, fName)
     
@@ -60,7 +61,8 @@ if __name__ == '__main__':
     tempDev.disconnTController()
     impdDev.session.disconnect_device('dev32271')
 
-
+    data = iaT.impdData(fName)
+    data.readData()
 
     # # impdDev.close()
     # data = impdDev.pullData(plot=True, trigger=False, numPoints=2**12)

@@ -67,7 +67,6 @@ class ziDevice:
         self.device = self.session.connect_device(self.devSerial)
         return 0
 
-        
     def assignParam(self, pName='Oscillation Frequency'):
         if pName in list(self.params):
             if pName == 'Oscillation Frequency':
@@ -360,11 +359,64 @@ class ziDevice:
         return 0
     
     def writeData(self, data, fName):
-        fName.parent.mkdir(parents=True, exist_ok=True)
-        with open(fName, 'w') as f:
+        fileName = Path(fName)
+        fileName.parent.mkdir(parents=True, exist_ok=True)
+        with open(fileName, 'w') as f:
             json.dump(data, f, indent=4, default=self.defaultJsonConverter)
         return 0
 
+    def runSweep(self, sweepType='freq'):
+        data = None
+        sweep_module = self.session.modules.sweeper
+        sweep_module.device('dev32271')
+        
+        if sweepType=='freq':
+            sweep_module.gridnode('/dev32271/oscs/0/freq')
+            sweep_module.start(10)
+            sweep_module.stop(510000)
+        if sweepType=='cv':
+            sweep_module.gridnode('/dev32271/auxouts/0/offset')
+            sweep_module.start(0)
+            sweep_module.stop(1)
+        
+        sweep_module.samplecount(200)
+        sweep_module.xmapping(0)
+        sweep_module.filtermode(0)
+        sweep_module.endless(0)
+        sweep_module.settling.inaccuracy(0.01)
+        sweep_module.averaging.sample(20)
+        sweep_module.averaging.tc(15)
+        sweep_module.averaging.time(0.1)
+        sweep_module.bandwidth(10)
+        sweep_module.maxbandwidth(100)
+        sweep_module.bandwidthoverlap(1)
+        sweep_module.omegasuppression(80)
+        sweep_module.order(8)
+
+        self.device.imps[0].enable(True)
+        
+        sweep_module.subscribe('/dev32271/oscs/0/freq')
+        sweep_module.subscribe('/dev32271/auxouts/0/offset')
+        sweep_module.subscribe('/dev32271/imps/0/sample')
+        sweep_module.execute()
+        
+        while sweep_module.progress()<1.0:
+            print(sweep_module.progress())
+            time.sleep(1)
+        allData = sweep_module.read()
+        time.sleep(1)
+        # sweep_module.finish()
+        sweep_module.unsubscribe('*')
+
+        # list(a['/dev32271/imps/0/sample'][0][0])
+        # a['/dev32271/imps/0/sample'][0][0]['frequency']
+        
+        d = allData['/dev32271/imps/0/sample'][0][0]
+        
+        data = allData
+        
+        # CREATE A CSV FILE FROM SWEEP DATA AND COMPARE IT WITH THIS!!!
+        return data, d
 
 
 

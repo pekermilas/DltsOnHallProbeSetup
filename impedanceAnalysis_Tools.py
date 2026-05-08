@@ -20,7 +20,7 @@ import instecTempStage_Control as tsC
 
 class impdData:
     def __init__(self, fName):
-        self.fileName = fName or 'dev32271'
+        self.fileName = fName or 'C:/Users/spencer/Desktop/DATA/DLTS/dataTestFile.txt'
         self.dataValues = None
         self.dataTemps = None
         self.dataSignals = None
