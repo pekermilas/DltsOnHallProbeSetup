@@ -61,8 +61,10 @@ if __name__ == '__main__':
     tempDev.disconnTController()
     impdDev.session.disconnect_device('dev32271')
 
-    data = iaT.impdData(fName)
+    data = iaT.impdData()
     data.readData()
+    # fExcite will replace 'Oscillation Frequency'!!!
+    fExcite = wellBehaveFrequencies(fUpper, fLower)
 
     # # impdDev.close()
     # data = impdDev.pullData(plot=True, trigger=False, numPoints=2**12)
