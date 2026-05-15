@@ -309,8 +309,10 @@ class ziDevice:
             # FIX ticks here. Triggered data doesn't report ticks. It reports actual times in seconds!!!
             data['tickStampImps'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
             data['tickStampDemods'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
-            data['timeStampImps'] = (data['tickStampImps']/(60*10**6)) - (data['tickStampImps']/(60*10**6))[0]
-            data['timeStampDemods'] = (data['tickStampDemods']/(60*10**6)) - (data['tickStampDemods']/(60*10**6))[0]
+            # data['timeStampImps'] = (data['tickStampImps']/(60*10**6)) - (data['tickStampImps']/(60*10**6))[0]
+            # data['timeStampDemods'] = (data['tickStampDemods']/(60*10**6)) - (data['tickStampDemods']/(60*10**6))[0]
+            data['timeStampImps'] = np.array(data['tickStampImps'], copy=True)
+            data['timeStampDemods'] = np.array(data['tickStampDemods'], copy=True)
             data['ImpedanceRe'] = np.array(list(allData['/dev32271/imps/0/sample.param0.avg'][0])[-4][0], copy=True)
             data['ImpedanceIm'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-4][0], copy=True)
             data['AuxInput1'] = np.array(list(allData['/dev32271/demods/0/sample.auxin0.avg'][0])[-4][0], copy=True)

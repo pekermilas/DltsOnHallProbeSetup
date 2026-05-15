@@ -15,6 +15,7 @@ import pandas as pd
 from tkinter.filedialog import askopenfilename
 from scipy.interpolate import make_splrep
 import json
+from sklearn.mixture import GaussianMixture
 
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
@@ -86,9 +87,14 @@ class impdData:
                 print("Data is not a sweep!!!")
                 return 1
             
-            
-            
-            
+    def findDataLevels(self):
+        scale = np.min(self.dataValues['ImpedanceIm'])
+        d = np.array(self.dataValues['ImpedanceIm']/scale, copy=True)
+        d = d.reshape(-1, 1)
+        gmm = GaussianMixture(n_components=2, random_state=0)
+        gmm.fit(d)
+        m = gmm.means_.flatten()*scale
+        return m
             
             
             
