@@ -23,6 +23,7 @@ import instecTempStage_Control as tsC
 class impdData:
     def __init__(self, fName=None):
         self.fileName = fName
+        self.rootFolder = None
         self.dataValues = None
         self.dataTemps = None
         self.dataSignals = None

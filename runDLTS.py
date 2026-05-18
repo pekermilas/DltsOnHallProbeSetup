@@ -46,17 +46,28 @@ if __name__ == '__main__':
     # Set temperature controller parameters
     tempDev.setTempGrid()
     
-    data = dict()
+    # data = dict()
+    # for i in range(len(tempDev.tempGrid)):
+    #     tempDev.goToTemp(tempDev.tempGrid[i])
+    #     time.sleep(1)
+    #     impdDev.reloadParams()
+    #     data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False, trigger=True, numPoints=2**12)
+
+    # fName = 'C:/Users/spencer/Desktop/DATA/DLTS/05062026/readable.txt'
+    
+    # impdDev.writeData(data, fName)
+    
+    
+    rootFolder = 'C:/Users/spencer/Desktop/DATA/DLTS/05182026/'
     for i in range(len(tempDev.tempGrid)):
         tempDev.goToTemp(tempDev.tempGrid[i])
         time.sleep(1)
         impdDev.reloadParams()
-        data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False, trigger=True, numPoints=2**12)
-
-    fName = 'C:/Users/spencer/Desktop/DATA/DLTS/05062026/readable.txt'
-    
-    impdDev.writeData(data, fName)
-    
+        
+        fName = str(tempDev.tempGrid[i]).replace('.','p')+'.txt'
+        data = impdDev.pullData(plot=False, trigger=True, numPoints=2**12)
+        impdDev.writeData(data, rootFolder+fName)
+        
     tempDev.goToRoomTemp(Tr=30)
     tempDev.disconnTController()
     impdDev.session.disconnect_device('dev32271')
