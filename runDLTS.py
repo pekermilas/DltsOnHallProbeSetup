@@ -59,15 +59,34 @@ if __name__ == '__main__':
     
     
     rootFolder = 'C:/Users/spencer/Desktop/DATA/DLTS/05182026/'
+    fName = 'test.h5'
+
+    f = h5py.File(rootFolder+fName, 'w')
+    dltsData = f.create_dataset('dlts', shape=(len(tempDev.tempGrid), 6, numPoints ), 
+                                dtype='float32', compression="gzip", 
+                                compression_opts=9)
+        
     for i in range(len(tempDev.tempGrid)):
         tempDev.goToTemp(tempDev.tempGrid[i])
         time.sleep(1)
         impdDev.reloadParams()
         
-        fName = str(tempDev.tempGrid[i]).replace('.','p')+'.txt'
-        data = impdDev.pullData(plot=False, trigger=True, numPoints=2**12)
-        impdDev.writeData(data, rootFolder+fName)
-        
+        numPoints = 2**12
+        fileName = rootFolder+fName
+        data = impdDev.pullData(plot=False, trigger=True, numPoints=numPoints)
+        shape = [len(tempDev.tempGrid), 6, numPoints]
+        if i==0:
+            impdDev.writeDataH5(data, fileName, i, shape, start=True, finish=False)
+        if i==len(tempDev.tempGrid)-1: 
+            impdDev.writeDataH5(data, fileName, i, shape, start=False, finish=True)
+        if (i>0 and i<len(tempDev.tempGrid)-1):
+            impdDev.writeDataH5(data, fileName, i, shape, start=False, finish=False)
+            
+        # fName = str(tempDev.tempGrid[i]).replace('.','p')+'.txt'
+        # impdDev.writeDataJson(data, rootFolder+fName)
+    
+    f.close()
+    
     tempDev.goToRoomTemp(Tr=30)
     tempDev.disconnTController()
     impdDev.session.disconnect_device('dev32271')
@@ -79,7 +98,6 @@ if __name__ == '__main__':
 
     # # impdDev.close()
     # data = impdDev.pullData(plot=True, trigger=False, numPoints=2**12)
-
 
 
     # # PLOT TOOLS are needed!!!!

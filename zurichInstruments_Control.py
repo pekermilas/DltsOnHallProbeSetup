@@ -306,11 +306,8 @@ class ziDevice:
             daq_module.unsubscribe('*')
             
             data = dict()
-            # FIX ticks here. Triggered data doesn't report ticks. It reports actual times in seconds!!!
             data['tickStampImps'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
             data['tickStampDemods'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
-            # data['timeStampImps'] = (data['tickStampImps']/(60*10**6)) - (data['tickStampImps']/(60*10**6))[0]
-            # data['timeStampDemods'] = (data['tickStampDemods']/(60*10**6)) - (data['tickStampDemods']/(60*10**6))[0]
             data['timeStampImps'] = np.array(data['tickStampImps'], copy=True)
             data['timeStampDemods'] = np.array(data['tickStampDemods'], copy=True)
             data['ImpedanceRe'] = np.array(list(allData['/dev32271/imps/0/sample.param0.avg'][0])[-4][0], copy=True)
@@ -360,13 +357,33 @@ class ziDevice:
         raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
         return 0
     
-    def writeData(self, data, fName):
+    def writeDataJson(self, data, fName):
         fileName = Path(fName)
         fileName.parent.mkdir(parents=True, exist_ok=True)
         with open(fileName, 'w') as f:
             json.dump(data, f, indent=4, default=self.defaultJsonConverter)
         return 0
 
+    def writeDataH5(self, data, fName, idx, shape=[1,6,1], start=False, finish=False):
+
+        [d1, d2, d3] = shape
+        if start:
+            f = h5py.File(fName, 'w')
+            dltsData = f.create_dataset('dlts', shape=(d1, d2, d3), 
+                                        dtype='float32', compression="gzip", 
+                                        compression_opts=9)
+        dltsData[idx,0] = data['tickStampImps']
+        dltsData[idx,1] = data['tickStampDemods']
+        dltsData[idx,2] = data['timeStampImps']
+        dltsData[idx,3] = data['timeStampDemods']
+        dltsData[idx,4] = data['ImpedanceRe']
+        dltsData[idx,5] = data['ImpedanceIm']
+        dltsData[idx,6] = data['AbsZ']
+        dltsData[idx,7] = data['AuxInput1']
+        if stop:
+            f.close()
+        return 0
+    
     def runSweep(self, sweepType='freq'):
         data = None
         sweep_module = self.session.modules.sweeper
