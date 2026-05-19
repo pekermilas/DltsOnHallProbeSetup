@@ -131,3 +131,35 @@ if __name__ == '__main__':
     # ax2.set_ylabel('Secondary Axis', color='tab:red')
     
     # plt.show()
+    
+    # Batch process!!!
+    # nm = np.arange(30, 125, 5)
+    # data = dict()
+
+    # for i in range(19):
+    #     d = iaT.impdData()
+    #     d.readData()
+    #     data[nm[i]] = d.dataValues
+        
+    # plt.plot(data[30]['tickStampImps'], data[30]['ImpedanceIm'])
+
+
+    # for i in range(19):
+    #     if i==0:
+    #         x = np.array(data[list(data)[i]]['tickStampImps'])
+    #         y = np.array(data[list(data)[i]]['ImpedanceIm'])
+    #         y = y[(x<0.0045) & (x>0.0005)]
+    #         x = x[(x<0.0045) & (x>0.0005)]
+    #     else:
+    #         xt = np.array(data[list(data)[i]]['tickStampImps'])
+    #         yt = np.array(data[list(data)[i]]['ImpedanceIm'])
+    #         ytt = yt[(xt<0.0045) & (xt>0.0005)]
+    #         xtt = xt[(xt<0.0045) & (xt>0.0005)]
+            
+    #         x = np.column_stack((x, xtt))
+    #         y = np.column_stack((y, ytt))
+
+    # x[(x[:,0]<0.0045) & (x[:,0]>0.0005),0]
+
+
+    # 0.0010264 0.0010268
