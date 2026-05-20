@@ -174,9 +174,10 @@ if __name__ == '__main__':
     # for i in range(19):
     #     plt.plot(Z[:,i])
     
-    # plt.plot(np.max(Z,axis=0))
-            
-        
+    # # plt.plot(nm+273, np.max(Z,axis=0))
+    # peaks, properties = find_peaks(Z[:,0], prominence=(1.0e-12, 2.443489417030587e-12))
+    # plt.plot(Z[:,0])
+    # plt.plot(peaks, Z[peaks,0], "x")
 
     # x[(x[:,0]<0.0045) & (x[:,0]>0.0005),0]
 
