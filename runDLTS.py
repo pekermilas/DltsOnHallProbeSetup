@@ -158,6 +158,25 @@ if __name__ == '__main__':
             
     #         x = np.column_stack((x, xtt))
     #         y = np.column_stack((y, ytt))
+    
+    # import itertools
+    
+    # lidx = np.argmin(y[1:,0]-y[:-1,0])+3
+    # hidx = np.argmax(y[1:,0]-y[:-1,0])-5
+    # arr = np.arange(lidx, hidx+1)
+    # combs = list(itertools.combinations(arr,2))
+    # XY = np.array(combs)
+    # Z = np.zeros((len(XY),19))
+    # for i in range(19):
+    #     for j in range(len(XY)):
+    #         Z[j,i] = y[XY[j,1],i]-y[XY[j,0],i]
+            
+    # for i in range(19):
+    #     plt.plot(Z[:,i])
+    
+    # plt.plot(np.max(Z,axis=0))
+            
+        
 
     # x[(x[:,0]<0.0045) & (x[:,0]>0.0005),0]
 
