@@ -99,6 +99,8 @@ if __name__ == '__main__':
     # # impdDev.close()
     # data = impdDev.pullData(plot=True, trigger=False, numPoints=2**12)
 
+    # IMPLEMENT Delta C as based on a given user TIME input!
+    # IMPLEMENT Sampling through the acquired data, use difference!!!
 
     # # PLOT TOOLS are needed!!!!
     
@@ -181,5 +183,14 @@ if __name__ == '__main__':
 
     # x[(x[:,0]<0.0045) & (x[:,0]>0.0005),0]
 
+    # To plot Delta C over indices as a whole
+    # for i in np.unique(X):
+    #     idx = np.where(X==i)[0]
+    #     plt.plot(XY[idx,1], Z[idx,0])
+
+    # Normalized emission traces
+    for i in range(19):
+        plt.plot(x[:,i], y[:,i]/np.max(y[:,i]), label=str(nm[i]))
+    plt.legend()    
 
     # 0.0010264 0.0010268
