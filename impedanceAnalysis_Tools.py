@@ -95,7 +95,9 @@ class impdData:
         gmm = GaussianMixture(n_components=2, random_state=0)
         gmm.fit(d)
         m = gmm.means_.flatten()*scale
-        return m
+        c = gmm.covariances_.flatten()*scale**2
+        l = gmm.predict(d)
+        return m, c, l
             
             
             

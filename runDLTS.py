@@ -135,13 +135,13 @@ if __name__ == '__main__':
     # plt.show()
     
     # Batch process!!!
-    # nm = np.arange(30, 125, 5)
-    # data = dict()
+    nm = np.arange(30, 125, 5)
+    data = dict()
 
-    # for i in range(19):
-    #     d = iaT.impdData()
-    #     d.readData()
-    #     data[nm[i]] = d.dataValues
+    for i in range(19):
+        d = iaT.impdData()
+        d.readData()
+        data[nm[i]] = d.dataValues
         
     # plt.plot(data[30]['tickStampImps'], data[30]['ImpedanceIm'])
 
@@ -193,4 +193,55 @@ if __name__ == '__main__':
         plt.plot(x[:,i], y[:,i]/np.max(y[:,i]), label=str(nm[i]))
     plt.legend()    
 
+    #Choice of repetition window 
+    m,c,l = data.findDataLevels()
+    plt.scatter(data.dataValues['tickStampImps'], data.dataValues['ImpedanceIm'],c=l, cmap='coolwarm', s=4)
+    
+    plt.hlines(m[1]+0.5*np.sqrt(c[1]),0.0,0.08,linestyles='-.')
+    plt.hlines(m[1]-0.5*np.sqrt(c[1]),0.0,0.08,linestyles='-.')
+    plt.hlines(m[0]-0.5*np.sqrt(c[0]),0.0,0.08,linestyles='-.')
+    plt.hlines(m[0]+0.5*np.sqrt(c[0]),0.0,0.08,linestyles='-.')
+    
+    plt.hlines(m[1]+1*np.sqrt(c[1]),0.0,0.08,linestyles='-')
+    plt.hlines(m[1]-1*np.sqrt(c[1]),0.0,0.08,linestyles='-')
+    plt.hlines(m[0]-1*np.sqrt(c[0]),0.0,0.08,linestyles='-')
+    plt.hlines(m[0]+1*np.sqrt(c[0]),0.0,0.08,linestyles='-')
+    
+    plt.hlines(m[1]+2*np.sqrt(c[1]),0.0,0.08,linestyles='--')
+    plt.hlines(m[1]-2*np.sqrt(c[1]),0.0,0.08,linestyles='--')
+    plt.hlines(m[0]-2*np.sqrt(c[0]),0.0,0.08,linestyles='--')
+    plt.hlines(m[0]+2*np.sqrt(c[0]),0.0,0.08,linestyles='--')
+
+    m,c,l = data.findDataLevels()
+    value = m[1]+0.5*np.sqrt(c[1])    
+    arr = np.array(d.dataValues['ImpedanceIm'])
+    arrx = np.array(d.dataValues['timeStampImps'])
+    k=5
+    idx = np.argsort(np.abs(arr - value))[:k]
+    
+    plt.vlines(arrx[idx], np.min(arr), np.max(arr), colors='red', linestyles='dashed')
+    
+    # a = np.sort(idx)
+    a = np.array([57, 1290, 2524, 3757])
+    xxx = arrx[a[0]:a[1]+1]
+    for i in range(len(a)-1):
+        if i==0:
+            yyy = arr[a[i]:a[i+1]]
+        else:
+            if i==len(a)-1:
+                temp = arr[a[i]:]
+            else:
+                temp = arr[a[i]:a[i+1]]
+            if len(temp>1233):
+                temp=temp[:1233]
+            yyy = np.column_stack((yyy,temp))
+
     # 0.0010264 0.0010268
+    
+    
+    
+    
+    
+    
+    
+     
