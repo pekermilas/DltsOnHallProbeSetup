@@ -145,11 +145,15 @@ class impdData:
         yStd = np.std(y,axis=1)
         
         targetStd = np.min(yStd)*100
-        a = x[yStd<targetStd,0]
-        b = yMean[yStd<targetStd]
-        c = yStd[yStd<targetStd]
+        # BURDAN SONRA EN UZAK IKI ALINACAK NOKTAYI BU&LUP ARALARINDAKINI AL!!!
+        startIdx = np.min(np.where(yStd<targetStd)[0])
+        stopIdx = np.max(np.where(yStd<targetStd)[0])
         
-        return a,b,c
+        a = x[startIdx:stopIdx+1,0]
+        b = yMean[startIdx:stopIdx+1]
+        d = yStd[startIdx:stopIdx+1]
+        
+        return a,b,d
             
             
             

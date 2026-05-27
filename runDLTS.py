@@ -144,7 +144,13 @@ if __name__ == '__main__':
     for i in range(19):
         d = iaT.impdData()
         d.readData()
-        data[nm[i]] = d.dataValues
+        # data[nm[i]] = d.dataValues
+        data[nm[i]] = d
+        
+    for i in range(19):
+        a,b,c = data[nm[i]].sampleEmissions()
+        plt.plot(a,b/np.median(b),'.')
+        print(len(a))
         
     # plt.plot(data[30]['tickStampImps'], data[30]['ImpedanceIm'])
 
@@ -248,6 +254,8 @@ if __name__ == '__main__':
             if len(temp>1233):
                 temp=temp[:1233]
             yyy = np.column_stack((yyy,temp))
+    
+
 
     # 0.0010264 0.0010268
     
