@@ -21,6 +21,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import json
 from pathlib import Path
+import os
+import h5py
+os.environ["LOKY_MAX_CPU_COUNT"] = "4"
 
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
@@ -62,7 +65,7 @@ if __name__ == '__main__':
     fName = 'test.h5'
 
     f = h5py.File(rootFolder+fName, 'w')
-    dltsData = f.create_dataset('dlts', shape=(len(tempDev.tempGrid), 6, numPoints ), 
+    dltsData = f.create_dataset('dlts', shape=(len(tempDev.tempGrid), 6, numPoints), 
                                 dtype='float32', compression="gzip", 
                                 compression_opts=9)
         
@@ -197,6 +200,16 @@ if __name__ == '__main__':
     m,c,l = data.findDataLevels()
     plt.scatter(data.dataValues['tickStampImps'], data.dataValues['ImpedanceIm'],c=l, cmap='coolwarm', s=4)
     
+    for i in range(len(l)):
+        if i==0:
+            idx = [0]
+            val = [l[0]]
+        else:
+            if not l[i]==val[-1]:
+                idx.append(i)
+                val.append(l[i])
+            
+        
     plt.hlines(m[1]+0.5*np.sqrt(c[1]),0.0,0.08,linestyles='-.')
     plt.hlines(m[1]-0.5*np.sqrt(c[1]),0.0,0.08,linestyles='-.')
     plt.hlines(m[0]-0.5*np.sqrt(c[0]),0.0,0.08,linestyles='-.')

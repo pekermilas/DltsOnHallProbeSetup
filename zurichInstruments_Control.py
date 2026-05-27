@@ -38,6 +38,7 @@ import pandas as pd
 import json
 import os
 from pathlib import Path
+import h5py
 
 class ziDevice:
 
@@ -380,7 +381,7 @@ class ziDevice:
         dltsData[idx,5] = data['ImpedanceIm']
         dltsData[idx,6] = data['AbsZ']
         dltsData[idx,7] = data['AuxInput1']
-        if stop:
+        if finish:
             f.close()
         return 0
     

@@ -16,6 +16,9 @@ from tkinter.filedialog import askopenfilename
 from scipy.interpolate import make_splrep
 import json
 from sklearn.mixture import GaussianMixture
+import h5py
+import statistics
+from uncertainties import unumpy
 
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
@@ -99,7 +102,54 @@ class impdData:
         l = gmm.predict(d)
         return m, c, l
             
-            
+    def sampleEmissions(self, showLevels=False):
+        m,c,l = self.findDataLevels()
+        if showLevels:
+            plt.scatter(self.dataValues['timeStampImps'], 
+                        self.dataValues['ImpedanceIm'],c=l, 
+                        cmap='coolwarm', s=4)
+        for i in range(len(l)):
+            if i==0:
+                idx = [0]
+                val = [l[0]]
+            else:
+                if not l[i]==val[-1]:
+                    idx.append(i)
+                    val.append(l[i])
+        diffs = []
+        pairs = []
+        for i in range(len(val)):
+            if (val[i]==1) and (i+1<len(idx)):
+                diffs.append(idx[i+1]-idx[i])
+                pairs.append([idx[i],idx[i+1]])
+        
+        commonLength = statistics.mode(np.array(diffs))
+        idx = np.array(pairs)[np.where(np.array(diffs)==commonLength)[0]]
+        if len(idx)>0:
+            if len(idx)==1:
+                y = np.array(self.dataValues['ImpedanceIm'][idx[0]:idx[1]])
+                x = np.array(self.dataValues['timeStampImps'][idx[0]:idx[1]])
+                x = x - x[0]
+            if len(idx)>1:
+                y = np.array(self.dataValues['ImpedanceIm'][idx[0][0]:idx[0][1]])
+                x = np.array(self.dataValues['timeStampImps'][idx[0][0]:idx[0][1]])
+                x = x - x[0] 
+                for i in range(1,len(idx)):
+                    temp = np.array(self.dataValues['ImpedanceIm'][idx[i][0]:idx[i][1]])
+                    y = np.column_stack((y,temp))
+                    temp = np.array(self.dataValues['timeStampImps'][idx[i][0]:idx[i][1]])
+                    temp = temp - temp[0]
+                    x = np.column_stack((x,temp))
+        
+        yMean = np.mean(y,axis=1)
+        yStd = np.std(y,axis=1)
+        
+        targetStd = np.min(yStd)*100
+        a = x[yStd<targetStd,0]
+        b = yMean[yStd<targetStd]
+        c = yStd[yStd<targetStd]
+        
+        return a,b,c
             
             
             
