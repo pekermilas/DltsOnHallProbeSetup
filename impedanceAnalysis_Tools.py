@@ -13,12 +13,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from tkinter.filedialog import askopenfilename
-from scipy.interpolate import make_splrep
+from scipy.interpolate import make_splrep, CubicSpline
 import json
 from sklearn.mixture import GaussianMixture
 import h5py
 import statistics
-from uncertainties import unumpy
+from uncertainties import unumpy, ufloat
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
 
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
@@ -154,8 +156,98 @@ class impdData:
         d = yStd[startIdx:stopIdx+1]
         
         return a,b,d
-            
-            
+
+    @staticmethod
+    def find_nearest(array, value):
+        array = np.asarray(array)
+        idx = (np.abs(array - value)).argmin()
+        return idx, array[idx]
+    
+    def calculateDeltaCapacitance(self, x, y, err, window=0.001, minT1=0, maxT1=0):
+        yCS = CubicSpline(x, y, bc_type='natural')
+        errCS = CubicSpline(x, err, bc_type='natural')
+        if window < x[-1]-x[0]:
+            if (minT1==0) and (maxT1==0):
+                p0 = yCS(x[0])
+                p1 = yCS(x[0]+window)
+                e0 = np.abs(errCS(x[0]))
+                e1 = np.abs(errCS(x[0]+window))
+                delC = ufloat(p1,e1) - ufloat(p0,e0)
+                delCVal = delC.nominal_value
+                delCErr = delC.std_dev
+            if (minT1==0) and (maxT1>0):
+                if maxT1 < x[-1]-window:
+                    maxT1Idx = np.where(x < maxT1)[0]
+                    delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+                    for i in range(len(maxT1Idx)):
+                        p0 = yCS(x[maxT1Idx[i]])
+                        p1 = yCS(x[maxT1Idx[i]]+window)
+                        e0 = np.abs(errCS(x[maxT1Idx[i]]))
+                        e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+                        delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+                else:
+                    newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
+                    maxT1 = x[newMaxT1Idx]
+                    maxT1Idx = np.where(x < maxT1)[0]
+                    delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+                    for i in range(len(maxT1Idx)):
+                        p0 = yCS(x[maxT1Idx[i]])
+                        p1 = yCS(x[maxT1Idx[i]]+window)
+                        e0 = np.abs(errCS(x[maxT1Idx[i]]))
+                        e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+                        delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+                delCVal = delC.mean().nominal_value
+                delCErr = delC.mean().std_dev
+                returnVal = 0
+            if (minT1>0) and (maxT1==minT1):
+                minT1Idx = np.where(x < minT1)[0][-1]
+                p0 = yCS(x[minT1Idx])
+                p1 = yCS(x[minT1Idx]+window)
+                e0 = np.abs(errCS(x[minT1Idx]))
+                e1 = np.abs(errCS(x[minT1Idx]+window))
+                delC = ufloat(p1,e1) - ufloat(p0,e0)
+                delCVal = delC.nominal_value
+                delCErr = delC.std_dev
+                returnVal = 0
+            if (minT1>0) and (maxT1>minT1):
+                minT1Idx = np.where(x < minT1)[0][-1]
+                if maxT1 < x[-1]-window:
+                    maxT1Idx = np.where(x < maxT1)[0]
+                    maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
+                    delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+                    for i in range(len(maxT1Idx)):
+                        p0 = yCS(x[maxT1Idx[i]])
+                        p1 = yCS(x[maxT1Idx[i]]+window)
+                        e0 = np.abs(errCS(x[maxT1Idx[i]]))
+                        e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+                        delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+                else:
+                    newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
+                    maxT1 = x[newMaxT1Idx]
+                    maxT1Idx = np.where(x < maxT1)[0]
+                    maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
+                    delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+                    for i in range(len(maxT1Idx)):
+                        p0 = yCS(x[maxT1Idx[i]])
+                        p1 = yCS(x[maxT1Idx[i]]+window)
+                        e0 = np.abs(errCS(x[maxT1Idx[i]]))
+                        e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+                        delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+                delCVal = delC.mean().nominal_value
+                delCErr = delC.mean().std_dev
+                returnVal = 0
+            # else:
+            #     print("Window start and stop problem!")
+            #     delCVal = 0
+            #     delCErr = 0
+            #     returnVal = 1
+                # error state
+        else:
+            print("Window is larger than data span!")
+            delCVal = 0
+            delCErr = 0
+            returnVal = -1
+        return delCVal, delCErr, returnVal
             
             
             

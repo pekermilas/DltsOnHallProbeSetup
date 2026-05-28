@@ -158,16 +158,16 @@ if __name__ == '__main__':
     # nm = np.arange(30, 125, 5)
     # data = dict()
 
-    # for i in range(19):
-    #     d = iaT.impdData()
-    #     d.readData()
-    #     # data[nm[i]] = d.dataValues
-    #     data[nm[i]] = d
+    for i in range(19):
+        d = iaT.impdData()
+        d.readData()
+        # data[nm[i]] = d.dataValues
+        data[nm[i]] = d
         
-    # for i in range(19):
-    #     a,b,c = data[nm[i]].sampleEmissions()
-    #     plt.plot(a,b/np.median(b),'.')
-    #     print(len(a))
+    for i in range(19):
+        a,b,c = data[nm[i]].sampleEmissions()
+        plt.plot(a,b/np.median(b),'.')
+        print(len(a))
         
     # # plt.plot(data[30]['tickStampImps'], data[30]['ImpedanceIm'])
 
