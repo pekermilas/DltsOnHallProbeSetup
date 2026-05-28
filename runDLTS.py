@@ -104,6 +104,7 @@ if __name__ == '__main__':
         
         numPoints = 2**13
         fName = str(tempDev.tempGrid[i]).replace('.','p')+'.txt'
+        data = impdDev.pullData(plot=False, trigger=True, numPoints=numPoints)
         impdDev.writeDataJson(data, rootFolder+fName)
     
     tempDev.goToRoomTemp(Tr=30)
