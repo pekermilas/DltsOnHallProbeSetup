@@ -167,8 +167,23 @@ if __name__ == '__main__':
     for i in range(19):
         a,b,c = data[nm[i]].sampleEmissions()
         plt.plot(a,b/np.median(b),'.')
+        # plt.plot(a,b,'.')
         print(len(a))
-        
+    
+    t = 50 * np.arange(41)[1:]
+    aa = np.zeros((len(t),len(nm)))
+    bb = np.zeros((len(t),len(nm)))
+    for i in range(len(t)):
+        minT1 = 0.0
+        maxT1 = 0.001
+        window = t[i] * 1e-6
+        for j in range(len(nm)):
+            aa[i,j],bb[i,j],cc = data[nm[j]].calculateDeltaCapacitance(window, minT1, maxT1)
+    
+    for i in range(len(t)):
+        plt.plot(nm,aa[i,:]/np.max(aa[i,:]),label=str(t[i]))
+        # plt.plot(nm,aa[i,:],label=str(t[i]))
+    plt.legend()
     # # plt.plot(data[30]['tickStampImps'], data[30]['ImpedanceIm'])
 
 

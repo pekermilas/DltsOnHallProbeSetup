@@ -12,7 +12,7 @@ import zhinst.ziPython as zi
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilenames
 from scipy.interpolate import make_splrep, CubicSpline
 import json
 from sklearn.mixture import GaussianMixture
@@ -36,18 +36,32 @@ class impdData:
         self.subType = None
 
     def readData(self):
+        print("Fix other data file import cases and exception for not choosing file! ")
         if self.fileName is None:
-            self.fileName = askopenfilename(title="Select a file",
+            self.fileName = askopenfilenames(title="Select a file",
                 filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if self.rootFolder is None:
+            idx = self.fileName[0][::-1].find('/')
+            self.rootFolder = self.fileName[0][:-idx]
+        
+        strippedFName = []
+        for i in range(len(self.fileName)):
+            temp = self.fileName[i].replace(self.rootFolder,"")
+            strippedFName.append(temp)
+        
+        if self.dataTemps is None:
+            self.dataTemps = []
+            for i in range(len(self.fileName)):
+                idx = strippedFName[i].find('.')
+                t = strippedFName[i][:idx].replace("p",".")
+                self.dataTemps.append(int(float(t)))
+        
         try:
-            with open(self.fileName, 'r', encoding='utf-8') as file:
-                self.dataValues = json.load(file)
-            self.dataTemps = list(self.dataValues)
-            self.dataSignals = list(self.dataValues[self.dataTemps[0]])
-            self.dataType = "sweep" if "absz" in list(self.dataValues) else "series"
-            self.subType = "cv" if "auxin0" in list(self.dataValues) else "freq"
-
-            # CV SWEEP DATA REQUIRES TO BE WRITTEN INTO SINGLE FILE
+            data = dict()
+            for i in range(len(self.fileName)):
+                with open(self.fileName[i], 'r', encoding='utf-8') as file:
+                    data[self.dataTemps[i]] = json.load(file)
+            self.dataValues = data
             return 0
         
         except FileNotFoundError:
@@ -55,20 +69,20 @@ class impdData:
             self.fileName = None
             return -1
 
-        except json.JSONDecodeError:
-            data = pd.read_csv(self.fileName, header=None, skiprows=1, sep=';')
-            keys = list(data.iloc[:,3])
-            vals = data.iloc[:,4:].to_numpy()
+        # except json.JSONDecodeError:
+        #     data = pd.read_csv(self.fileName, header=None, skiprows=1, sep=';')
+        #     keys = list(data.iloc[:,3])
+        #     vals = data.iloc[:,4:].to_numpy()
             
-            self.dataValues = dict()
-            for i in range(len(keys)):
-                self.dataValues[keys[i]] = vals[i,:]
-            self.dataType = "sweep" 
-            self.subType = "cv" if "auxin0" in list(self.dataValues) else "freq"
-            if self.subType=='cv':
-                print("CV sweep uses two data files!\n")
-                print("Run this function again to load the second file!")
-            return 0
+        #     self.dataValues = dict()
+        #     for i in range(len(keys)):
+        #         self.dataValues[keys[i]] = vals[i,:]
+        #     self.dataType = "sweep" 
+        #     self.subType = "cv" if "auxin0" in list(self.dataValues) else "freq"
+        #     if self.subType=='cv':
+        #         print("CV sweep uses two data files!\n")
+        #         print("Run this function again to load the second file!")
+            # return 0
 
     def wellBehaveFrequencies(self, fUpper, fLower):
         if self.dataType is None:
@@ -94,162 +108,180 @@ class impdData:
                 return 1
             
     def findDataLevels(self):
-        scale = np.min(self.dataValues['ImpedanceIm'])
-        d = np.array(self.dataValues['ImpedanceIm']/scale, copy=True)
-        d = d.reshape(-1, 1)
-        gmm = GaussianMixture(n_components=2, random_state=0)
-        gmm.fit(d)
-        m = gmm.means_.flatten()*scale
-        c = gmm.covariances_.flatten()*scale**2
-        l = gmm.predict(d)
-        return m, c, l
-            
+        means = np.zeros((len(self.dataTemps),2))
+        covars = np.zeros((len(self.dataTemps),2))
+        labels = np.zeros((len(self.dataTemps),len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])))
+        for i in range(len(self.dataTemps)):
+            t = self.dataTemps[i]
+            scale = np.min(self.dataValues[t]['ImpedanceIm'])
+            d = np.array(self.dataValues[t]['ImpedanceIm']/scale, copy=True)
+            d = d.reshape(-1, 1)
+            gmm = GaussianMixture(n_components=2, random_state=0)
+            gmm.fit(d)
+            means[i] = gmm.means_.flatten()*scale
+            covars[i] = gmm.covariances_.flatten()*scale**2
+            labels[i] = gmm.predict(d)
+        return means, covars, labels
+
     def sampleEmissions(self, showLevels=False):
         m,c,l = self.findDataLevels()
         if showLevels:
-            plt.scatter(self.dataValues['timeStampImps'], 
-                        self.dataValues['ImpedanceIm'],c=l, 
-                        cmap='coolwarm', s=4)
-        for i in range(len(l)):
-            if i==0:
-                idx = [0]
-                val = [l[0]]
-            else:
-                if not l[i]==val[-1]:
-                    idx.append(i)
-                    val.append(l[i])
-        diffs = []
-        pairs = []
-        for i in range(len(val)):
-            if (val[i]==1) and (i+1<len(idx)):
-                diffs.append(idx[i+1]-idx[i])
-                pairs.append([idx[i],idx[i+1]])
+            for i in range(len(m)):
+                t = self.dataTemps[i]
+                plt.scatter(self.dataValues[t]['timeStampImps'], 
+                            self.dataValues[t]['ImpedanceIm'],c=l[i], 
+                            cmap='coolwarm', s=4)
         
-        commonLength = statistics.mode(np.array(diffs))
-        idx = np.array(pairs)[np.where(np.array(diffs)==commonLength)[0]]
-        if len(idx)>0:
-            if len(idx)==1:
-                y = np.array(self.dataValues['ImpedanceIm'][idx[0]:idx[1]])
-                x = np.array(self.dataValues['timeStampImps'][idx[0]:idx[1]])
-                x = x - x[0]
-            if len(idx)>1:
-                y = np.array(self.dataValues['ImpedanceIm'][idx[0][0]:idx[0][1]])
-                x = np.array(self.dataValues['timeStampImps'][idx[0][0]:idx[0][1]])
-                x = x - x[0] 
-                for i in range(1,len(idx)):
-                    temp = np.array(self.dataValues['ImpedanceIm'][idx[i][0]:idx[i][1]])
-                    y = np.column_stack((y,temp))
-                    temp = np.array(self.dataValues['timeStampImps'][idx[i][0]:idx[i][1]])
-                    temp = temp - temp[0]
-                    x = np.column_stack((x,temp))
+        for i in range(len(m)):
+            for j in range(len(l[i])):
+                if j==0:
+                    idx = [0]
+                    val = [l[i,0]]
+                else:
+                    if not l[i,j]==val[-1]:
+                        idx.append(j)
+                        val.append(l[i,j])
+            diffs = []
+            pairs = []
+            for j in range(len(val)):
+                if (val[j]==1) and (j+1<len(idx)):
+                    diffs.append(idx[j+1]-idx[j])
+                    pairs.append([idx[j],idx[j+1]])
         
-        yMean = np.mean(y,axis=1)
-        yStd = np.std(y,axis=1)
-        
-        targetStd = np.min(yStd)*100
-        # BURDAN SONRA EN UZAK IKI ALINACAK NOKTAYI BU&LUP ARALARINDAKINI AL!!!
-        startIdx = np.min(np.where(yStd<targetStd)[0])
-        stopIdx = np.max(np.where(yStd<targetStd)[0])
-        
-        a = x[startIdx:stopIdx+1,0]
-        b = yMean[startIdx:stopIdx+1]
-        d = yStd[startIdx:stopIdx+1]
-        
-        return a,b,d
 
-    @staticmethod
-    def find_nearest(array, value):
-        array = np.asarray(array)
-        idx = (np.abs(array - value)).argmin()
-        return idx, array[idx]
+            t = self.dataTemps[i]
+            commonLength = statistics.mode(np.array(diffs))
+            idx = np.array(pairs)[np.where(np.array(diffs)==commonLength)[0]]
+            if len(idx)>0:
+                if len(idx)==1:
+                    y = np.array(self.dataValues[t]['ImpedanceIm'][idx[0]:idx[1]])
+                    x = np.array(self.dataValues[t]['timeStampImps'][idx[0]:idx[1]])
+                    x = x - x[0]
+                if len(idx)>1:
+                    y = np.array(self.dataValues[t]['ImpedanceIm'][idx[0][0]:idx[0][1]])
+                    x = np.array(self.dataValues[t]['timeStampImps'][idx[0][0]:idx[0][1]])
+                    x = x - x[0] 
+                    for i in range(1,len(idx)):
+                        temp = np.array(self.dataValues[t]['ImpedanceIm'][idx[i][0]:idx[i][1]])
+                        y = np.column_stack((y,temp))
+                        temp = np.array(self.dataValues[t]['timeStampImps'][idx[i][0]:idx[i][1]])
+                        temp = temp - temp[0]
+                        x = np.column_stack((x,temp))
+            
+            yMean = np.mean(y,axis=1)
+            yStd = np.std(y,axis=1)
+        
+        
+            targetStd = np.min(yStd)*100
+            # BURDAN SONRA EN UZAK IKI ALINACAK NOKTAYI BU&LUP ARALARINDAKINI AL!!!
+            startIdx = np.min(np.where(yStd<targetStd)[0])
+            stopIdx = np.max(np.where(yStd<targetStd)[0])
+            
+            xx = x[startIdx:stopIdx+1,0]
+            yy = yMean[startIdx:stopIdx+1]
+            err = yStd[startIdx:stopIdx+1]
+        
+        # return xx,yy,err
+
+    # # @staticmethod
+    # # def find_nearest(array, value):
+    # #     array = np.asarray(array)
+    # #     idx = (np.abs(array - value)).argmin()
+    # #     return idx, array[idx]
     
-    def calculateDeltaCapacitance(self, x, y, err, window=0.001, minT1=0, maxT1=0):
-        yCS = CubicSpline(x, y, bc_type='natural')
-        errCS = CubicSpline(x, err, bc_type='natural')
-        if window < x[-1]-x[0]:
-            if (minT1==0) and (maxT1==0):
-                p0 = yCS(x[0])
-                p1 = yCS(x[0]+window)
-                e0 = np.abs(errCS(x[0]))
-                e1 = np.abs(errCS(x[0]+window))
-                delC = ufloat(p1,e1) - ufloat(p0,e0)
-                delCVal = delC.nominal_value
-                delCErr = delC.std_dev
-            if (minT1==0) and (maxT1>0):
-                if maxT1 < x[-1]-window:
-                    maxT1Idx = np.where(x < maxT1)[0]
-                    delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
-                    for i in range(len(maxT1Idx)):
-                        p0 = yCS(x[maxT1Idx[i]])
-                        p1 = yCS(x[maxT1Idx[i]]+window)
-                        e0 = np.abs(errCS(x[maxT1Idx[i]]))
-                        e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
-                        delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
-                else:
-                    newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
-                    maxT1 = x[newMaxT1Idx]
-                    maxT1Idx = np.where(x < maxT1)[0]
-                    delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
-                    for i in range(len(maxT1Idx)):
-                        p0 = yCS(x[maxT1Idx[i]])
-                        p1 = yCS(x[maxT1Idx[i]]+window)
-                        e0 = np.abs(errCS(x[maxT1Idx[i]]))
-                        e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
-                        delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
-                delCVal = delC.mean().nominal_value
-                delCErr = delC.mean().std_dev
-                returnVal = 0
-            if (minT1>0) and (maxT1==minT1):
-                minT1Idx = np.where(x < minT1)[0][-1]
-                p0 = yCS(x[minT1Idx])
-                p1 = yCS(x[minT1Idx]+window)
-                e0 = np.abs(errCS(x[minT1Idx]))
-                e1 = np.abs(errCS(x[minT1Idx]+window))
-                delC = ufloat(p1,e1) - ufloat(p0,e0)
-                delCVal = delC.nominal_value
-                delCErr = delC.std_dev
-                returnVal = 0
-            if (minT1>0) and (maxT1>minT1):
-                minT1Idx = np.where(x < minT1)[0][-1]
-                if maxT1 < x[-1]-window:
-                    maxT1Idx = np.where(x < maxT1)[0]
-                    maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
-                    delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
-                    for i in range(len(maxT1Idx)):
-                        p0 = yCS(x[maxT1Idx[i]])
-                        p1 = yCS(x[maxT1Idx[i]]+window)
-                        e0 = np.abs(errCS(x[maxT1Idx[i]]))
-                        e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
-                        delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
-                else:
-                    newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
-                    maxT1 = x[newMaxT1Idx]
-                    maxT1Idx = np.where(x < maxT1)[0]
-                    maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
-                    delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
-                    for i in range(len(maxT1Idx)):
-                        p0 = yCS(x[maxT1Idx[i]])
-                        p1 = yCS(x[maxT1Idx[i]]+window)
-                        e0 = np.abs(errCS(x[maxT1Idx[i]]))
-                        e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
-                        delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
-                delCVal = delC.mean().nominal_value
-                delCErr = delC.mean().std_dev
-                returnVal = 0
-            # else:
-            #     print("Window start and stop problem!")
-            #     delCVal = 0
-            #     delCErr = 0
-            #     returnVal = 1
-                # error state
-        else:
-            print("Window is larger than data span!")
-            delCVal = 0
-            delCErr = 0
-            returnVal = -1
-        return delCVal, delCErr, returnVal
+    # def calculateDeltaCapacitance(self, window=0.001, minT1=0, maxT1=0): #CORRECT THIS!!!
+    #     x, y, err = self.sampleEmissions()
+    #     yCS = CubicSpline(x, y, bc_type='natural')
+    #     errCS = CubicSpline(x, err, bc_type='natural')
+    #     if window < x[-1]-x[0]:
+    #         if (minT1==0) and (maxT1==0):
+    #             p0 = yCS(x[0])
+    #             p1 = yCS(x[0]+window)
+    #             e0 = np.abs(errCS(x[0]))
+    #             e1 = np.abs(errCS(x[0]+window))
+    #             delC = ufloat(p1,e1) - ufloat(p0,e0)
+    #             delCVal = delC.nominal_value
+    #             delCErr = delC.std_dev
+    #         if (minT1==0) and (maxT1>0):
+    #             if maxT1 < x[-1]-window:
+    #                 maxT1Idx = np.where(x < maxT1)[0]
+    #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+    #                 for i in range(len(maxT1Idx)):
+    #                     p0 = yCS(x[maxT1Idx[i]])
+    #                     p1 = yCS(x[maxT1Idx[i]]+window)
+    #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
+    #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+    #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    #             else:
+    #                 newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
+    #                 maxT1 = x[newMaxT1Idx]
+    #                 maxT1Idx = np.where(x < maxT1)[0]
+    #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+    #                 for i in range(len(maxT1Idx)):
+    #                     p0 = yCS(x[maxT1Idx[i]])
+    #                     p1 = yCS(x[maxT1Idx[i]]+window)
+    #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
+    #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+    #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    #             delCVal = delC.mean().nominal_value
+    #             delCErr = delC.mean().std_dev
+    #             returnVal = 0
+    #         if (minT1>0) and (maxT1==minT1):
+    #             minT1Idx = np.where(x < minT1)[0][-1]
+    #             p0 = yCS(x[minT1Idx])
+    #             p1 = yCS(x[minT1Idx]+window)
+    #             e0 = np.abs(errCS(x[minT1Idx]))
+    #             e1 = np.abs(errCS(x[minT1Idx]+window))
+    #             delC = ufloat(p1,e1) - ufloat(p0,e0)
+    #             delCVal = delC.nominal_value
+    #             delCErr = delC.std_dev
+    #             returnVal = 0
+    #         if (minT1>0) and (maxT1>minT1):
+    #             minT1Idx = np.where(x < minT1)[0][-1]
+    #             if maxT1 < x[-1]-window:
+    #                 maxT1Idx = np.where(x < maxT1)[0]
+    #                 maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
+    #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+    #                 for i in range(len(maxT1Idx)):
+    #                     p0 = yCS(x[maxT1Idx[i]])
+    #                     p1 = yCS(x[maxT1Idx[i]]+window)
+    #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
+    #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+    #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    #             else:
+    #                 newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
+    #                 maxT1 = x[newMaxT1Idx]
+    #                 maxT1Idx = np.where(x < maxT1)[0]
+    #                 maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
+    #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+    #                 for i in range(len(maxT1Idx)):
+    #                     p0 = yCS(x[maxT1Idx[i]])
+    #                     p1 = yCS(x[maxT1Idx[i]]+window)
+    #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
+    #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+    #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    #             delCVal = delC.mean().nominal_value
+    #             delCErr = delC.mean().std_dev
+    #             returnVal = 0
+
+    #     else:
+    #         print("Window is larger than data span!")
+    #         delCVal = 0
+    #         delCErr = 0
+    #         returnVal = -1
+    #     return delCVal, delCErr, returnVal
             
-            
+    # def deltaCapacitancePlots(self, window=1000, temperatures=30, minT1=0, maxT1=1000, smooth=False):
+    #     maxT1 = maxT1 * 1e-6
+    #     for i in range(len(window)):
+    #         window = window[i] * 1e-6
+    #         for j in range(len(temperatures)):
+    #             aa[i,j],bb[i,j],cc = data[temperatures[j]].calculateDeltaCapacitance(window, minT1, maxT1)
+        
+    #     for i in range(len(t)):
+    #         plt.plot(nm,aa[i,:]/np.max(aa[i,:]),label=str(t[i]))
+        
+    #     return 0
             
             
             
