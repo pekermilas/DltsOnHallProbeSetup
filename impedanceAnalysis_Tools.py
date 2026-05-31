@@ -19,6 +19,8 @@ from sklearn.mixture import GaussianMixture
 import h5py
 import statistics
 from uncertainties import unumpy, ufloat
+import itertools
+
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
 
@@ -132,6 +134,7 @@ class impdData:
                             self.dataValues[t]['ImpedanceIm'],c=l[i], 
                             cmap='coolwarm', s=4)
         
+        emissions = dict()
         for i in range(len(m)):
             for j in range(len(l[i])):
                 if j==0:
@@ -150,7 +153,7 @@ class impdData:
         
 
             t = self.dataTemps[i]
-            commonLength = statistics.mode(np.array(diffs))
+            commonLength = statistics.mode(np.array(diffs)[np.array(diffs)>1])
             idx = np.array(pairs)[np.where(np.array(diffs)==commonLength)[0]]
             if len(idx)>0:
                 if len(idx)==1:
@@ -161,10 +164,10 @@ class impdData:
                     y = np.array(self.dataValues[t]['ImpedanceIm'][idx[0][0]:idx[0][1]])
                     x = np.array(self.dataValues[t]['timeStampImps'][idx[0][0]:idx[0][1]])
                     x = x - x[0] 
-                    for i in range(1,len(idx)):
-                        temp = np.array(self.dataValues[t]['ImpedanceIm'][idx[i][0]:idx[i][1]])
+                    for k in range(1,len(idx)):
+                        temp = np.array(self.dataValues[t]['ImpedanceIm'][idx[k][0]:idx[k][1]])
                         y = np.column_stack((y,temp))
-                        temp = np.array(self.dataValues[t]['timeStampImps'][idx[i][0]:idx[i][1]])
+                        temp = np.array(self.dataValues[t]['timeStampImps'][idx[k][0]:idx[k][1]])
                         temp = temp - temp[0]
                         x = np.column_stack((x,temp))
             
@@ -180,9 +183,90 @@ class impdData:
             xx = x[startIdx:stopIdx+1,0]
             yy = yMean[startIdx:stopIdx+1]
             err = yStd[startIdx:stopIdx+1]
-        
-        # return xx,yy,err
+            emissions[self.dataTemps[i]] = dict()
+            emissions[self.dataTemps[i]]['x'] = np.array(xx, copy=True)
+            emissions[self.dataTemps[i]]['y'] = np.array(yy, copy=True)
+            emissions[self.dataTemps[i]]['err'] = np.array(err, copy=True)
 
+        return emissions
+
+    def calculateDeltaCapacitanceT1T2(self, t1, t2, plot=False):
+        emiss = self.sampleEmissions()
+        allPairs = np.array(list(itertools.product(t1,t2)))
+        delTs = allPairs[allPairs[:,0] < allPairs[:,1]]
+
+        delC = np.zeros((len(self.dataTemps),len(delTs)+1))
+        errC = np.zeros((len(self.dataTemps),len(delTs)+1))
+        for i in range(len(self.dataTemps)):
+            x = emiss[self.dataTemps[i]]['x']
+            y = emiss[self.dataTemps[i]]['y']
+            err = emiss[self.dataTemps[i]]['err']
+            yCS = CubicSpline(x, y, bc_type='natural')
+            errCS = CubicSpline(x, err, bc_type='natural')
+
+            delC[i,0] = self.dataTemps[i]
+            errC[i,0] = self.dataTemps[i]
+            for j in range(len(delTs)):
+                p0 = yCS(delTs[j,0])
+                e0 = errCS(delTs[j,0])
+                p1 = yCS(delTs[j,1])
+                e1 = errCS(delTs[j,1])
+                # delC[i,j+1] = yCS(delTs[j,1]) - yCS(delTs[j,0])
+                temp = ufloat(p1,e1) - ufloat(p0,e0)
+                delC[i,j+1] = temp.nominal_value
+                errC[i,j+1] = temp.std_dev
+            # errC[i,:] = 1e-20
+        # ADD ERRORS!!!
+
+        if plot:
+            fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=len(delTs)//2, sharex=True, sharey=True)
+            for i in range(len(delTs)//2):
+                lbl0 = 't2=' + str(int(delTs[2*i,1]*1000)) + 'ms - t1=' + \
+                    str(int(delTs[2*i,0]*1000)) + 'ms'
+                lbl1 = 't2=' + str(int(delTs[2*i+1,1]*1000)) + 'ms - t1=' + \
+                    str(int(delTs[2*i+1,0]*1000)) + 'ms'
+                
+                c0 = np.max(delC[:,2*i+1])
+                yErr = np.abs(errC[:,2*i+1]/delC[:,2*i+1])/10
+                yErr[yErr==np.max(yErr)]=0
+                ax[i,0].plot(delC[:,0], delC[:,2*i+1]/c0,'-',color='blue',linewidth=1)
+                ax[i,0].errorbar(delC[:,0], delC[:,2*i+1]/c0, 
+                                 yerr=yErr, label=lbl0, fmt='o', color='r',
+                                 markersize=3, ecolor='cyan', elinewidth=1)
+                ax[i,0].legend(fontsize=12)
+                ax[i,0].tick_params(axis='x', labelsize=18)
+                ax[i,0].tick_params(axis='y', labelsize=18)
+                ax[i,0].set_ylim([0.0,1.05])
+                ax[i,0].set_yticks([0.5])
+                ax[i,0].set_xticks([50-23, 100-23, 150-23, 200-23],
+                                   labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
+                
+                c1 = np.max(delC[:,2*i+2])
+                yErr = np.abs(errC[:,2*i+2]/delC[:,2*i+2])/10
+                yErr[yErr==np.max(yErr)]=0
+                ax[i,1].plot(delC[:,0], delC[:,2*i+2]/c1,'-',color='blue',linewidth=1)
+                ax[i,1].errorbar(delC[:,0], delC[:,2*i+2]/c1,
+                                 yerr=yErr, label=lbl1, fmt='o', color='r',
+                                 markersize=3, ecolor='cyan', elinewidth=1)
+                ax[i,1].legend(fontsize=12)
+                ax[i,1].tick_params(axis='x', labelsize=18)
+                ax[i,1].tick_params(axis='y', labelsize=18)
+                ax[i,1].set_ylim([0.0,1.05])
+                ax[i,1].set_yticks([0.5])
+                ax[i,1].set_xticks([50-23, 100-23, 150-23, 200-23],
+                                   labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
+
+            fig.supxlabel(r'Temperature ($^\circ$K)', fontsize=18)
+            fig.supylabel(r'$\delta C$/C', fontsize=18)
+            fig.subplots_adjust(top=0.975, bottom=0.090, 
+                                left=0.070, right=0.990,
+                                wspace=0.000, hspace=0.0) 
+
+            plt.show()
+            
+        return 0
+        
+        
     # # @staticmethod
     # # def find_nearest(array, value):
     # #     array = np.asarray(array)

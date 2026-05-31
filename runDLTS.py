@@ -111,8 +111,17 @@ if __name__ == '__main__':
     tempDev.disconnTController()
     impdDev.session.disconnect_device('dev32271')
 
-    # data = iaT.impdData()
-    # data.readData()
+    data = iaT.impdData()
+    data.readData()
+    emiss = data.sampleEmissions()
+    for i in list(emiss):
+        emiss[i]['x'] = emiss[i]['x'][1:-1]
+        emiss[i]['y'] = emiss[i]['y'][1:-1]
+        emiss[i]['err'] = emiss[i]['err'][1:-1]
+
+    t1 = np.arange(1,4)*0.001
+    t2 = np.arange(1,5)*0.002
+    data.calculateDeltaCapacitanceT1T2(t1, t2, plot=False)
     # # fExcite will replace 'Oscillation Frequency'!!!
     # fExcite = wellBehaveFrequencies(fUpper, fLower)
 
