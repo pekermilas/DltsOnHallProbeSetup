@@ -113,7 +113,24 @@ if __name__ == '__main__':
 
     data = iaT.impdData()
     data.readData()
+    # Plot raw data
+    for i in range(len(data.dataTemps)):
+        idx = data.dataTemps[i]
+        plt.plot(data.dataValues[idx]['timeStampImps'],data.dataValues[idx]['ImpedanceIm'])
+    
+    # Sample emission levels
+    m,c,l = data.findDataLevels()
+    for i in range(len(m)):
+        t = data.dataTemps[i]
+        plt.scatter(data.dataValues[t]['timeStampImps'], 
+                    data.dataValues[t]['ImpedanceIm'],c=l[i], 
+                    cmap='coolwarm', s=4)
+    
     emiss = data.sampleEmissions()
+    for i in range(len(data.dataTemps)):
+        idx = data.dataTemps[i]
+        plt.errorbar(emiss[idx]['x'],emiss[idx]['y'],yerr=emiss[idx]['err'])
+        
     for i in list(emiss):
         emiss[i]['x'] = emiss[i]['x'][1:-1]
         emiss[i]['y'] = emiss[i]['y'][1:-1]

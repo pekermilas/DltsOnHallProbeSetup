@@ -208,14 +208,19 @@ class impdData:
             errC[i,0] = self.dataTemps[i]
             for j in range(len(delTs)):
                 p0 = yCS(delTs[j,0])
-                e0 = errCS(delTs[j,0])
+                e0 = np.abs(errCS(delTs[j,0]))
                 p1 = yCS(delTs[j,1])
-                e1 = errCS(delTs[j,1])
+                e1 = np.abs(errCS(delTs[j,1]))
                 # delC[i,j+1] = yCS(delTs[j,1]) - yCS(delTs[j,0])
-                temp = ufloat(p1,e1) - ufloat(p0,e0)
-                delC[i,j+1] = temp.nominal_value
-                errC[i,j+1] = temp.std_dev
-            # errC[i,:] = 1e-20
+                
+                # temp = ufloat(p1,e1) - ufloat(p0,e0)
+                # print(i,j,e1,e0)
+                # delC[i,j+1] = temp.nominal_value
+                # errC[i,j+1] = temp.std_dev
+                
+                delC[i,j+1] = p1-p0
+                errC[i,j+1] = np.min((e1,e0)
+
         # ADD ERRORS!!!
 
         if plot:
@@ -264,7 +269,7 @@ class impdData:
 
             plt.show()
             
-        return 0
+        return delC, errC
         
         
     # # @staticmethod
