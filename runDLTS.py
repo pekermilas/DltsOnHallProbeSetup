@@ -186,7 +186,7 @@ if __name__ == '__main__':
 
     for i in range(19):
         d = iaT.impdData()
-        # d.readData()
+        d.readData()
         # data[nm[i]] = d.dataValues
         data[nm[i]] = d
         
