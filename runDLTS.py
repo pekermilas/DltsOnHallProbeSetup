@@ -181,7 +181,7 @@ if __name__ == '__main__':
     # # plt.show()
     
     # # Batch process!!!
-    # nm = np.arange(30, 125, 5)
+    nm = np.arange(30, 125, 5)
     # data = dict()
 
     for i in range(19):
