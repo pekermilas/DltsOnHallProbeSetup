@@ -269,7 +269,7 @@ class impdData:
 
             plt.show()
             
-        return delC, errC
+        return delC, errC, delTs
 
     def estimatePeakTemperatures(self, delC, delTs=None, s=None, nPoints=1000, plot=False):
         temperatures = np.array(self.dataTemps)

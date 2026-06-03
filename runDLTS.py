@@ -138,8 +138,8 @@ if __name__ == '__main__':
 
     t1 = np.arange(1,4)*0.001
     t2 = np.arange(1,5)*0.002
-    delC, errC = data.calculateDeltaCapacitanceT1T2(t1, t2, plot=False)
-    peakTemps, peakVals, splines = data.estimatePeakTemperatures(delC, plot=True)
+    delC, errC, delT = data.calculateDeltaCapacitanceT1T2(t1, t2, plot=False)
+    peakTemps, peakVals, splines = data.estimatePeakTemperatures(delC, delT, plot=True)
     print("Peak Temperatures:", peakTemps)
     print("Peak Values:", peakVals)
 
