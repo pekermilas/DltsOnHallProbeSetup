@@ -271,7 +271,7 @@ class impdData:
             
         return delC, errC
 
-    def estimatePeakTemperatures(self, delC, s=None, nPoints=1000, plot=False):
+    def estimatePeakTemperatures(self, delC, delTs=None, s=None, nPoints=1000, plot=False):
         temperatures = np.array(self.dataTemps)
         nCurves = delC.shape[1] - 1
         peakTemps = np.zeros(nCurves)
@@ -290,10 +290,19 @@ class impdData:
         if plot:
             fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=nCurves//2, sharex=True, sharey=True)
             for i in range(nCurves//2):
+                if delTs is not None:
+                    lbl0 = 't2=' + str(int(delTs[2*i,1]*1000)) + 'ms - t1=' + \
+                        str(int(delTs[2*i,0]*1000)) + 'ms'
+                    lbl1 = 't2=' + str(int(delTs[2*i+1,1]*1000)) + 'ms - t1=' + \
+                        str(int(delTs[2*i+1,0]*1000)) + 'ms'
+                else:
+                    lbl0 = None
+                    lbl1 = None
+
                 c0 = np.max(delC[:,2*i+1])
                 yFine0 = splines[2*i](tFine)
                 ax[i,0].plot(tFine, yFine0/c0, '-', color='blue', linewidth=1)
-                ax[i,0].plot(temperatures, delC[:,2*i+1]/c0, 'o', color='r', markersize=3)
+                ax[i,0].plot(temperatures, delC[:,2*i+1]/c0, 'o', color='r', markersize=3, label=lbl0)
                 ax[i,0].legend(fontsize=12)
                 ax[i,0].tick_params(axis='x', labelsize=18)
                 ax[i,0].tick_params(axis='y', labelsize=18)
@@ -305,7 +314,7 @@ class impdData:
                 c1 = np.max(delC[:,2*i+2])
                 yFine1 = splines[2*i+1](tFine)
                 ax[i,1].plot(tFine, yFine1/c1, '-', color='blue', linewidth=1)
-                ax[i,1].plot(temperatures, delC[:,2*i+2]/c1, 'o', color='r', markersize=3)
+                ax[i,1].plot(temperatures, delC[:,2*i+2]/c1, 'o', color='r', markersize=3, label=lbl1)
                 ax[i,1].legend(fontsize=12)
                 ax[i,1].tick_params(axis='x', labelsize=18)
                 ax[i,1].tick_params(axis='y', labelsize=18)
