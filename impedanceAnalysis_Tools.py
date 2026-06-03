@@ -13,7 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from tkinter.filedialog import askopenfilenames
-from scipy.interpolate import make_splrep, CubicSpline
+from scipy.interpolate import make_smoothing_spline, CubicSpline
 import json
 from sklearn.mixture import GaussianMixture
 import h5py
@@ -97,7 +97,7 @@ class impdData:
                 
                 # Smooth the data for analysis
                 xn = np.linspace(np.min(x), np.max(x), 1000)
-                yn = make_splrep(x,y,s=10)(xn)
+                yn = make_smoothing_spline(x,y,lam=10)(xn)
                 
                 # fmin = np.min(xn[(yn<fUpper) & (yn>fLower)])
                 # fmax = np.max(xn[(yn<fUpper) & (yn>fLower)])
@@ -270,8 +270,59 @@ class impdData:
             plt.show()
             
         return delC, errC
-        
-        
+
+    def estimatePeakTemperatures(self, delC, s=None, nPoints=1000, plot=False):
+        temperatures = np.array(self.dataTemps)
+        nCurves = delC.shape[1] - 1
+        peakTemps = np.zeros(nCurves)
+        peakVals = np.zeros(nCurves)
+        splines = []
+        tFine = np.linspace(np.min(temperatures), np.max(temperatures), nPoints)
+        for j in range(nCurves):
+            y = delC[:, j+1]
+            spl = make_smoothing_spline(temperatures, y, lam=s)
+            splines.append(spl)
+            yFine = spl(tFine)
+            maxIdx = np.argmax(yFine)
+            peakTemps[j] = tFine[maxIdx]
+            peakVals[j] = yFine[maxIdx]
+
+        if plot:
+            fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=nCurves//2, sharex=True, sharey=True)
+            for i in range(nCurves//2):
+                c0 = np.max(delC[:,2*i+1])
+                yFine0 = splines[2*i](tFine)
+                ax[i,0].plot(tFine, yFine0/c0, '-', color='blue', linewidth=1)
+                ax[i,0].plot(temperatures, delC[:,2*i+1]/c0, 'o', color='r', markersize=3)
+                ax[i,0].legend(fontsize=12)
+                ax[i,0].tick_params(axis='x', labelsize=18)
+                ax[i,0].tick_params(axis='y', labelsize=18)
+                ax[i,0].set_ylim([0.0,1.05])
+                ax[i,0].set_yticks([0.5])
+                ax[i,0].set_xticks([50-23, 100-23, 150-23, 200-23],
+                                   labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
+
+                c1 = np.max(delC[:,2*i+2])
+                yFine1 = splines[2*i+1](tFine)
+                ax[i,1].plot(tFine, yFine1/c1, '-', color='blue', linewidth=1)
+                ax[i,1].plot(temperatures, delC[:,2*i+2]/c1, 'o', color='r', markersize=3)
+                ax[i,1].legend(fontsize=12)
+                ax[i,1].tick_params(axis='x', labelsize=18)
+                ax[i,1].tick_params(axis='y', labelsize=18)
+                ax[i,1].set_ylim([0.0,1.05])
+                ax[i,1].set_yticks([0.5])
+                ax[i,1].set_xticks([50-23, 100-23, 150-23, 200-23],
+                                   labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
+
+            fig.supxlabel(r'Temperature ($^\circ$K)', fontsize=18)
+            fig.supylabel(r'$\delta C$/C', fontsize=18)
+            fig.subplots_adjust(top=0.975, bottom=0.090, 
+                                left=0.070, right=0.990,
+                                wspace=0.000, hspace=0.0) 
+            plt.show()
+
+        return peakTemps, peakVals, splines
+
     # # @staticmethod
     # # def find_nearest(array, value):
     # #     array = np.asarray(array)
