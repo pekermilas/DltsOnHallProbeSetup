@@ -219,7 +219,7 @@ class impdData:
                 # errC[i,j+1] = temp.std_dev
                 
                 delC[i,j+1] = p1-p0
-                errC[i,j+1] = np.min((e1,e0)
+                errC[i,j+1] = np.min((e1,e0))
 
         # ADD ERRORS!!!
 
