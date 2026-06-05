@@ -140,8 +140,8 @@ if __name__ == '__main__':
     t2 = np.arange(1,5)*0.002
     delC, errC, delT = data.calculateDeltaCapacitanceT1T2(t1, t2, plot=False)
     peakTemps, peakVals, splines = data.estimatePeakTemperatures(delC, delT, plot=True)
-    print("Peak Temperatures:", peakTemps)
-    print("Peak Values:", peakVals)
+    # print("Peak Temperatures:", peakTemps)
+    # print("Peak Values:", peakVals)
 
     # # fExcite will replace 'Oscillation Frequency'!!!
     # fExcite = wellBehaveFrequencies(fUpper, fLower)
