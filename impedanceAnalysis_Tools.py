@@ -13,6 +13,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from tkinter.filedialog import askopenfilenames
+
+from numpy.ma.extras import apply_along_axis
 from scipy.interpolate import make_smoothing_spline, CubicSpline
 import json
 from sklearn.mixture import GaussianMixture
@@ -20,6 +22,7 @@ import h5py
 import statistics
 from uncertainties import unumpy, ufloat
 import itertools
+from scipy.stats import weibull_min
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
@@ -211,13 +214,7 @@ class impdData:
                 e0 = np.abs(errCS(delTs[j,0]))
                 p1 = yCS(delTs[j,1])
                 e1 = np.abs(errCS(delTs[j,1]))
-                # delC[i,j+1] = yCS(delTs[j,1]) - yCS(delTs[j,0])
-                
-                # temp = ufloat(p1,e1) - ufloat(p0,e0)
-                # print(i,j,e1,e0)
-                # delC[i,j+1] = temp.nominal_value
-                # errC[i,j+1] = temp.std_dev
-                
+
                 delC[i,j+1] = p1-p0
                 errC[i, j + 1] = np.sqrt(e1*e1+e0*e0)
 
@@ -233,11 +230,10 @@ class impdData:
                 
                 # c0 = np.max(delC[:,2*i+1])
                 c0 = 1
-                # yErr = np.abs(errC[:,2*i+1]/delC[:,2*i+1])/10
                 yErr = np.abs(errC[:, 2 * i + 1] / delC[:, 2 * i + 1])
                 yErr[yErr==np.max(yErr)]=0
-                ax[i,0].plot(delC[:,0], delC[:,2*i+1]/c0,'-',color='blue',linewidth=1)
-                ax[i,0].errorbar(delC[:,0], delC[:,2*i+1]/c0, 
+                ax[i,0].plot(delC[:,0], delC[:,2*i+1],'-',color='blue',linewidth=1)
+                ax[i,0].errorbar(delC[:,0], delC[:,2*i+1],
                                  yerr=yErr, label=lbl0, fmt='o', color='r',
                                  markersize=3, ecolor='cyan', elinewidth=1)
                 ax[i,0].legend(fontsize=12)
@@ -248,11 +244,12 @@ class impdData:
                 ax[i,0].set_xticks([50-23, 100-23, 150-23, 200-23],
                                    labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
                 
-                c1 = np.max(delC[:,2*i+2])
-                yErr = np.abs(errC[:,2*i+2]/delC[:,2*i+2])/10
+                # c1 = np.max(delC[:,2*i+2])
+                c1 = 1
+                yErr = np.abs(errC[:,2*i+2]/delC[:,2*i+2])
                 yErr[yErr==np.max(yErr)]=0
-                ax[i,1].plot(delC[:,0], delC[:,2*i+2]/c1,'-',color='blue',linewidth=1)
-                ax[i,1].errorbar(delC[:,0], delC[:,2*i+2]/c1,
+                ax[i,1].plot(delC[:,0], delC[:,2*i+2],'-',color='blue',linewidth=1)
+                ax[i,1].errorbar(delC[:,0], delC[:,2*i+2],
                                  yerr=yErr, label=lbl1, fmt='o', color='r',
                                  markersize=3, ecolor='cyan', elinewidth=1)
                 ax[i,1].legend(fontsize=12)
@@ -272,6 +269,116 @@ class impdData:
             plt.show()
             
         return delC, errC, delTs
+
+    @staticmethod
+    def leftSkewedWeibull(x, alpha, beta, gamma):
+        """PDF of a left-skewed 3-parameter Weibull distribution."""
+        # We use the built-in scipy weibull_min but flip the x-axis relative to gamma
+        x_shifted = gamma - x
+        # Prevent evaluations outside the valid domain
+        pdf = np.zeros_like(x, dtype=float)
+        mask = x_shifted > 0
+        if np.any(mask):
+            pdf[mask] = weibull_min.pdf(x_shifted[mask], c=beta, scale=alpha)
+        return pdf
+
+    def fitLeftSkewedWeibull(self, x, y, alpha0=15.0, beta0=4.0, gamma0=None):
+        """Fit leftSkewedWeibull to data (x, y) using lmfit.
+
+        Parameters
+        ----------
+        x : array-like
+            Independent variable (e.g. temperature).
+        y : array-like
+            Dependent variable (e.g. delta-C signal).
+        alpha0 : float, optional
+            Initial guess for the scale parameter (default 15.0).
+        beta0 : float, optional
+            Initial guess for the shape parameter (default 4.0).
+        gamma0 : float, optional
+            Initial guess for the location (upper-bound) parameter.
+            If None, defaults to ``max(x) + 10``.
+
+        Returns
+        -------
+        result : lmfit.model.ModelResult
+            The full lmfit fit result object.
+        """
+        from lmfit import Model
+
+        model = Model(self.leftSkewedWeibull)
+
+        if gamma0 is None:
+            gamma0 = np.max(x) + 10.0
+
+        params = model.make_params()
+        params['alpha'].set(value=alpha0, min=0.001)
+        params['beta'].set(value=beta0, min=3.6)
+        params['gamma'].set(value=gamma0, min=np.max(x))
+
+        result = model.fit(y, params, x=np.asarray(x, dtype=float))
+        return result
+
+    def testPeakTemperatures(self, delC, delTs=None, nPoints=1000, plot=True):
+        x = delC[:, 0]
+        nCurves = delC.shape[1] - 1
+        peakTemps = np.zeros(nCurves)
+        peakVals = np.zeros(nCurves)
+        fitResults = []
+        tFine = np.linspace(np.min(x), np.max(x), nPoints)
+        for i in range(nCurves):
+            y = delC[:, i + 1]
+            result = self.fitLeftSkewedWeibull(x, y)
+            fitResults.append(result)
+            yFine = result.eval(x=tFine)
+            maxIdx = np.argmax(yFine)
+            peakTemps[i] = tFine[maxIdx]
+            peakVals[i] = yFine[maxIdx]
+
+        if plot:
+            fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=nCurves // 2, sharex=True, sharey=True)
+            for i in range(nCurves // 2):
+                if delTs is not None:
+                    lbl0 = 't2=' + str(int(delTs[2 * i, 1] * 1000)) + 'ms - t1=' + \
+                        str(int(delTs[2 * i, 0] * 1000)) + 'ms'
+                    lbl1 = 't2=' + str(int(delTs[2 * i + 1, 1] * 1000)) + 'ms - t1=' + \
+                        str(int(delTs[2 * i + 1, 0] * 1000)) + 'ms'
+                else:
+                    lbl0 = None
+                    lbl1 = None
+
+                c0 = np.max(delC[:, 2 * i + 1])
+                yFine0 = fitResults[2 * i].eval(x=tFine)
+                ax[i, 0].plot(tFine, yFine0 / c0, '-', color='blue', linewidth=1)
+                ax[i, 0].plot(x, delC[:, 2 * i + 1] / c0, 'o', color='r', markersize=3, label=lbl0)
+                ax[i, 0].legend(fontsize=12)
+                ax[i, 0].tick_params(axis='x', labelsize=18)
+                ax[i, 0].tick_params(axis='y', labelsize=18)
+                ax[i, 0].set_ylim([0.0, 1.05])
+                ax[i, 0].set_yticks([0.5])
+                ax[i, 0].set_xticks([50 - 23, 100 - 23, 150 - 23, 200 - 23],
+                                    labels=[str(50 + 200), str(100 + 200), str(150 + 200), str(200 + 200)])
+
+                c1 = np.max(delC[:, 2 * i + 2])
+                yFine1 = fitResults[2 * i + 1].eval(x=tFine)
+                ax[i, 1].plot(tFine, yFine1 / c1, '-', color='blue', linewidth=1)
+                ax[i, 1].plot(x, delC[:, 2 * i + 2] / c1, 'o', color='r', markersize=3, label=lbl1)
+                ax[i, 1].legend(fontsize=12)
+                ax[i, 1].tick_params(axis='x', labelsize=18)
+                ax[i, 1].tick_params(axis='y', labelsize=18)
+                ax[i, 1].set_ylim([0.0, 1.05])
+                ax[i, 1].set_yticks([0.5])
+                ax[i, 1].set_xticks([50 - 23, 100 - 23, 150 - 23, 200 - 23],
+                                    labels=[str(50 + 200), str(100 + 200), str(150 + 200), str(200 + 200)])
+
+            fig.supxlabel(r'Temperature ($^\circ$K)', fontsize=18)
+            fig.supylabel(r'$\delta C$/C', fontsize=18)
+            fig.subplots_adjust(top=0.975, bottom=0.090,
+                                left=0.070, right=0.990,
+                                wspace=0.000, hspace=0.0)
+            plt.show()
+
+        return peakTemps, peakVals, fitResults
 
     def estimatePeakTemperatures(self, delC, delTs=None, s=None, nPoints=1000, plot=False):
         temperatures = np.array(self.dataTemps)

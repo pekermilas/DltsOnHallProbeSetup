@@ -6,6 +6,8 @@ Created on Tue Apr 21 13:11:22 2026
 """
 import h5py
 import json
+
+import importlib
 import lmfit
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
@@ -24,6 +26,7 @@ os.environ["LOKY_MAX_CPU_COUNT"] = "4"
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
 import impedanceAnalysis_Tools as iaT
+importlib.reload(iaT)
 
 # class NumpyEncoder(json.JSONEncoder):
 #     def default(self, obj):
