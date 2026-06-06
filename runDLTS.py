@@ -4,25 +4,21 @@ Created on Tue Apr 21 13:11:22 2026
 
 @author: spencer
 """
-import serial
-import serial.tools.list_ports
-import time
-import numpy as np
-import matplotlib.pyplot as plt
-import lmfit
-from lmfit.models import *
-
-import time
-import zhinst.core
-import zhinst.toolkit as zt
-import zhinst.ziPython as zi
-import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-import json
-from pathlib import Path
-import os
 import h5py
+import json
+import lmfit
+import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+import numpy as np
+import numpy as np
+import os
+import pandas as pd
+import serial
+import time
+import time
+from lmfit.models import *
+from pathlib import Path
+
 os.environ["LOKY_MAX_CPU_COUNT"] = "4"
 
 import zurichInstruments_Control as ziC

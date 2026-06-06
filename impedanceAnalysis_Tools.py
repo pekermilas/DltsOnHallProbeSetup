@@ -219,7 +219,7 @@ class impdData:
                 # errC[i,j+1] = temp.std_dev
                 
                 delC[i,j+1] = p1-p0
-                errC[i,j+1] = np.min((e1,e0))
+                errC[i, j + 1] = np.sqrt(e1*e1+e0*e0)
 
         # ADD ERRORS!!!
 
@@ -231,8 +231,10 @@ class impdData:
                 lbl1 = 't2=' + str(int(delTs[2*i+1,1]*1000)) + 'ms - t1=' + \
                     str(int(delTs[2*i+1,0]*1000)) + 'ms'
                 
-                c0 = np.max(delC[:,2*i+1])
-                yErr = np.abs(errC[:,2*i+1]/delC[:,2*i+1])/10
+                # c0 = np.max(delC[:,2*i+1])
+                c0 = 1
+                # yErr = np.abs(errC[:,2*i+1]/delC[:,2*i+1])/10
+                yErr = np.abs(errC[:, 2 * i + 1] / delC[:, 2 * i + 1])
                 yErr[yErr==np.max(yErr)]=0
                 ax[i,0].plot(delC[:,0], delC[:,2*i+1]/c0,'-',color='blue',linewidth=1)
                 ax[i,0].errorbar(delC[:,0], delC[:,2*i+1]/c0, 
