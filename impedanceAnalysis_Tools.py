@@ -23,6 +23,12 @@ import statistics
 from uncertainties import unumpy, ufloat
 import itertools
 from scipy.stats import weibull_min
+from pomegranate.gmm import GeneralMixtureModel
+from pomegranate.distributions import Normal
+from pomegranate.distributions import LogNormal
+import torch
+from scipy.interpolate import make_smoothing_spline
+from scipy.integrate import quad
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
@@ -128,6 +134,38 @@ class impdData:
             labels[i] = gmm.predict(d)
         return means, covars, labels
 
+    def findDataLevelsv2(self):
+        means = np.zeros((len(self.dataTemps),2))
+        covars = np.zeros((len(self.dataTemps),2))
+        labels = np.zeros((len(self.dataTemps),len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])))
+        for i in range(len(self.dataTemps)):
+            t = self.dataTemps[i]
+            scale = np.min(self.dataValues[t]['ImpedanceIm'])
+            d = np.array(self.dataValues[t]['ImpedanceIm']/scale, copy=True)
+            d = d.reshape(-1, 1)
+
+            import torch
+            torch.manual_seed(0)
+            model = GeneralMixtureModel([Normal(), Normal()])
+            model.fit(torch.tensor(d, dtype=torch.float32))
+
+            extracted_means = np.array([model.distributions[j].means.detach().numpy().flatten()[0] for j in range(2)])
+            extracted_covars = np.array([model.distributions[j].covs.detach().numpy().flatten()[0] for j in range(2)])
+
+            means[i] = extracted_means * scale
+            covars[i] = extracted_covars * scale**2
+
+            pred = model.predict(torch.tensor(d, dtype=torch.float32))
+            labels[i] = pred.detach().numpy().flatten()
+
+        for i in range(len(self.dataTemps)):
+            if means[i][0] < means[i][1]:
+                means[i] = means[i][::-1]
+                covars[i] = covars[i][::-1]
+                labels[i] = 1 - labels[i]
+
+        return means, covars, labels
+
     def sampleEmissions(self, showLevels=False):
         m,c,l = self.findDataLevels()
         if showLevels:
@@ -215,8 +253,10 @@ class impdData:
                 p1 = yCS(delTs[j,1])
                 e1 = np.abs(errCS(delTs[j,1]))
 
-                delC[i,j+1] = p1-p0
+                delC[i, j + 1] = p1-p0
                 errC[i, j + 1] = np.sqrt(e1*e1+e0*e0)
+        for i in range(1,len(delTs)+1):
+            errC[errC[:,i]==np.max(errC[:,i]),i]=0
 
         # ADD ERRORS!!!
 
@@ -227,36 +267,36 @@ class impdData:
                     str(int(delTs[2*i,0]*1000)) + 'ms'
                 lbl1 = 't2=' + str(int(delTs[2*i+1,1]*1000)) + 'ms - t1=' + \
                     str(int(delTs[2*i+1,0]*1000)) + 'ms'
-                
-                # c0 = np.max(delC[:,2*i+1])
-                c0 = 1
-                yErr = np.abs(errC[:, 2 * i + 1] / delC[:, 2 * i + 1])
-                yErr[yErr==np.max(yErr)]=0
-                ax[i,0].plot(delC[:,0], delC[:,2*i+1],'-',color='blue',linewidth=1)
-                ax[i,0].errorbar(delC[:,0], delC[:,2*i+1],
-                                 yerr=yErr, label=lbl0, fmt='o', color='r',
+
+                c0 = 1 # This needs to be corrected for C(steady-state) value
+                e0 = 1  # This needs to be corrected for C(steady-state) value
+                ax[i,0].plot(delC[:,0], delC[:,2*i+1]/c0,'-',color='blue',linewidth=1)
+                ax[i,0].errorbar(delC[:,0], delC[:,2*i+1]/c0,
+                                 yerr=errC[:,2*i+1]/e0, label=lbl0, fmt='o', color='r',
                                  markersize=3, ecolor='cyan', elinewidth=1)
                 ax[i,0].legend(fontsize=12)
                 ax[i,0].tick_params(axis='x', labelsize=18)
                 ax[i,0].tick_params(axis='y', labelsize=18)
-                ax[i,0].set_ylim([0.0,1.05])
-                ax[i,0].set_yticks([0.5])
+                ax[i,0].set_ylim([-0.01*np.min(delC[:,2*i+1]/c0),
+                                  2.0*np.max(delC[:,2*i+1]/c0)])
+                # ax[i,0].set_ylim([0.0,1.05])
+                # ax[i,0].set_yticks([0.5])
                 ax[i,0].set_xticks([50-23, 100-23, 150-23, 200-23],
                                    labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
-                
-                # c1 = np.max(delC[:,2*i+2])
-                c1 = 1
-                yErr = np.abs(errC[:,2*i+2]/delC[:,2*i+2])
-                yErr[yErr==np.max(yErr)]=0
-                ax[i,1].plot(delC[:,0], delC[:,2*i+2],'-',color='blue',linewidth=1)
-                ax[i,1].errorbar(delC[:,0], delC[:,2*i+2],
-                                 yerr=yErr, label=lbl1, fmt='o', color='r',
+
+                c1 = 1 # This needs to be corrected for C(steady-state) value
+                e1 = 1  # This needs to be corrected for C(steady-state) value
+                ax[i,1].plot(delC[:,0], delC[:,2*i+2]/c1,'-',color='blue',linewidth=1)
+                ax[i,1].errorbar(delC[:,0], delC[:,2*i+2]/c1,
+                                 yerr=errC[:,2*i+2]/e1, label=lbl1, fmt='o', color='r',
                                  markersize=3, ecolor='cyan', elinewidth=1)
                 ax[i,1].legend(fontsize=12)
                 ax[i,1].tick_params(axis='x', labelsize=18)
                 ax[i,1].tick_params(axis='y', labelsize=18)
-                ax[i,1].set_ylim([0.0,1.05])
-                ax[i,1].set_yticks([0.5])
+                ax[i,1].set_ylim([-0.01*np.min(delC[:,2*i+2]/c1),
+                                  2.0*np.max(delC[:,2*i+2]/c1)])
+                # ax[i,1].set_ylim([0.0,1.05])
+                # ax[i,1].set_yticks([0.5])
                 ax[i,1].set_xticks([50-23, 100-23, 150-23, 200-23],
                                    labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
 
@@ -269,6 +309,119 @@ class impdData:
             plt.show()
             
         return delC, errC, delTs
+
+    def fitDeltaCapacitanceVsTemperature(self, xx, yy, err, nComponents=2, nDrawnPoints=10000, mixtureType='lognormal'):
+        x = np.array(xx, dtype=float)
+        y = np.array(yy, dtype=float)
+        err = np.array(err, dtype=float)
+
+        mixtureType = mixtureType.strip().lower()
+        if mixtureType not in ('gaussian', 'lognormal'):
+            raise ValueError("mixtureType must be 'gaussian' or 'lognormal', got: " + str(mixtureType))
+
+        # Reflect the y graph around x = x[-1] (horizontal mirror of the curve)
+        # so that y at mirrored x[0] position equals y[0]
+        xMirror = 2.0 * x[-1] - x[-2::-1]  # mirror x about x[-1], excluding pivot
+        yMirror = y[-2::-1]                   # reverse y values (y at x[0] maps to far end)
+        errMirror = err[-2::-1]               # mirror errors (symmetric)
+        xOrig = np.array(x, copy=True)        # save original x range for reflecting back
+
+        # Use only reflected y for calculation (do not merge with original)
+        # Normalize reflected y to create a PDF (area under curve = 1)
+        spl = make_smoothing_spline(xMirror, yMirror)
+        area, _ = quad(spl, xMirror[0], xMirror[-1])
+        yNorm = yMirror / area
+
+        # Build normalized spline for sampling
+        splNorm = make_smoothing_spline(xMirror, yNorm)
+
+        # Draw points from the PDF using inverse CDF sampling
+        xFine = np.linspace(xMirror[0], xMirror[-1], nDrawnPoints)
+        pdfFine = splNorm(xFine)
+        pdfFine = np.maximum(pdfFine, 0)
+        cdf = np.cumsum(pdfFine)
+        cdf = cdf / cdf[-1]
+        u = np.random.uniform(0, 1, nDrawnPoints)
+        samples = np.interp(u, cdf, xFine)
+
+        # Fit mixture model to the drawn samples (in reflected space)
+        torch.manual_seed(0)
+        data_tensor = torch.tensor(samples.reshape(-1, 1), dtype=torch.float32)
+
+        sample_mean = float(np.mean(samples))
+        sample_var = float(np.var(samples))
+        dists = []
+        for k in range(nComponents):
+            if mixtureType == 'lognormal':
+                log_samples = np.log(np.maximum(samples, 1e-12))
+                log_mean = float(np.mean(log_samples))
+                log_var = float(np.var(log_samples))
+                d = LogNormal(
+                    means=torch.tensor([log_mean + (k - nComponents / 2.0) * 0.5], dtype=torch.float32),
+                    covs=torch.tensor([[log_var]], dtype=torch.float32),
+                )
+            else:  # gaussian
+                d = Normal(
+                    means=torch.tensor([sample_mean + (k - nComponents / 2.0) * 0.5 * np.sqrt(sample_var)], dtype=torch.float32),
+                    covs=torch.tensor([[sample_var]], dtype=torch.float32),
+                )
+            dists.append(d)
+        model = GeneralMixtureModel(dists)
+        model.fit(data_tensor)
+
+        # Extract fit parameters
+        gmm_means = [model.distributions[j].means.detach().numpy().flatten()[0] for j in range(nComponents)]
+        gmm_covs = [model.distributions[j].covs.detach().numpy().flatten()[0] for j in range(nComponents)]
+        gmm_weights = model.priors.detach().numpy().flatten()
+
+        # Build mixture PDF on reflected x range
+        xPlot = np.linspace(xMirror[0], xMirror[-1], 1000)
+        mixPdf = np.zeros_like(xPlot)
+        for j in range(nComponents):
+            mu = gmm_means[j]
+            sigma2 = gmm_covs[j]
+            sigma = np.sqrt(sigma2)
+            if mixtureType == 'lognormal':
+                mixPdf += gmm_weights[j] * (1.0 / (xPlot * sigma * np.sqrt(2 * np.pi))) * \
+                    np.exp(-0.5 * (np.log(xPlot) - mu)**2 / sigma2)
+            else:  # gaussian
+                mixPdf += gmm_weights[j] * (1.0 / (sigma * np.sqrt(2 * np.pi))) * \
+                    np.exp(-0.5 * (xPlot - mu)**2 / sigma2)
+        mixPdf = np.nan_to_num(mixPdf, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Reflect back: map mirrored x back to original x range
+        xOrigMax = xOrig[-1]
+        xReflectedBack = 2.0 * xOrigMax - xMirror
+        yReflectedBack = yMirror
+
+        # Reflect samples back
+        samplesBack = 2.0 * xOrigMax - samples
+
+        # Reflect fit curve back
+        xPlotBack = 2.0 * xOrigMax - xPlot
+        mixPdfBack = mixPdf
+        sortIdx = np.argsort(xPlotBack)
+        xPlotBack = xPlotBack[sortIdx]
+        mixPdfBack = mixPdfBack[sortIdx]
+
+        # Plot reflected-back y, histogram of reflected-back samples, and mixture fit overlaid
+        fitLabel = mixtureType.capitalize() + ' mixture fit (reflected back)'
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(xReflectedBack, yReflectedBack, 'ro-', markersize=4, label='Reflected-back y')
+        ax2 = ax.twinx()
+        ax2.hist(samplesBack, bins=50, density=True, alpha=0.4, color='gray', label='Drawn samples (reflected back)')
+        ax2.plot(xPlotBack, mixPdfBack, 'b-', linewidth=2, label=fitLabel)
+        ax.set_xlabel('Temperature', fontsize=14)
+        ax.set_ylabel('Delta Capacitance', fontsize=14)
+        ax2.set_ylabel('Probability Density', fontsize=14)
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines1 + lines2, labels1 + labels2, fontsize=12)
+        ax.set_title('Reflected-back y and ' + str(nComponents) + '-component ' + mixtureType.capitalize() + ' mixture fit', fontsize=14)
+        plt.tight_layout()
+        plt.show()
+
+        return model, samples, samplesBack, gmm_means, gmm_covs, gmm_weights
 
     @staticmethod
     def leftSkewedWeibull(x, alpha, beta, gamma):
