@@ -29,6 +29,8 @@ from pomegranate.distributions import LogNormal
 import torch
 from scipy.interpolate import make_smoothing_spline
 from scipy.integrate import quad
+import lmfit
+from lmfit.models import LognormalModel, GaussianModel
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
@@ -65,8 +67,8 @@ class impdData:
             for i in range(len(self.fileName)):
                 idx = strippedFName[i].find('.')
                 t = strippedFName[i][:idx].replace("p",".")
-                self.dataTemps.append(int(float(t)))
-        
+                self.dataTemps.append(int(float(t))+273)
+
         try:
             data = dict()
             for i in range(len(self.fileName)):
@@ -310,7 +312,9 @@ class impdData:
             
         return delC, errC, delTs
 
-    def fitDeltaCapacitanceVsTemperature(self, xx, yy, err, nComponents=2, nDrawnPoints=10000, mixtureType='lognormal'):
+    # This fit function uses PDF estimate of the data and fit via mixture models.
+    def fitDeltaCapacitanceVsTemperature(self, xx, yy, err, nComponents=2,
+                                         nDrawnPoints=10000, mixtureType='lognormal'):
         x = np.array(xx, dtype=float)
         y = np.array(yy, dtype=float)
         err = np.array(err, dtype=float)
@@ -423,276 +427,389 @@ class impdData:
 
         return model, samples, samplesBack, gmm_means, gmm_covs, gmm_weights
 
-    @staticmethod
-    def leftSkewedWeibull(x, alpha, beta, gamma):
-        """PDF of a left-skewed 3-parameter Weibull distribution."""
-        # We use the built-in scipy weibull_min but flip the x-axis relative to gamma
-        x_shifted = gamma - x
-        # Prevent evaluations outside the valid domain
-        pdf = np.zeros_like(x, dtype=float)
-        mask = x_shifted > 0
-        if np.any(mask):
-            pdf[mask] = weibull_min.pdf(x_shifted[mask], c=beta, scale=alpha)
-        return pdf
+    # This fit function uses non-linear least squares to fit a mixture model to the data.
+    def fitDeltaCapacitanceVsTemperaturev2(self, xx, yy, err, nComponents=2,
+                                         mixtureType='lognormal'):
+        x = np.array(xx, dtype=float)
+        y = np.array(yy, dtype=float)
+        err = np.array(err, dtype=float)
 
-    def fitLeftSkewedWeibull(self, x, y, alpha0=15.0, beta0=4.0, gamma0=None):
-        """Fit leftSkewedWeibull to data (x, y) using lmfit.
+        mixtureType = mixtureType.strip().lower()
+        # Validate mixtureType
+        if mixtureType not in ('gaussian', 'lognormal'):
+            print(f"Warning: mixtureType must be 'gaussian' or 'lognormal'. Defaulting to 'lognormal'.")
+            mixtureType = 'lognormal'
 
-        Parameters
-        ----------
-        x : array-like
-            Independent variable (e.g. temperature).
-        y : array-like
-            Dependent variable (e.g. delta-C signal).
-        alpha0 : float, optional
-            Initial guess for the scale parameter (default 15.0).
-        beta0 : float, optional
-            Initial guess for the shape parameter (default 4.0).
-        gamma0 : float, optional
-            Initial guess for the location (upper-bound) parameter.
-            If None, defaults to ``max(x) + 10``.
+        # Reflect the data across the vertical line x = x[-1] (horizontal reflection)
+        xMirror = 2.0 * x[-1] - x[-2::-1]  # mirror x about x[-1], excluding pivot
+        yMirror = y[-2::-1]                   # reverse y values to match mirrored x
+        errMirror = err[-2::-1]               # mirror errors
 
-        Returns
-        -------
-        result : lmfit.model.ModelResult
-            The full lmfit fit result object.
-        """
-        from lmfit import Model
+        # Use only reflected data
+        xFull = xMirror
+        yFull = yMirror
+        errFull = errMirror
 
-        model = Model(self.leftSkewedWeibull)
+        # Fit a smoothing cubic spline to the reflected data
+        spl = make_smoothing_spline(xFull, yFull)
 
-        if gamma0 is None:
-            gamma0 = np.max(x) + 10.0
+        # Plotting preparation
+        xPlot = np.linspace(xFull[0], xFull[-1], 1000)
+        yPlot_spline = spl(xPlot)
+
+        # lmfit n-component fit (lognormal or gaussian)
+        if mixtureType == 'gaussian':
+            CompModel = GaussianModel
+        else:
+            CompModel = LognormalModel
+
+        model = None
+        for i in range(1, nComponents + 1):
+            prefix = f'c{i}_'
+            if model is None:
+                model = CompModel(prefix=prefix)
+            else:
+                model += CompModel(prefix=prefix)
 
         params = model.make_params()
-        params['alpha'].set(value=alpha0, min=0.001)
-        params['beta'].set(value=beta0, min=3.6)
-        params['gamma'].set(value=gamma0, min=np.max(x))
 
-        result = model.fit(y, params, x=np.asarray(x, dtype=float))
-        return result
+        # Initial guesses based on dividing the x range
+        x_range = xFull[-1] - xFull[0]
+        for i in range(1, nComponents + 1):
+            prefix = f'c{i}_'
+            x_target = xFull[0] + (i - 0.5) * (x_range / nComponents)
+            idx = np.abs(xFull - x_target).argmin()
 
-    def testPeakTemperatures(self, delC, delTs=None, nPoints=1000, plot=True):
-        x = delC[:, 0]
-        nCurves = delC.shape[1] - 1
-        peakTemps = np.zeros(nCurves)
-        peakVals = np.zeros(nCurves)
-        fitResults = []
-        tFine = np.linspace(np.min(x), np.max(x), nPoints)
-        for i in range(nCurves):
-            y = delC[:, i + 1]
-            result = self.fitLeftSkewedWeibull(x, y)
-            fitResults.append(result)
-            yFine = result.eval(x=tFine)
-            maxIdx = np.argmax(yFine)
-            peakTemps[i] = tFine[maxIdx]
-            peakVals[i] = yFine[maxIdx]
+            if mixtureType == 'lognormal':
+                params[prefix + 'center'].set(value=np.log(max(xFull[idx], 1e-3)))
+                params[prefix + 'amplitude'].set(value=max(yFull[idx] * 10, 1e-3), min=0)
+                params[prefix + 'sigma'].set(value=0.1, min=0.01)
+            else:  # gaussian
+                params[prefix + 'center'].set(value=xFull[idx])
+                params[prefix + 'amplitude'].set(value=max(yFull[idx] * 10, 1e-3), min=0)
+                params[prefix + 'sigma'].set(value=x_range / (nComponents * 5.0), min=0.01)
 
-        if plot:
-            fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=nCurves // 2, sharex=True, sharey=True)
-            for i in range(nCurves // 2):
-                if delTs is not None:
-                    lbl0 = 't2=' + str(int(delTs[2 * i, 1] * 1000)) + 'ms - t1=' + \
-                        str(int(delTs[2 * i, 0] * 1000)) + 'ms'
-                    lbl1 = 't2=' + str(int(delTs[2 * i + 1, 1] * 1000)) + 'ms - t1=' + \
-                        str(int(delTs[2 * i + 1, 0] * 1000)) + 'ms'
-                else:
-                    lbl0 = None
-                    lbl1 = None
+        # Perform the fit
+        weights = 1.0 / np.where(errFull > 0, errFull, np.mean(errFull[errFull > 0]) if np.any(errFull > 0) else 1.0)
+        result = model.fit(yFull, params, x=xFull, weights=weights)
+        yPlot_lmfit = result.eval(x=xPlot)
 
-                c0 = np.max(delC[:, 2 * i + 1])
-                yFine0 = fitResults[2 * i].eval(x=tFine)
-                ax[i, 0].plot(tFine, yFine0 / c0, '-', color='blue', linewidth=1)
-                ax[i, 0].plot(x, delC[:, 2 * i + 1] / c0, 'o', color='r', markersize=3, label=lbl0)
-                ax[i, 0].legend(fontsize=12)
-                ax[i, 0].tick_params(axis='x', labelsize=18)
-                ax[i, 0].tick_params(axis='y', labelsize=18)
-                ax[i, 0].set_ylim([0.0, 1.05])
-                ax[i, 0].set_yticks([0.5])
-                ax[i, 0].set_xticks([50 - 23, 100 - 23, 150 - 23, 200 - 23],
-                                    labels=[str(50 + 200), str(100 + 200), str(150 + 200), str(200 + 200)])
+        # Reflect back: map mirrored data and fits back to original x range
+        xOrigMax = x[-1]
+        xBack = 2.0 * xOrigMax - xFull
+        yBack = yFull
+        errBack = errFull
 
-                c1 = np.max(delC[:, 2 * i + 2])
-                yFine1 = fitResults[2 * i + 1].eval(x=tFine)
-                ax[i, 1].plot(tFine, yFine1 / c1, '-', color='blue', linewidth=1)
-                ax[i, 1].plot(x, delC[:, 2 * i + 2] / c1, 'o', color='r', markersize=3, label=lbl1)
-                ax[i, 1].legend(fontsize=12)
-                ax[i, 1].tick_params(axis='x', labelsize=18)
-                ax[i, 1].tick_params(axis='y', labelsize=18)
-                ax[i, 1].set_ylim([0.0, 1.05])
-                ax[i, 1].set_yticks([0.5])
-                ax[i, 1].set_xticks([50 - 23, 100 - 23, 150 - 23, 200 - 23],
-                                    labels=[str(50 + 200), str(100 + 200), str(150 + 200), str(200 + 200)])
+        xPlotBack = 2.0 * xOrigMax - xPlot
+        yPlot_spline_back = yPlot_spline
+        yPlot_lmfit_back = yPlot_lmfit
 
-            fig.supxlabel(r'Temperature ($^\circ$K)', fontsize=18)
-            fig.supylabel(r'$\delta C$/C', fontsize=18)
-            fig.subplots_adjust(top=0.975, bottom=0.090,
-                                left=0.070, right=0.990,
-                                wspace=0.000, hspace=0.0)
-            plt.show()
+        # Sort for proper line plotting in original space
+        sortIdxBack = np.argsort(xBack)
+        xBack = xBack[sortIdxBack]
+        yBack = yBack[sortIdxBack]
+        errBack = errBack[sortIdxBack]
 
-        return peakTemps, peakVals, fitResults
+        sortIdxPlot = np.argsort(xPlotBack)
+        xPlotBack = xPlotBack[sortIdxPlot]
+        yPlot_spline_back = yPlot_spline_back[sortIdxPlot]
+        yPlot_lmfit_back = yPlot_lmfit_back[sortIdxPlot]
 
-    def estimatePeakTemperatures(self, delC, delTs=None, s=None, nPoints=1000, plot=False):
-        temperatures = np.array(self.dataTemps)
-        nCurves = delC.shape[1] - 1
-        peakTemps = np.zeros(nCurves)
-        peakVals = np.zeros(nCurves)
-        splines = []
-        tFine = np.linspace(np.min(temperatures), np.max(temperatures), nPoints)
-        for j in range(nCurves):
-            y = delC[:, j+1]
-            spl = make_smoothing_spline(temperatures, y, lam=s)
-            splines.append(spl)
-            yFine = spl(tFine)
-            maxIdx = np.argmax(yFine)
-            peakTemps[j] = tFine[maxIdx]
-            peakVals[j] = yFine[maxIdx]
+        # Plot the back-reflected data, spline fit, and lmfit result overlayed
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.errorbar(xBack, yBack, yerr=errBack, fmt='ro', markersize=4,
+                    ecolor='gray', elinewidth=1, capsize=2, label='Back-Reflected Data')
+        ax.plot(xPlotBack, yPlot_spline_back, 'b-', linewidth=2, label='Smoothing Spline Fit (Back-Reflected)')
+        ax.plot(xPlotBack, yPlot_lmfit_back, 'g--', linewidth=2, label=f'{nComponents}-Comp {mixtureType.capitalize()} Fit (lmfit, Back-Reflected)')
 
-        if plot:
-            fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=nCurves//2, sharex=True, sharey=True)
-            for i in range(nCurves//2):
-                if delTs is not None:
-                    lbl0 = 't2=' + str(int(delTs[2*i,1]*1000)) + 'ms - t1=' + \
-                        str(int(delTs[2*i,0]*1000)) + 'ms'
-                    lbl1 = 't2=' + str(int(delTs[2*i+1,1]*1000)) + 'ms - t1=' + \
-                        str(int(delTs[2*i+1,0]*1000)) + 'ms'
-                else:
-                    lbl0 = None
-                    lbl1 = None
+        ax.set_xlabel('Temperature', fontsize=14)
+        ax.set_ylabel('Delta Capacitance', fontsize=14)
+        ax.legend(fontsize=12)
+        ax.set_title(f'Comparison of Back-Reflected Fits ({mixtureType.capitalize()})', fontsize=14)
+        plt.tight_layout()
+        plt.show()
 
-                c0 = np.max(delC[:,2*i+1])
-                yFine0 = splines[2*i](tFine)
-                ax[i,0].plot(tFine, yFine0/c0, '-', color='blue', linewidth=1)
-                ax[i,0].plot(temperatures, delC[:,2*i+1]/c0, 'o', color='r', markersize=3, label=lbl0)
-                ax[i,0].legend(fontsize=12)
-                ax[i,0].tick_params(axis='x', labelsize=18)
-                ax[i,0].tick_params(axis='y', labelsize=18)
-                ax[i,0].set_ylim([0.0,1.05])
-                ax[i,0].set_yticks([0.5])
-                ax[i,0].set_xticks([50-23, 100-23, 150-23, 200-23],
-                                   labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
+        # Define the fit functions that work on the original temperature range (back-reflected)
+        def spline_fit_func(temp):
+            return spl(2.0 * xOrigMax - temp)
 
-                c1 = np.max(delC[:,2*i+2])
-                yFine1 = splines[2*i+1](tFine)
-                ax[i,1].plot(tFine, yFine1/c1, '-', color='blue', linewidth=1)
-                ax[i,1].plot(temperatures, delC[:,2*i+2]/c1, 'o', color='r', markersize=3, label=lbl1)
-                ax[i,1].legend(fontsize=12)
-                ax[i,1].tick_params(axis='x', labelsize=18)
-                ax[i,1].tick_params(axis='y', labelsize=18)
-                ax[i,1].set_ylim([0.0,1.05])
-                ax[i,1].set_yticks([0.5])
-                ax[i,1].set_xticks([50-23, 100-23, 150-23, 200-23],
-                                   labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
+        def lmfit_fit_func(temp):
+            return result.eval(x=2.0 * xOrigMax - temp)
 
-            fig.supxlabel(r'Temperature ($^\circ$K)', fontsize=18)
-            fig.supylabel(r'$\delta C$/C', fontsize=18)
-            fig.subplots_adjust(top=0.975, bottom=0.090, 
-                                left=0.070, right=0.990,
-                                wspace=0.000, hspace=0.0) 
-            plt.show()
+        return result, spline_fit_func, lmfit_fit_func
 
-        return peakTemps, peakVals, splines
 
-    # # @staticmethod
-    # # def find_nearest(array, value):
-    # #     array = np.asarray(array)
-    # #     idx = (np.abs(array - value)).argmin()
-    # #     return idx, array[idx]
-    
-    # def calculateDeltaCapacitance(self, window=0.001, minT1=0, maxT1=0): #CORRECT THIS!!!
-    #     x, y, err = self.sampleEmissions()
-    #     yCS = CubicSpline(x, y, bc_type='natural')
-    #     errCS = CubicSpline(x, err, bc_type='natural')
-    #     if window < x[-1]-x[0]:
-    #         if (minT1==0) and (maxT1==0):
-    #             p0 = yCS(x[0])
-    #             p1 = yCS(x[0]+window)
-    #             e0 = np.abs(errCS(x[0]))
-    #             e1 = np.abs(errCS(x[0]+window))
-    #             delC = ufloat(p1,e1) - ufloat(p0,e0)
-    #             delCVal = delC.nominal_value
-    #             delCErr = delC.std_dev
-    #         if (minT1==0) and (maxT1>0):
-    #             if maxT1 < x[-1]-window:
-    #                 maxT1Idx = np.where(x < maxT1)[0]
-    #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
-    #                 for i in range(len(maxT1Idx)):
-    #                     p0 = yCS(x[maxT1Idx[i]])
-    #                     p1 = yCS(x[maxT1Idx[i]]+window)
-    #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
-    #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
-    #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+
+    # @staticmethod
+    # def leftSkewedWeibull(x, alpha, beta, gamma):
+    #     """PDF of a left-skewed 3-parameter Weibull distribution."""
+    #     # We use the built-in scipy weibull_min but flip the x-axis relative to gamma
+    #     x_shifted = gamma - x
+    #     # Prevent evaluations outside the valid domain
+    #     pdf = np.zeros_like(x, dtype=float)
+    #     mask = x_shifted > 0
+    #     if np.any(mask):
+    #         pdf[mask] = weibull_min.pdf(x_shifted[mask], c=beta, scale=alpha)
+    #     return pdf
+    #
+    # def fitLeftSkewedWeibull(self, x, y, alpha0=15.0, beta0=4.0, gamma0=None):
+    #     """Fit leftSkewedWeibull to data (x, y) using lmfit.
+    #
+    #     Parameters
+    #     ----------
+    #     x : array-like
+    #         Independent variable (e.g. temperature).
+    #     y : array-like
+    #         Dependent variable (e.g. delta-C signal).
+    #     alpha0 : float, optional
+    #         Initial guess for the scale parameter (default 15.0).
+    #     beta0 : float, optional
+    #         Initial guess for the shape parameter (default 4.0).
+    #     gamma0 : float, optional
+    #         Initial guess for the location (upper-bound) parameter.
+    #         If None, defaults to ``max(x) + 10``.
+    #
+    #     Returns
+    #     -------
+    #     result : lmfit.model.ModelResult
+    #         The full lmfit fit result object.
+    #     """
+    #     from lmfit import Model
+    #
+    #     model = Model(self.leftSkewedWeibull)
+    #
+    #     if gamma0 is None:
+    #         gamma0 = np.max(x) + 10.0
+    #
+    #     params = model.make_params()
+    #     params['alpha'].set(value=alpha0, min=0.001)
+    #     params['beta'].set(value=beta0, min=3.6)
+    #     params['gamma'].set(value=gamma0, min=np.max(x))
+    #
+    #     result = model.fit(y, params, x=np.asarray(x, dtype=float))
+    #     return result
+    #
+    # def testPeakTemperatures(self, delC, delTs=None, nPoints=1000, plot=True):
+    #     x = delC[:, 0]
+    #     nCurves = delC.shape[1] - 1
+    #     peakTemps = np.zeros(nCurves)
+    #     peakVals = np.zeros(nCurves)
+    #     fitResults = []
+    #     tFine = np.linspace(np.min(x), np.max(x), nPoints)
+    #     for i in range(nCurves):
+    #         y = delC[:, i + 1]
+    #         result = self.fitLeftSkewedWeibull(x, y)
+    #         fitResults.append(result)
+    #         yFine = result.eval(x=tFine)
+    #         maxIdx = np.argmax(yFine)
+    #         peakTemps[i] = tFine[maxIdx]
+    #         peakVals[i] = yFine[maxIdx]
+    #
+    #     if plot:
+    #         fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=nCurves // 2, sharex=True, sharey=True)
+    #         for i in range(nCurves // 2):
+    #             if delTs is not None:
+    #                 lbl0 = 't2=' + str(int(delTs[2 * i, 1] * 1000)) + 'ms - t1=' + \
+    #                     str(int(delTs[2 * i, 0] * 1000)) + 'ms'
+    #                 lbl1 = 't2=' + str(int(delTs[2 * i + 1, 1] * 1000)) + 'ms - t1=' + \
+    #                     str(int(delTs[2 * i + 1, 0] * 1000)) + 'ms'
     #             else:
-    #                 newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
-    #                 maxT1 = x[newMaxT1Idx]
-    #                 maxT1Idx = np.where(x < maxT1)[0]
-    #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
-    #                 for i in range(len(maxT1Idx)):
-    #                     p0 = yCS(x[maxT1Idx[i]])
-    #                     p1 = yCS(x[maxT1Idx[i]]+window)
-    #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
-    #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
-    #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
-    #             delCVal = delC.mean().nominal_value
-    #             delCErr = delC.mean().std_dev
-    #             returnVal = 0
-    #         if (minT1>0) and (maxT1==minT1):
-    #             minT1Idx = np.where(x < minT1)[0][-1]
-    #             p0 = yCS(x[minT1Idx])
-    #             p1 = yCS(x[minT1Idx]+window)
-    #             e0 = np.abs(errCS(x[minT1Idx]))
-    #             e1 = np.abs(errCS(x[minT1Idx]+window))
-    #             delC = ufloat(p1,e1) - ufloat(p0,e0)
-    #             delCVal = delC.nominal_value
-    #             delCErr = delC.std_dev
-    #             returnVal = 0
-    #         if (minT1>0) and (maxT1>minT1):
-    #             minT1Idx = np.where(x < minT1)[0][-1]
-    #             if maxT1 < x[-1]-window:
-    #                 maxT1Idx = np.where(x < maxT1)[0]
-    #                 maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
-    #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
-    #                 for i in range(len(maxT1Idx)):
-    #                     p0 = yCS(x[maxT1Idx[i]])
-    #                     p1 = yCS(x[maxT1Idx[i]]+window)
-    #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
-    #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
-    #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    #                 lbl0 = None
+    #                 lbl1 = None
+    #
+    #             c0 = np.max(delC[:, 2 * i + 1])
+    #             yFine0 = fitResults[2 * i].eval(x=tFine)
+    #             ax[i, 0].plot(tFine, yFine0 / c0, '-', color='blue', linewidth=1)
+    #             ax[i, 0].plot(x, delC[:, 2 * i + 1] / c0, 'o', color='r', markersize=3, label=lbl0)
+    #             ax[i, 0].legend(fontsize=12)
+    #             ax[i, 0].tick_params(axis='x', labelsize=18)
+    #             ax[i, 0].tick_params(axis='y', labelsize=18)
+    #             ax[i, 0].set_ylim([0.0, 1.05])
+    #             ax[i, 0].set_yticks([0.5])
+    #             ax[i, 0].set_xticks([50 - 23, 100 - 23, 150 - 23, 200 - 23],
+    #                                 labels=[str(50 + 200), str(100 + 200), str(150 + 200), str(200 + 200)])
+    #
+    #             c1 = np.max(delC[:, 2 * i + 2])
+    #             yFine1 = fitResults[2 * i + 1].eval(x=tFine)
+    #             ax[i, 1].plot(tFine, yFine1 / c1, '-', color='blue', linewidth=1)
+    #             ax[i, 1].plot(x, delC[:, 2 * i + 2] / c1, 'o', color='r', markersize=3, label=lbl1)
+    #             ax[i, 1].legend(fontsize=12)
+    #             ax[i, 1].tick_params(axis='x', labelsize=18)
+    #             ax[i, 1].tick_params(axis='y', labelsize=18)
+    #             ax[i, 1].set_ylim([0.0, 1.05])
+    #             ax[i, 1].set_yticks([0.5])
+    #             ax[i, 1].set_xticks([50 - 23, 100 - 23, 150 - 23, 200 - 23],
+    #                                 labels=[str(50 + 200), str(100 + 200), str(150 + 200), str(200 + 200)])
+    #
+    #         fig.supxlabel(r'Temperature ($^\circ$K)', fontsize=18)
+    #         fig.supylabel(r'$\delta C$/C', fontsize=18)
+    #         fig.subplots_adjust(top=0.975, bottom=0.090,
+    #                             left=0.070, right=0.990,
+    #                             wspace=0.000, hspace=0.0)
+    #         plt.show()
+    #
+    #     return peakTemps, peakVals, fitResults
+    #
+    # def estimatePeakTemperatures(self, delC, delTs=None, s=None, nPoints=1000, plot=False):
+    #     temperatures = np.array(self.dataTemps)
+    #     nCurves = delC.shape[1] - 1
+    #     peakTemps = np.zeros(nCurves)
+    #     peakVals = np.zeros(nCurves)
+    #     splines = []
+    #     tFine = np.linspace(np.min(temperatures), np.max(temperatures), nPoints)
+    #     for j in range(nCurves):
+    #         y = delC[:, j+1]
+    #         spl = make_smoothing_spline(temperatures, y, lam=s)
+    #         splines.append(spl)
+    #         yFine = spl(tFine)
+    #         maxIdx = np.argmax(yFine)
+    #         peakTemps[j] = tFine[maxIdx]
+    #         peakVals[j] = yFine[maxIdx]
+    #
+    #     if plot:
+    #         fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=nCurves//2, sharex=True, sharey=True)
+    #         for i in range(nCurves//2):
+    #             if delTs is not None:
+    #                 lbl0 = 't2=' + str(int(delTs[2*i,1]*1000)) + 'ms - t1=' + \
+    #                     str(int(delTs[2*i,0]*1000)) + 'ms'
+    #                 lbl1 = 't2=' + str(int(delTs[2*i+1,1]*1000)) + 'ms - t1=' + \
+    #                     str(int(delTs[2*i+1,0]*1000)) + 'ms'
     #             else:
-    #                 newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
-    #                 maxT1 = x[newMaxT1Idx]
-    #                 maxT1Idx = np.where(x < maxT1)[0]
-    #                 maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
-    #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
-    #                 for i in range(len(maxT1Idx)):
-    #                     p0 = yCS(x[maxT1Idx[i]])
-    #                     p1 = yCS(x[maxT1Idx[i]]+window)
-    #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
-    #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
-    #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
-    #             delCVal = delC.mean().nominal_value
-    #             delCErr = delC.mean().std_dev
-    #             returnVal = 0
-
-    #     else:
-    #         print("Window is larger than data span!")
-    #         delCVal = 0
-    #         delCErr = 0
-    #         returnVal = -1
-    #     return delCVal, delCErr, returnVal
-            
-    # def deltaCapacitancePlots(self, window=1000, temperatures=30, minT1=0, maxT1=1000, smooth=False):
-    #     maxT1 = maxT1 * 1e-6
-    #     for i in range(len(window)):
-    #         window = window[i] * 1e-6
-    #         for j in range(len(temperatures)):
-    #             aa[i,j],bb[i,j],cc = data[temperatures[j]].calculateDeltaCapacitance(window, minT1, maxT1)
-        
-    #     for i in range(len(t)):
-    #         plt.plot(nm,aa[i,:]/np.max(aa[i,:]),label=str(t[i]))
-        
-    #     return 0
+    #                 lbl0 = None
+    #                 lbl1 = None
+    #
+    #             c0 = np.max(delC[:,2*i+1])
+    #             yFine0 = splines[2*i](tFine)
+    #             ax[i,0].plot(tFine, yFine0/c0, '-', color='blue', linewidth=1)
+    #             ax[i,0].plot(temperatures, delC[:,2*i+1]/c0, 'o', color='r', markersize=3, label=lbl0)
+    #             ax[i,0].legend(fontsize=12)
+    #             ax[i,0].tick_params(axis='x', labelsize=18)
+    #             ax[i,0].tick_params(axis='y', labelsize=18)
+    #             ax[i,0].set_ylim([0.0,1.05])
+    #             ax[i,0].set_yticks([0.5])
+    #             ax[i,0].set_xticks([50-23, 100-23, 150-23, 200-23],
+    #                                labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
+    #
+    #             c1 = np.max(delC[:,2*i+2])
+    #             yFine1 = splines[2*i+1](tFine)
+    #             ax[i,1].plot(tFine, yFine1/c1, '-', color='blue', linewidth=1)
+    #             ax[i,1].plot(temperatures, delC[:,2*i+2]/c1, 'o', color='r', markersize=3, label=lbl1)
+    #             ax[i,1].legend(fontsize=12)
+    #             ax[i,1].tick_params(axis='x', labelsize=18)
+    #             ax[i,1].tick_params(axis='y', labelsize=18)
+    #             ax[i,1].set_ylim([0.0,1.05])
+    #             ax[i,1].set_yticks([0.5])
+    #             ax[i,1].set_xticks([50-23, 100-23, 150-23, 200-23],
+    #                                labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
+    #
+    #         fig.supxlabel(r'Temperature ($^\circ$K)', fontsize=18)
+    #         fig.supylabel(r'$\delta C$/C', fontsize=18)
+    #         fig.subplots_adjust(top=0.975, bottom=0.090,
+    #                             left=0.070, right=0.990,
+    #                             wspace=0.000, hspace=0.0)
+    #         plt.show()
+    #
+    #     return peakTemps, peakVals, splines
+    #
+    # # # @staticmethod
+    # # # def find_nearest(array, value):
+    # # #     array = np.asarray(array)
+    # # #     idx = (np.abs(array - value)).argmin()
+    # # #     return idx, array[idx]
+    #
+    # # def calculateDeltaCapacitance(self, window=0.001, minT1=0, maxT1=0): #CORRECT THIS!!!
+    # #     x, y, err = self.sampleEmissions()
+    # #     yCS = CubicSpline(x, y, bc_type='natural')
+    # #     errCS = CubicSpline(x, err, bc_type='natural')
+    # #     if window < x[-1]-x[0]:
+    # #         if (minT1==0) and (maxT1==0):
+    # #             p0 = yCS(x[0])
+    # #             p1 = yCS(x[0]+window)
+    # #             e0 = np.abs(errCS(x[0]))
+    # #             e1 = np.abs(errCS(x[0]+window))
+    # #             delC = ufloat(p1,e1) - ufloat(p0,e0)
+    # #             delCVal = delC.nominal_value
+    # #             delCErr = delC.std_dev
+    # #         if (minT1==0) and (maxT1>0):
+    # #             if maxT1 < x[-1]-window:
+    # #                 maxT1Idx = np.where(x < maxT1)[0]
+    # #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+    # #                 for i in range(len(maxT1Idx)):
+    # #                     p0 = yCS(x[maxT1Idx[i]])
+    # #                     p1 = yCS(x[maxT1Idx[i]]+window)
+    # #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
+    # #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+    # #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    # #             else:
+    # #                 newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
+    # #                 maxT1 = x[newMaxT1Idx]
+    # #                 maxT1Idx = np.where(x < maxT1)[0]
+    # #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+    # #                 for i in range(len(maxT1Idx)):
+    # #                     p0 = yCS(x[maxT1Idx[i]])
+    # #                     p1 = yCS(x[maxT1Idx[i]]+window)
+    # #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
+    # #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+    # #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    # #             delCVal = delC.mean().nominal_value
+    # #             delCErr = delC.mean().std_dev
+    # #             returnVal = 0
+    # #         if (minT1>0) and (maxT1==minT1):
+    # #             minT1Idx = np.where(x < minT1)[0][-1]
+    # #             p0 = yCS(x[minT1Idx])
+    # #             p1 = yCS(x[minT1Idx]+window)
+    # #             e0 = np.abs(errCS(x[minT1Idx]))
+    # #             e1 = np.abs(errCS(x[minT1Idx]+window))
+    # #             delC = ufloat(p1,e1) - ufloat(p0,e0)
+    # #             delCVal = delC.nominal_value
+    # #             delCErr = delC.std_dev
+    # #             returnVal = 0
+    # #         if (minT1>0) and (maxT1>minT1):
+    # #             minT1Idx = np.where(x < minT1)[0][-1]
+    # #             if maxT1 < x[-1]-window:
+    # #                 maxT1Idx = np.where(x < maxT1)[0]
+    # #                 maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
+    # #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+    # #                 for i in range(len(maxT1Idx)):
+    # #                     p0 = yCS(x[maxT1Idx[i]])
+    # #                     p1 = yCS(x[maxT1Idx[i]]+window)
+    # #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
+    # #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+    # #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    # #             else:
+    # #                 newMaxT1Idx = np.where(x < x[-1]-window)[0][-1]
+    # #                 maxT1 = x[newMaxT1Idx]
+    # #                 maxT1Idx = np.where(x < maxT1)[0]
+    # #                 maxT1Idx = maxT1Idx[maxT1Idx>=minT1Idx]
+    # #                 delC = unumpy.uarray(np.zeros(len(maxT1Idx)),np.zeros(len(maxT1Idx)))
+    # #                 for i in range(len(maxT1Idx)):
+    # #                     p0 = yCS(x[maxT1Idx[i]])
+    # #                     p1 = yCS(x[maxT1Idx[i]]+window)
+    # #                     e0 = np.abs(errCS(x[maxT1Idx[i]]))
+    # #                     e1 = np.abs(errCS(x[maxT1Idx[i]]+window))
+    # #                     delC[i] = ufloat(p1,e1) - ufloat(p0,e0)
+    # #             delCVal = delC.mean().nominal_value
+    # #             delCErr = delC.mean().std_dev
+    # #             returnVal = 0
+    #
+    # #     else:
+    # #         print("Window is larger than data span!")
+    # #         delCVal = 0
+    # #         delCErr = 0
+    # #         returnVal = -1
+    # #     return delCVal, delCErr, returnVal
+    #
+    # # def deltaCapacitancePlots(self, window=1000, temperatures=30, minT1=0, maxT1=1000, smooth=False):
+    # #     maxT1 = maxT1 * 1e-6
+    # #     for i in range(len(window)):
+    # #         window = window[i] * 1e-6
+    # #         for j in range(len(temperatures)):
+    # #             aa[i,j],bb[i,j],cc = data[temperatures[j]].calculateDeltaCapacitance(window, minT1, maxT1)
+    #
+    # #     for i in range(len(t)):
+    # #         plt.plot(nm,aa[i,:]/np.max(aa[i,:]),label=str(t[i]))
+    #
+    # #     return 0
             
             
             

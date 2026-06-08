@@ -146,6 +146,8 @@ if __name__ == '__main__':
                                           errC[:,0],2,
                                           100000, 'gaussian')
 
+    data.fitDeltaCapacitanceVsTemperaturev2(delC[:, 0], delC[:, 5],
+                                          errC[:, 5],2, 'lognormal')
     # peakTemps, peakVals, splines = data.estimatePeakTemperatures(delC, delT, plot=True)
     # # print("Peak Temperatures:", peakTemps)
     # # print("Peak Values:", peakVals)
