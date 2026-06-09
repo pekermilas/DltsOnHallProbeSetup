@@ -142,12 +142,17 @@ if __name__ == '__main__':
     t1 = np.arange(1,4)*0.001
     t2 = np.arange(1,5)*0.002
     delC, errC, delT = data.calculateDeltaCapacitanceT1T2(t1, t2, plot=False)
-    data.fitDeltaCapacitanceVsTemperature(delC[:,0], delC[:,10],
-                                          errC[:,0],2,
-                                          100000, 'gaussian')
+    # data.fitDeltaCapacitanceVsTemperatureFitToMixtures(delC[:,0], delC[:,10],
+    #                                       errC[:,0],2,
+    #                                       100000, 'gaussian')
+    #
+    # data.fitDeltaCapacitanceVsTemperatureFitToFunctions(delC[:, 0], delC[:, 10],
+    #                                       errC[:, 10],5, 'lognormal')
 
-    data.fitDeltaCapacitanceVsTemperaturev2(delC[:, 0], delC[:, 5],
-                                          errC[:, 5],2, 'lognormal')
+    data.findDeltaCapacitanceMaxima(delC[:, 0], delC[:, 1:], errC[:, 1:],
+                                    nComponents=[2,3], mixtureType='lognormal',
+                                    plot=True, fitMethod='lmfit')
+
     # peakTemps, peakVals, splines = data.estimatePeakTemperatures(delC, delT, plot=True)
     # # print("Peak Temperatures:", peakTemps)
     # # print("Peak Values:", peakVals)
