@@ -27,7 +27,6 @@ from pomegranate.gmm import GeneralMixtureModel
 from pomegranate.distributions import Normal
 from pomegranate.distributions import LogNormal
 import torch
-from scipy.interpolate import make_smoothing_spline
 from scipy.integrate import quad
 import lmfit
 from lmfit.models import LognormalModel, GaussianModel

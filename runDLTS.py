@@ -10,13 +10,10 @@ import json
 import importlib
 import lmfit
 import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
-import numpy as np
 import numpy as np
 import os
 import pandas as pd
 import serial
-import time
 import time
 from lmfit.models import *
 from pathlib import Path
@@ -117,18 +114,72 @@ if __name__ == '__main__':
     #     idx = data.dataTemps[i]
     #     plt.plot(data.dataValues[idx]['timeStampImps'],data.dataValues[idx]['ImpedanceIm'])
     
-    # # Sample emission levels
-    # # m,c,l = data.findDataLevels()
-    # m, c, l = data.findDataLevelsv2()
-    #
-    # for i in range(len(m)):
-    # # for i in range(5):
-    #     t = data.dataTemps[i]
+    # Sample emission levels
+    m, c, l = data.findDataLevelsScikitLearn()
+    sortedTemps = np.sort(data.dataTemps)
+    # # for i in range(len(m)):
+    # for i in range(10,15):
+    #     # t = data.dataTemps[i]
+    #     t = sortedTemps[12]
+    #     idx = np.where(data.dataTemps==sortedTemps[i])[0][0]
     #     plt.scatter(data.dataValues[t]['timeStampImps'],
-    #                 data.dataValues[t]['ImpedanceIm'],c=l[i],
-    #                 # data.dataValues[t]['ImpedanceIm'], c=k[i],
+    #                 data.dataValues[t]['ImpedanceIm'],c=l[idx],
+    #                 # data.dataValues[t]['ImpedanceIm'], c=k[idx],
     #                 cmap='coolwarm', s=4)
-    
+    #     print(t)
+
+    datasets = []
+    for i in range(len(m)):
+        t = sortedTemps[i]
+        idx = np.where(data.dataTemps == sortedTemps[i])[0][0]
+        temp = np.column_stack((data.dataValues[t]['timeStampImps'],
+                                data.dataValues[t]['ImpedanceIm']))
+        temp = np.column_stack((temp,l[idx]))
+        datasets.append(temp)
+
+    # Interactive plotting section
+    fig, ax = plt.subplots()
+    current_idx = [0]  # Using a list to allow modification within the event handler
+
+    def update_plot(idx, keep_limits=False):
+        if keep_limits:
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+
+        ax.clear()
+        data_to_plot = datasets[idx]
+        ax.scatter(data_to_plot[:, 0], data_to_plot[:, 1], c=data_to_plot[:, 2], 
+                   cmap='coolwarm', s=4)
+        ax.set_title(f"Temperature: {sortedTemps[idx]}")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Impedance Im")
+        
+        if keep_limits:
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
+            
+        fig.canvas.draw()
+
+    def on_press(event):
+        if event.key == 'right':
+            current_idx[0] = (current_idx[0] + 1) % len(datasets)
+            update_plot(current_idx[0], keep_limits=True)
+        elif event.key == 'left':
+            current_idx[0] = (current_idx[0] - 1) % len(datasets)
+            update_plot(current_idx[0], keep_limits=True)
+        elif event.key == 'escape' or event.key == 'r':
+            update_plot(current_idx[0], keep_limits=False)
+
+    fig.canvas.mpl_connect('key_press_event', on_press)
+    update_plot(0)
+    plt.show()
+
+    # plt.scatter(datasets[0][:,0],datasets[0][:,1],c=datasets[0][:,2],
+    #             # data.dataValues[t]['ImpedanceIm'], c=k[idx],
+    #             cmap='coolwarm', s=4)
+
+
+
     emiss = data.sampleEmissions()
     # for i in range(len(data.dataTemps)):
     #     idx = data.dataTemps[i]
