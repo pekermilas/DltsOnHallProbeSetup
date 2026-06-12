@@ -163,10 +163,10 @@ if __name__ == '__main__':
     def on_press(event):
         if event.key == 'right':
             current_idx[0] = (current_idx[0] + 1) % len(datasets)
-            update_plot(current_idx[0], keep_limits=True)
+            update_plot(current_idx[0], keep_limits=False) # Changed to False
         elif event.key == 'left':
             current_idx[0] = (current_idx[0] - 1) % len(datasets)
-            update_plot(current_idx[0], keep_limits=True)
+            update_plot(current_idx[0], keep_limits=False) # Changed to False
         elif event.key == 'escape' or event.key == 'r':
             update_plot(current_idx[0], keep_limits=False)
 
@@ -385,11 +385,3 @@ if __name__ == '__main__':
     #
     #
     # # # 0.0010264 0.0010268
-    
-    
-    
-    
-    
-    
-    
-     
