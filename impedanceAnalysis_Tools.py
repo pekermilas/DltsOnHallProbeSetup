@@ -52,6 +52,10 @@ class impdData:
         if self.fileName is None:
             self.fileName = askopenfilenames(title="Select a file",
                 filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+
+        if isinstance(self.fileName, str):
+            self.fileName = [self.fileName]
+
         if self.rootFolder is None:
             idx = self.fileName[0][::-1].find('/')
             self.rootFolder = self.fileName[0][:-idx]
@@ -66,7 +70,10 @@ class impdData:
             for i in range(len(self.fileName)):
                 idx = strippedFName[i].find('.')
                 t = strippedFName[i][:idx].replace("p",".")
-                self.dataTemps.append(int(float(t))+273)
+                if t.strip():
+                    self.dataTemps.append(int(float(t))+273)
+                else:
+                    print(f"Warning: Could not extract temperature from filename: {self.fileName[i]}")
 
         try:
             data = dict()
