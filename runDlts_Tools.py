@@ -19,7 +19,7 @@ import itertools
 from scipy.stats import weibull_min
 from pomegranate.gmm import GeneralMixtureModel
 from pomegranate.distributions import Normal
-from pomegranate.distributions import LogNormal
+# from pomegranate.distributions import LogNormal
 import torch
 from scipy.integrate import quad
 import lmfit
@@ -222,6 +222,7 @@ class dltsRun:
             return result_linear.rsquared,result_cubic.rsquared
 
     def runExperiment(self):
+        print(self.runDevices)
         tempDev = self.runDevices[0]
         impdDev = self.runDevices[1]
         tmpParams = self.runParams['temperature']
@@ -239,9 +240,10 @@ class dltsRun:
             numPoints = impParams['numPoints']
             numReps = impParams['numReps']
             outType = self.runOutputFileType
-            if outType=='txt'
+            if outType=='txt':
                 fName = self.dataFileNames[i]
-                data = impdDev.pullData(plot=False, trigger=True, numPoints, numReps)
+                data = impdDev.pullData(plot=False, trigger=True, 
+                                        numPoints=numPoints, numReps=numReps)
                 impdDev.writeDataJson(data, fName)
 
         return 0

@@ -37,6 +37,7 @@ importlib.reload(iaT)
 if __name__ == '__main__':
 
     run = rdT.dltsRun()
+    run.initSetup()
     run.runExperiment()
     run.finishExperiment()
     
