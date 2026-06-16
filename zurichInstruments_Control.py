@@ -278,7 +278,7 @@ class ziDevice:
                 self.setParam(pName)
         return 0
     
-    def pullData(self, plot=True, trigger=False, numPoints=1024):
+    def pullData(self, plot=True, trigger=False, numPoints=1024, numReps=1):
         data = None
         if trigger:
             daq_module = self.session.modules.daq
@@ -288,7 +288,7 @@ class ziDevice:
             daq_module.clearhistory(1)
             daq_module.bandwidth(0)
             daq_module.grid.cols(numPoints)
-            daq_module.grid.repetitions(1)
+            daq_module.grid.repetitions(numReps)
             daq_module.endless(0)
             self.device.imps[0].enable(True)
             daq_module.subscribe('/dev32271/demods/0/sample.AuxIn0.avg')

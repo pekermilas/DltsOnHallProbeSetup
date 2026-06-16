@@ -59,6 +59,8 @@ class dltsRun:
         # Add number of data point in mesurement
         pEntry = input("Please enter Number of Data Points (as power of 2): ")
         impParams['numPoints'] = 2**float(pEntry) if not len(pEntry) == 0 else 2**13
+        pEntry = input("Please enter Number of Repetitions for Averaging: ")
+        impParams['numReps'] = int(pEntry) if not len(pEntry) == 0 else 1
 
         # Set temperature controller parameters
         self.runDevices[0].setTempGrid()
@@ -66,7 +68,11 @@ class dltsRun:
         tmpParams['tInitial'] = self.runDevices[0].Tinitial
         tmpParams['tFinal'] = self.runDevices[0].Tfinal
         tmpParams['numTemps'] = self.runDevices[0].numTemps
-
+        pEntry = input("Please enter Ramp (C/min): ")
+        tmpParams['tRamp'] = int(pEntry) if not len(pEntry) == 0 else 5
+        pEntry = input("Please enter additional delay time for T stability (s): ")
+        tmpParams['tStableDelay'] = int(pEntry) if not len(pEntry) == 0 else 0
+        
         # Set data storage parameters
         dtaParams = dict()
         pEntry = input("Please enter output file type (txt or h5): ")
@@ -215,71 +221,48 @@ class dltsRun:
             plt.show()
             return result_linear.rsquared,result_cubic.rsquared
 
+    def runExperiment(self):
+        tempDev = self.runDevices[0]
+        impdDev = self.runDevices[1]
+        tmpParams = self.runParams['temperature']
+        impParams = self.runParams['impedance']
+        dtaParams = self.runParams['data']
+        for i in range(len(tempDev.tempGrid)):
+            ramp = tmpParams['tRamp']
+            delay = tmpParams['tStableDelay']
+            tempDev.goToTemp(tempDev.tempGrid[i], ramp, delay)
+            time.sleep(1)
+            if not i==0:
+                impdDev.device.factory_reset()
+            impdDev.reloadParams()
+            
+            numPoints = impParams['numPoints']
+            numReps = impParams['numReps']
+            outType = self.runOutputFileType
+            if outType=='txt'
+                fName = self.dataFileNames[i]
+                data = impdDev.pullData(plot=False, trigger=True, numPoints, numReps)
+                impdDev.writeDataJson(data, fName)
 
-        # data = impdDev.pullData(plot=False, trigger=True, numPoints=numPoints)
-        # impdDev.writeDataJson(data, rootFolder+fName)
+        return 0
 
-
-
-
-    # # data = dict()
-    # # for i in range(len(tempDev.tempGrid)):
-    # #     tempDev.goToTemp(tempDev.tempGrid[i])
-    # #     time.sleep(1)
-    # #     impdDev.reloadParams()
-    # #     data[tempDev.tempGrid[i].item()] = impdDev.pullData(plot=False, trigger=True, numPoints=2**12)
-    #
-    # # fName = 'C:/Users/spencer/Desktop/DATA/DLTS/05062026/readable.txt'
-    #
-    # # impdDev.writeData(data, fName)
-    #
-    #
-    # rootFolder = 'C:/Users/spencer/Desktop/DATA/DLTS/05282026/'
-    #
-    # # # This is for dumping data into .h5
-    # # # ------------------------------------------------------------------------
-    # # fName = 'test.h5'
-    #
-    # # f = h5py.File(rootFolder+fName, 'w')
-    # # dltsData = f.create_dataset('dlts', shape=(len(tempDev.tempGrid), 6, numPoints),
-    # #                             dtype='float32', compression="gzip",
-    # #                             compression_opts=9)
-    #
-    # # for i in range(len(tempDev.tempGrid)):
-    # #     tempDev.goToTemp(tempDev.tempGrid[i])
-    # #     time.sleep(1)
-    # #     impdDev.reloadParams()
-    #
-    # #     numPoints = 2**12
-    # #     fileName = rootFolder+fName
-    # #     data = impdDev.pullData(plot=False, trigger=True, numPoints=numPoints)
-    # #     shape = [len(tempDev.tempGrid), 6, numPoints]
-    # #     if i==0:
-    # #         impdDev.writeDataH5(data, fileName, i, shape, start=True, finish=False)
-    # #     if i==len(tempDev.tempGrid)-1:
-    # #         impdDev.writeDataH5(data, fileName, i, shape, start=False, finish=True)
-    # #     if (i>0 and i<len(tempDev.tempGrid)-1):
-    # #         impdDev.writeDataH5(data, fileName, i, shape, start=False, finish=False)
-    #
-    # #     # fName = str(tempDev.tempGrid[i]).replace('.','p')+'.txt'
-    # #     # impdDev.writeDataJson(data, rootFolder+fName)
-    #
-    # # f.close()
-    #
-    # # # This is for dumping data into .JSON
-    # # # ------------------------------------------------------------------------
-    # for i in range(len(tempDev.tempGrid)):
-    #     tempDev.goToTemp(tempDev.tempGrid[i])
-    #     time.sleep(1)
-    #     if not i==0:
-    #         impdDev.device.factory_reset()
-    #     impdDev.reloadParams()
-    #
-    #     numPoints = 2**13
-    #     fName = str(tempDev.tempGrid[i]).replace('.','p')+'.txt'
-    #     data = impdDev.pullData(plot=False, trigger=True, numPoints=numPoints)
-    #     impdDev.writeDataJson(data, rootFolder+fName)
-    #
-    # tempDev.goToRoomTemp(Tr=30)
-    # tempDev.disconnTController()
-    # impdDev.session.disconnect_device('dev32271')
+    def finishExperiment(self):
+        tempDev = self.runDevices[0]
+        impdDev = self.runDevices[1]
+        
+        runParams = self.runParams
+        fName = self.paramsFileName
+        impdDev.writeDataJson(runParams, fName)
+        
+        tempDev.goToRoomTemp(Tr=35)
+        tempDev.disconnTController()
+        impdDev.session.disconnect_device('dev32271')
+        
+        return 0        
+        
+        
+        
+        
+        
+        
+        
