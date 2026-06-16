@@ -48,6 +48,7 @@ if __name__ == '__main__':
     # fN = 'C:/Users/pekermilas/Documents/GitHub/PekerPersonalCodeWorks/CemilDataAnalysis/06092026/-1p0.txt'
     # fN = 'C:/Users/pekermilas/Documents/GitHub/PekerPersonalCodeWorks/CemilDataAnalysis/06092026/-90p0.txt'
     # fN = 'C:/Users/pekermilas/Documents/GitHub/PekerPersonalCodeWorks/CemilDataAnalysis/06092026/-72p0.txt'
+    fN = 'C:/Users/pekermilas/Desktop/061626_Part/061626/p12p0.txt'
 
     # data = iaT.impdData(fName=fN)
     # data.readData()

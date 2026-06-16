@@ -95,7 +95,7 @@ class dltsRun:
         fName = []
         if dtaParams['outputType'] == 'txt':
             for i in range(len(self.runDevices[0].tempGrid)):
-                if str(self.runDevices[0].tempGrid[i])=='-':
+                if '-' in str(self.runDevices[0].tempGrid[i]):
                     fName.append(self.dataFolder + 'n'+ str(np.abs(self.runDevices[0].tempGrid[i])).replace('.','p')+'.txt')
                 else:
                     fName.append(self.dataFolder + 'p'+ str(np.abs(self.runDevices[0].tempGrid[i])).replace('.','p')+'.txt')

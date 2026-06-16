@@ -69,7 +69,9 @@ class impdData:
             self.dataTemps = []
             for i in range(len(self.fileName)):
                 idx = strippedFName[i].find('.')
-                t = strippedFName[i][:idx].replace("p",".")
+                t0 = '+' if strippedFName[i][0]=='p' else '-'
+                t = strippedFName[i][1:idx].replace("p",".")
+                t = t0 + t
                 if t.strip():
                     self.dataTemps.append(int(float(t))+273)
                 else:
