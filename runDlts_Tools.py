@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
+import copy
 from tkinter.filedialog import askopenfilenames
 
 from numpy.ma.extras import apply_along_axis
@@ -55,13 +56,14 @@ class dltsRun:
         # Set impedance analyzer parameters
         self.runDevices[1].device.factory_reset()
         self.runDevices[1].loadParams()
-        impParams = self.runDevices[1].params
+        # impParams = self.runDevices[1].params
+        impParams = copy.deepcopy(self.runDevices[1].params)
         # Add number of data point in mesurement
         pEntry = input("Please enter Number of Data Points (as power of 2): ")
         impParams['numPoints'] = 2**float(pEntry) if not len(pEntry) == 0 else 2**13
         pEntry = input("Please enter Number of Repetitions for Averaging: ")
         impParams['numReps'] = int(pEntry) if not len(pEntry) == 0 else 1
-
+        
         # Set temperature controller parameters
         self.runDevices[0].setTempGrid()
         tmpParams = dict()
