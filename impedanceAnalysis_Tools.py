@@ -25,7 +25,7 @@ import itertools
 from scipy.stats import weibull_min
 from pomegranate.gmm import GeneralMixtureModel
 from pomegranate.distributions import Normal
-# from pomegranate.distributions import LogNormal
+from pomegranate.distributions import LogNormal
 import torch
 from scipy.integrate import quad
 import lmfit
