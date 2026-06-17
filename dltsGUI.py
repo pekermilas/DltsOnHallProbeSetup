@@ -287,7 +287,9 @@ class DLTSGui:
         # default to current user's Desktop/DATA/DLTS to avoid hard-coded other-user paths
         default_root = os.path.join(str(Path.home()), 'Desktop', 'DATA', 'DLTS')
         self.rootfolder_e.insert(0, os.path.expanduser(default_root))
-        self.rootfolder_e.grid(row=1, column=1, columnspan=2)
+        self.rootfolder_e.grid(row=1, column=1, columnspan=1, sticky='w')
+        # Browse button to select root folder via file explorer
+        ttk.Button(dframe, text='Browse...', command=self.browse_root_folder).grid(row=1, column=2, padx=4)
 
         self.liveplot_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(dframe, text='Live Plot', variable=self.liveplot_var).grid(row=2, column=0, sticky='w')
@@ -819,6 +821,18 @@ class DLTSGui:
         files = filedialog.askopenfilenames(title='Select data files', filetypes=[('Text files','*.txt'),('HDF5','*.h5'),('All files','*.*')])
         for f in files:
             self.filelistbox.insert('end', f)
+
+    def browse_root_folder(self):
+        """Open a folder selection dialog and set the Root Folder entry."""
+        try:
+            current = self.rootfolder_e.get() if hasattr(self, 'rootfolder_e') else str(Path.home())
+            initial = current if os.path.isdir(current) else str(Path.home())
+            newdir = filedialog.askdirectory(initialdir=initial, title='Select Root Folder')
+            if newdir:
+                self.rootfolder_e.delete(0, 'end')
+                self.rootfolder_e.insert(0, newdir)
+        except Exception as e:
+            messagebox.showerror('Folder selection error', str(e))
 
     def run_postproc(self):
         selected = list(self.filelistbox.get(0, 'end'))
