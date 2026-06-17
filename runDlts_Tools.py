@@ -80,7 +80,8 @@ class dltsRun:
         pEntry = input("Please enter output file type (txt or h5): ")
         dtaParams['outputType'] = pEntry if not len(pEntry) == 0 else 'txt'
         pEntry = input("Please enter root folder for data: ")
-        dtaParams['rootFolder'] = pEntry if not len(pEntry) == 0 else 'C:/Users/spencer/Desktop/DATA/DLTS/'
+        default_root = os.path.join(os.path.expanduser('~'), 'Desktop', 'DATA', 'DLTS')
+        dtaParams['rootFolder'] = pEntry if not len(pEntry) == 0 else default_root
 
         rootFolder = dtaParams['rootFolder']
         timeAndDate = datetime.now()
