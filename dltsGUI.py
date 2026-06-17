@@ -133,7 +133,7 @@ class DLTSGui:
         frm.pack(fill='both', expand=True)
 
         # Temperature group
-        tframe = ttk.LabelFrame(frm, text='Temperature Sweep', padding=8)
+        tframe = ttk.LabelFrame(frm, text='Temperature Controller Parameters', padding=8)
         tframe.grid(row=0, column=0, sticky='nw', padx=6, pady=6)
 
         ttk.Label(tframe, text='Initial (C)').grid(row=0, column=0, sticky='w')
@@ -161,22 +161,120 @@ class DLTSGui:
         self.tdelay_e.insert(0, '0')
         self.tdelay_e.grid(row=4, column=1)
 
-        # Impedance group
-        iframe = ttk.LabelFrame(frm, text='Impedance', padding=8)
-        iframe.grid(row=0, column=1, sticky='ne', padx=6, pady=6)
+        # Combined Impedance + Zurich device parameters
+        imps_frame = ttk.LabelFrame(frm, text='Impedance Analyzer Parameters', padding=8)
+        # place to the right of temperature controls and allow extra vertical space
+        imps_frame.grid(row=0, column=1, rowspan=2, sticky='ne', padx=6, pady=6)
 
-        ttk.Label(iframe, text='Num Points (power of 2)').grid(row=0, column=0, sticky='w')
-        self.npts_e = ttk.Entry(iframe, width=10)
+        # Impedance inputs
+        ttk.Label(imps_frame, text='Num Points (power of 2)').grid(row=0, column=0, sticky='w')
+        self.npts_e = ttk.Entry(imps_frame, width=10)
         self.npts_e.insert(0, '13')
         self.npts_e.grid(row=0, column=1)
 
-        ttk.Label(iframe, text='Num Reps').grid(row=1, column=0, sticky='w')
-        self.nreps_e = ttk.Entry(iframe, width=10)
+        ttk.Label(imps_frame, text='Num Reps').grid(row=1, column=0, sticky='w')
+        self.nreps_e = ttk.Entry(imps_frame, width=10)
         self.nreps_e.insert(0, '1')
         self.nreps_e.grid(row=1, column=1)
 
+        # Zurich device parameters (explicit inputs mirroring zurichInstruments_Control.assignParam)
+        # list of parameters and sensible defaults taken from zurichInstruments_Control.assignParam
+        self.z_param_list = [
+            ('Oscillation Frequency', '501000'),
+            ('Max bandwidth', '10000'),
+            ('Input Control', '0 - Manual'),
+            ('Current Range', '0.010'),
+            ('Voltage Range', '3'),
+            ('Omega Suppression', '80'),
+            ('Data Transfer Rate', '60000'),
+            ('Equivalent Circuit Mode', '0 - 4-Terminal'),
+            ('Threshold Input Signal', '59 - TU Output Value'),
+            ('State Enable Time', '0.006'),
+            ('State Disable Time', '0.003'),
+            ('Logic Unit Not', '1 - On'),
+            ('Aux Output Signal', '13 - TU Output Value'),
+            ('Aux Output Scale', '-1'),
+            ('Aux Output Offset', '-0.5'),
+            ('Aux Output Lower Limit', '-10'),
+            ('Aux Output Upper Limit', '0'),
+            ('Signal Output Add', '1 - True'),
+            ('Trigger Source Signal', '36 - Threshold 1')
+        ]
+
+        # define parameters that should be dropdowns (multiple-choice) with human-readable labels
+        param_options = {
+            'Input Control': [
+                '0 - Manual',
+                '1 - Auto',
+                '2 - Current Zone'
+            ],
+            'Equivalent Circuit Mode': [
+                '0 - 4-Terminal',
+                '1 - 2-Terminal'
+            ],
+            'Threshold Input Signal': [
+                '59 - TU Output Value',
+                '58 - Aux Output Overload',
+                '56 - Aux Input Overload',
+                '55 - Output Overload',
+                '54 - Input(I) Overload',
+                '53 - Input(V) Overload',
+                '52 - Trigger Out',
+                '51 - Trigger In',
+                '50 - DIO',
+                '3 - Demod Theta',
+                '2 - Demod R',
+                '1 - Demod Y',
+                '0 - Demod X'
+            ],
+            'Logic Unit Not': [
+                '0 - Off',
+                '1 - On'
+            ],
+            'Aux Output Signal': [
+                '0 - Demod X',
+                '1 - Demod Y',
+                '2 - Demod R',
+                '3 - Demod Theta',
+                '11 - TU Filtered Value',
+                '12 - Manual',
+                '13 - TU Output Value'
+            ],
+            'Signal Output Add': [
+                '0 - False',
+                '1 - True'
+            ],
+            'Trigger Source Signal': [
+                '0 - Off',
+                '1 - Osc Phi Demod 2',
+                '36 - Threshold 1',
+                '37 - Threshold 2',
+                '38 - Threshold 3',
+                '39 - Threshold 4',
+                '52 - MDS Sync Out'
+            ]
+        }
+
+        self.z_params_vars = {}
+        # lay out parameters starting at row 2 to leave space for impedance inputs
+        for idx, (pname, pdef) in enumerate(self.z_param_list):
+            r = (idx // 2) + 2
+            c = (idx % 2) * 2
+            lbl = ttk.Label(imps_frame, text=pname)
+            lbl.grid(row=r, column=c, sticky='w', padx=4, pady=2)
+            var = tk.StringVar(value=pdef)
+            # if parameter has a set of known options, use a Combobox dropdown
+            if pname in param_options:
+                cb = ttk.Combobox(imps_frame, textvariable=var, values=param_options[pname], width=16, state='readonly')
+                cb.set(pdef)
+                cb.grid(row=r, column=c+1, sticky='w', padx=4, pady=2)
+            else:
+                ent = ttk.Entry(imps_frame, textvariable=var, width=16)
+                ent.grid(row=r, column=c+1, sticky='w', padx=4, pady=2)
+            self.z_params_vars[pname] = var
+
         # Data group
-        dframe = ttk.LabelFrame(frm, text='Data Storage', padding=8)
+        dframe = ttk.LabelFrame(frm, text='Output Data Parameters', padding=8)
         dframe.grid(row=1, column=0, sticky='sw', padx=6, pady=6)
 
         ttk.Label(dframe, text='Output Type').grid(row=0, column=0, sticky='w')
@@ -210,7 +308,8 @@ class DLTSGui:
         self.apply_btn.grid(row=0, column=1, padx=4, pady=4)
 
         self.status_lbl = ttk.Label(frm, text='Not connected', foreground='red')
-        self.status_lbl.grid(row=2, column=0, columnspan=2, sticky='w', padx=8, pady=6)
+        # relocate status to an open area on the Parameters tab (right side)
+        self.status_lbl.grid(row=2, column=1, sticky='e', padx=8, pady=6)
 
         # Device parameters frame (loads params from ziDevice)
         dparams_frame = ttk.LabelFrame(frm, text='Device Parameters (Zurich)', padding=6)
@@ -324,6 +423,58 @@ class DLTSGui:
             else:
                 messagebox.showerror('Connection Error', str(e))
 
+    def _extract_param_value(self, param_name, string_value):
+        """Extract numeric value from human-readable parameter string.
+
+        For combobox parameters like "0 - Manual", extract the "0".
+        For numeric parameters, convert to int or float.
+        """
+        if param_name in ['Input Control', 'Equivalent Circuit Mode', 'Threshold Input Signal',
+                          'Logic Unit Not', 'Aux Output Signal', 'Signal Output Add', 'Trigger Source Signal']:
+            # Extract the numeric part before the " - "
+            if ' - ' in string_value:
+                try:
+                    return int(string_value.split(' - ')[0])
+                except ValueError:
+                    return string_value
+            else:
+                try:
+                    return int(string_value)
+                except ValueError:
+                    return string_value
+        else:
+            # For non-combobox parameters, try to convert to int or float
+            try:
+                if isinstance(string_value, str) and string_value.lower() in ['true', 'false']:
+                    return True if string_value.lower() == 'true' else False
+                else:
+                    try:
+                        return int(string_value)
+                    except ValueError:
+                        try:
+                            return float(string_value)
+                        except ValueError:
+                            return string_value
+            except Exception:
+                return string_value
+
+    def _convert_to_readable_format(self, param_name, value):
+        """Convert numeric value to human-readable format for combobox display."""
+        param_options = {
+            'Input Control': {0: '0 - Manual', 1: '1 - Auto', 2: '2 - Current Zone'},
+            'Equivalent Circuit Mode': {0: '0 - 4-Terminal', 1: '1 - 2-Terminal'},
+            'Logic Unit Not': {0: '0 - Off', 1: '1 - On'},
+            'Signal Output Add': {0: '0 - False', 1: '1 - True'},
+        }
+
+        if param_name in param_options:
+            try:
+                val_int = int(float(value)) if isinstance(value, (str, float)) else int(value)
+                return param_options[param_name].get(val_int, str(value))
+            except (ValueError, KeyError, TypeError):
+                return str(value)
+        return str(value)
+
     def apply_params(self):
         if not self.connected:
             messagebox.showwarning('Not connected', 'Please connect devices first')
@@ -349,6 +500,24 @@ class DLTSGui:
         numPointsPower = float(self.npts_e.get())
         impParams['numPoints'] = int(2**numPointsPower)
         impParams['numReps'] = int(self.nreps_e.get())
+        # collect Zurich device params from GUI fields
+        try:
+            for pname, _ in getattr(self, 'z_param_list', []):
+                sval = self.z_params_vars.get(pname).get() if pname in self.z_params_vars else None
+                if sval is None:
+                    continue
+                # Extract numeric value from human-readable string if needed
+                newval = self._extract_param_value(pname, sval)
+                impParams[pname] = newval
+                # if device connected, copy into device params dict
+                try:
+                    impdDev = self.run.runDevices[1]
+                    if hasattr(impdDev, 'params'):
+                        impdDev.params[pname] = newval
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         dtaParams = dict()
         dtaParams['outputType'] = self.outtype_cb.get()
@@ -440,23 +609,17 @@ class DLTSGui:
             messagebox.showinfo('No params', 'Device has no editable params')
             return
 
-        # clear previous widgets
-        for child in self.dp_container.winfo_children():
-            child.destroy()
-        self.device_param_vars = {}
-
-        # create rows for each parameter
-        row = 0
-        for k, v in impdDev.params.items():
-            lbl = ttk.Label(self.dp_container, text=k)
-            lbl.grid(row=row, column=0, sticky='w', padx=2, pady=1)
-            var = tk.StringVar(value=str(v))
-            ent = ttk.Entry(self.dp_container, textvariable=var, width=30)
-            ent.grid(row=row, column=1, sticky='we', padx=2, pady=1)
-            self.device_param_vars[k] = var
-            row += 1
-
         self.log(f'Loaded {len(self.device_param_vars)} device parameters')
+        # Also copy values into the explicit Zurich parameter fields if present
+        try:
+            for pname, var in getattr(self, 'z_params_vars', {}).items():
+                if pname in impdDev.params:
+                    val = impdDev.params.get(pname)
+                    # Convert to readable format if it's a combobox parameter
+                    readable_val = self._convert_to_readable_format(pname, val)
+                    var.set(readable_val)
+        except Exception:
+            pass
 
     def push_device_params(self):
         """Push edited parameters back to the device's params dict and call
@@ -502,6 +665,21 @@ class DLTSGui:
             except Exception as e:
                 failed.append((k, str(e)))
 
+        # Also push explicit Zurich parameter fields
+        for k, var in getattr(self, 'z_params_vars', {}).items():
+            sval = var.get()
+            newval = self._extract_param_value(k, sval)
+
+            try:
+                impdDev.params[k] = newval
+                if hasattr(impdDev, 'setParam'):
+                    try:
+                        impdDev.setParam(k)
+                    except Exception:
+                        pass
+                success.append(k)
+            except Exception as e:
+                failed.append((k, str(e)))
         msg = f'Pushed {len(success)} params.'
         if failed:
             msg += f' {len(failed)} failed.'
