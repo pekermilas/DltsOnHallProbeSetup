@@ -22,6 +22,7 @@ from tkinter import ttk, filedialog, messagebox
 import time
 import os
 import json
+import copy
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -40,6 +41,11 @@ class DLTSGui:
     def __init__(self, root):
         self.root = root
         self.root.title('DLTS Control GUI')
+        try:
+            self.root.geometry('1020x900')
+            self.root.minsize(860, 760)
+        except Exception:
+            pass
 
         s = ttk.Style()
         s.configure('TNotebook.Tab', font=('Arial', 11), padding=6)
@@ -54,6 +60,10 @@ class DLTSGui:
         self.connected = False
         self._stop_request = False
         self._run_thread = None
+        # History of applied parameter sets (oldest -> newest)
+        self._last_applied_gui_params = []
+        self._last_applied_run_params = []
+        self._max_param_history = 10
 
         # Live-plot runtime state (initialize before building tabs so controls can read defaults)
         # ordered list of seen data files (oldest first)
@@ -151,48 +161,48 @@ class DLTSGui:
 
         # Temperature group
         tframe = ttk.LabelFrame(frm, text='Temperature Controller Parameters', padding=8)
-        tframe.grid(row=0, column=0, sticky='nw', padx=6, pady=6)
+        tframe.grid(row=0, column=0, sticky='nsew', padx=6, pady=6)
 
         ttk.Label(tframe, text='Initial (C)').grid(row=0, column=0, sticky='w')
         self.tinit_e = ttk.Entry(tframe, width=8)
         self.tinit_e.insert(0, '25')
-        self.tinit_e.grid(row=0, column=1)
+        self.tinit_e.grid(row=0, column=1, sticky='ew')
 
         ttk.Label(tframe, text='Final (C)').grid(row=1, column=0, sticky='w')
         self.tfin_e = ttk.Entry(tframe, width=8)
         self.tfin_e.insert(0, '25')
-        self.tfin_e.grid(row=1, column=1)
+        self.tfin_e.grid(row=1, column=1, sticky='ew')
 
         ttk.Label(tframe, text='# Temps').grid(row=2, column=0, sticky='w')
         self.ntemp_e = ttk.Entry(tframe, width=8)
         self.ntemp_e.insert(0, '1')
-        self.ntemp_e.grid(row=2, column=1)
+        self.ntemp_e.grid(row=2, column=1, sticky='ew')
 
         ttk.Label(tframe, text='Ramp (C/min)').grid(row=3, column=0, sticky='w')
         self.tramp_e = ttk.Entry(tframe, width=8)
         self.tramp_e.insert(0, '5')
-        self.tramp_e.grid(row=3, column=1)
+        self.tramp_e.grid(row=3, column=1, sticky='ew')
 
         ttk.Label(tframe, text='Stable Delay (s)').grid(row=4, column=0, sticky='w')
         self.tdelay_e = ttk.Entry(tframe, width=8)
         self.tdelay_e.insert(0, '0')
-        self.tdelay_e.grid(row=4, column=1)
+        self.tdelay_e.grid(row=4, column=1, sticky='ew')
 
         # Combined Impedance + Zurich device parameters
         imps_frame = ttk.LabelFrame(frm, text='Impedance Analyzer Parameters', padding=8)
         # place to the right of temperature controls and allow extra vertical space
-        imps_frame.grid(row=0, column=1, rowspan=2, sticky='ne', padx=6, pady=6)
+        imps_frame.grid(row=0, column=1, rowspan=2, sticky='nsew', padx=(3, 6), pady=6)
 
         # Impedance inputs
         ttk.Label(imps_frame, text='Num Points (power of 2)').grid(row=0, column=0, sticky='w')
         self.npts_e = ttk.Entry(imps_frame, width=10)
         self.npts_e.insert(0, '13')
-        self.npts_e.grid(row=0, column=1)
+        self.npts_e.grid(row=0, column=1, sticky='ew')
 
         ttk.Label(imps_frame, text='Num Reps').grid(row=1, column=0, sticky='w')
         self.nreps_e = ttk.Entry(imps_frame, width=10)
         self.nreps_e.insert(0, '1')
-        self.nreps_e.grid(row=1, column=1)
+        self.nreps_e.grid(row=1, column=1, sticky='ew')
 
         # Zurich device parameters (explicit inputs mirroring zurichInstruments_Control.assignParam)
         # list of parameters and sensible defaults taken from zurichInstruments_Control.assignParam
@@ -273,6 +283,8 @@ class DLTSGui:
         }
 
         self.z_params_vars = {}
+        # Legacy dynamic device-param editor is not rendered; keep dict for push/load helpers.
+        self.device_param_vars = {}
         # lay out parameters starting at row 2 to leave space for impedance inputs
         for idx, (pname, pdef) in enumerate(self.z_param_list):
             r = (idx // 2) + 2
@@ -284,29 +296,38 @@ class DLTSGui:
             if pname in param_options:
                 cb = ttk.Combobox(imps_frame, textvariable=var, values=param_options[pname], width=16, state='readonly')
                 cb.set(pdef)
-                cb.grid(row=r, column=c+1, sticky='w', padx=4, pady=2)
+                cb.grid(row=r, column=c+1, sticky='ew', padx=4, pady=2)
             else:
                 ent = ttk.Entry(imps_frame, textvariable=var, width=16)
-                ent.grid(row=r, column=c+1, sticky='w', padx=4, pady=2)
+                ent.grid(row=r, column=c+1, sticky='ew', padx=4, pady=2)
             self.z_params_vars[pname] = var
 
+        # Lower-left container: output/data + history side by side
+        lower_left = ttk.Frame(frm)
+        lower_left.grid(row=1, column=0, sticky='nsew', padx=(6, 2), pady=6)
+        try:
+            lower_left.grid_columnconfigure(0, weight=1)
+            lower_left.grid_rowconfigure(0, weight=1)
+        except Exception:
+            pass
+
         # Data group
-        dframe = ttk.LabelFrame(frm, text='Output Data Parameters', padding=8)
-        dframe.grid(row=1, column=0, sticky='sw', padx=6, pady=6)
+        dframe = ttk.LabelFrame(lower_left, text='Output Data Parameters', padding=8)
+        dframe.grid(row=0, column=0, sticky='nsew', padx=(0, 2), pady=0)
 
         ttk.Label(dframe, text='Output Type').grid(row=0, column=0, sticky='w')
         self.outtype_cb = ttk.Combobox(dframe, values=['txt','h5'], width=6)
         self.outtype_cb.set('txt')
-        self.outtype_cb.grid(row=0, column=1)
+        self.outtype_cb.grid(row=0, column=1, sticky='ew')
 
         ttk.Label(dframe, text='Root Folder').grid(row=1, column=0, sticky='w')
-        self.rootfolder_e = ttk.Entry(dframe, width=40)
+        self.rootfolder_e = ttk.Entry(dframe, width=30)
         # default to current user's Desktop/DATA/DLTS to avoid hard-coded other-user paths
         default_root = os.path.join(str(Path.home()), 'Desktop', 'DATA', 'DLTS')
         self.rootfolder_e.insert(0, os.path.expanduser(default_root))
-        self.rootfolder_e.grid(row=1, column=1, columnspan=1, sticky='w')
+        self.rootfolder_e.grid(row=1, column=1, columnspan=1, sticky='ew')
         # Browse button to select root folder via file explorer
-        ttk.Button(dframe, text='Browse...', command=self.browse_root_folder).grid(row=1, column=2, padx=4)
+        ttk.Button(dframe, text='Browse...', command=self.browse_root_folder).grid(row=1, column=2, padx=2)
 
         self.liveplot_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(dframe, text='Live Plot', variable=self.liveplot_var).grid(row=2, column=0, sticky='w')
@@ -316,40 +337,120 @@ class DLTSGui:
         self.sim_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(dframe, text='Simulation Mode', variable=self.sim_var).grid(row=3, column=0, sticky='w')
 
+        try:
+            dframe.grid_columnconfigure(1, weight=1)
+        except Exception:
+            pass
+
         # Device / control buttons
         cframe = ttk.Frame(frm)
-        cframe.grid(row=1, column=1, sticky='se', padx=6, pady=6)
+        cframe.grid(row=1, column=1, sticky='nsew', padx=6, pady=6)
 
         self.connect_btn = ttk.Button(cframe, text='Connect Devices', command=self.connect_devices)
-        self.connect_btn.grid(row=0, column=0, padx=4, pady=4)
+        self.connect_btn.grid(row=0, column=0, padx=4, pady=4, sticky='ew')
 
-        self.apply_btn = ttk.Button(cframe, text='Apply Params', command=self.apply_params)
-        self.apply_btn.grid(row=0, column=1, padx=4, pady=4)
+        self.apply_btn = ttk.Button(cframe, text='Apply + Push Params', command=self.apply_and_push_params)
+        self.apply_btn.grid(row=0, column=1, padx=4, pady=4, sticky='ew')
 
         self.status_lbl = ttk.Label(frm, text='Not connected', foreground='red')
         # relocate status to an open area on the Parameters tab (right side)
         self.status_lbl.grid(row=2, column=1, sticky='e', padx=8, pady=6)
 
-        # Device parameters frame (loads params from ziDevice)
-        dparams_frame = ttk.LabelFrame(frm, text='Device Parameters (Zurich)', padding=6)
-        dparams_frame.grid(row=3, column=0, columnspan=2, sticky='we', padx=6, pady=6)
-        # Buttons to load and push
-        dpbtns = ttk.Frame(dparams_frame)
-        dpbtns.pack(fill='x')
-        ttk.Button(dpbtns, text='Load Device Params', command=self.load_device_params).pack(side='left', padx=4, pady=4)
-        ttk.Button(dpbtns, text='Push Params to Device', command=self.push_device_params).pack(side='left', padx=4, pady=4)
+        # Bottom container: parameter status + parameter history side by side
+        bottom_area = ttk.Frame(frm)
+        bottom_area.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=6, pady=6)
+        try:
+            bottom_area.grid_columnconfigure(0, weight=5, uniform='params_bottom')
+            bottom_area.grid_columnconfigure(1, weight=3, uniform='params_bottom')
+            bottom_area.grid_rowconfigure(0, weight=1)
+        except Exception:
+            pass
 
-        # container for parameter widgets
-        self.dp_container = ttk.Frame(dparams_frame)
-        self.dp_container.pack(fill='both', expand=True)
-        self.device_param_vars = {}
+        # Parameters status box (similar purpose to the Live Plot log box)
+        pstatus = ttk.LabelFrame(bottom_area, text='Parameters In Use', padding=6)
+        pstatus.grid(row=0, column=0, sticky='nsew', padx=(0, 6), pady=0)
+        self.params_status_text = tk.Text(pstatus, width=56, height=10)
+        self.params_status_text.pack(fill='both', expand=True)
+        self.params_status_text.config(state='disabled')
+
+        hframe = ttk.LabelFrame(bottom_area, text='Parameter History', padding=8)
+        hframe.grid(row=0, column=1, sticky='nsew', padx=(6, 0), pady=0)
+        ttk.Label(hframe, text='History Index (0=latest)').grid(row=0, column=0, padx=4, pady=4, sticky='w')
+        self.param_history_index_var = tk.StringVar(value='0')
+        self.param_history_cb = ttk.Combobox(hframe, textvariable=self.param_history_index_var, values=['0'], width=10, state='readonly')
+        self.param_history_cb.grid(row=1, column=0, padx=4, pady=4, sticky='ew')
+
+        self.reload_params_btn = ttk.Button(hframe, text='Reload History Entry', command=self.reload_previous_params)
+        self.reload_params_btn.grid(row=2, column=0, padx=4, pady=(8, 4), sticky='we')
+
+        try:
+            hframe.grid_columnconfigure(0, weight=1)
+            hframe.grid_rowconfigure(3, weight=1)
+        except Exception:
+            pass
+
+
+        try:
+            frm.grid_rowconfigure(3, weight=1)
+            frm.grid_rowconfigure(0, weight=3)
+            frm.grid_rowconfigure(1, weight=2)
+            frm.grid_columnconfigure(0, weight=2, uniform='params_main')
+            frm.grid_columnconfigure(1, weight=3, uniform='params_main')
+
+            tframe.grid_columnconfigure(1, weight=1)
+            imps_frame.grid_columnconfigure(1, weight=1)
+            imps_frame.grid_columnconfigure(3, weight=1)
+            cframe.grid_columnconfigure(0, weight=1)
+            cframe.grid_columnconfigure(1, weight=1)
+        except Exception:
+            pass
+
+        self._update_params_status('Ready')
+
+    def _refresh_param_history_selector(self, select_offset=0):
+        """Refresh the history-index combobox based on stored parameter snapshots."""
+        if not hasattr(self, 'param_history_cb'):
+            return
+        try:
+            hist_len = max(len(self._last_applied_run_params), len(self._last_applied_gui_params))
+            values = [str(i) for i in range(hist_len)] if hist_len > 0 else ['0']
+            self.param_history_cb['values'] = values
+            try:
+                offset = int(select_offset)
+            except Exception:
+                offset = 0
+            offset = max(0, min(offset, len(values) - 1))
+            self.param_history_index_var.set(values[offset])
+        except Exception:
+            pass
+
+    def _get_selected_history_offset(self):
+        """Return the selected history offset where 0 means latest, 1 means previous, etc."""
+        try:
+            offset = int(self.param_history_index_var.get())
+        except Exception:
+            offset = 0
+        return max(0, offset)
+
 
     def _build_live_tab(self):
         self.liveTab = ttk.Frame(self.tabControl)
         self.tabControl.add(self.liveTab, text='Live Plot')
 
+        try:
+            self.liveTab.grid_rowconfigure(0, weight=1)
+            self.liveTab.grid_columnconfigure(0, weight=3, uniform='live_main')
+            self.liveTab.grid_columnconfigure(1, weight=2, uniform='live_main')
+        except Exception:
+            pass
+
         left = ttk.Frame(self.liveTab)
-        left.pack(side='left', fill='both', expand=True)
+        left.grid(row=0, column=0, sticky='nsew')
+        try:
+            left.grid_rowconfigure(0, weight=1)
+            left.grid_columnconfigure(0, weight=1)
+        except Exception:
+            pass
 
         # Matplotlib figure
         self.fig, self.axes = plt.subplots(2,2, figsize=(6,5))
@@ -359,12 +460,11 @@ class DLTSGui:
         except Exception:
             pass
         self.canvas = FigureCanvasTkAgg(self.fig, master=left)
-        self.canvas.get_tk_widget().pack(fill='both', expand=True)
+        self.canvas.get_tk_widget().grid(row=0, column=0, sticky='nsew')
         # Add matplotlib navigation toolbar to allow pan/zoom interactivity
         try:
             toolbar = NavigationToolbar2Tk(self.canvas, left)
             toolbar.update()
-            self.canvas.get_tk_widget().pack(fill='both', expand=True)
         except Exception:
             pass
 
@@ -380,11 +480,22 @@ class DLTSGui:
         # ...existing code...
 
         ctrl = ttk.Frame(self.liveTab)
-        ctrl.pack(side='right', fill='y')
+        ctrl.grid(row=0, column=1, sticky='nsew')
+        try:
+            ctrl.grid_columnconfigure(0, weight=1)
+            ctrl.grid_rowconfigure(3, weight=1)
+        except Exception:
+            pass
 
         # Plot controls: polling interval, max traces, watch folder
         pctrl = ttk.LabelFrame(ctrl, text='Plot Controls', padding=6)
-        pctrl.pack(fill='x', padx=6, pady=6)
+        pctrl.grid(row=0, column=0, sticky='nsew', padx=6, pady=6)
+        try:
+            pctrl.grid_columnconfigure(1, weight=1)
+            pctrl.grid_columnconfigure(2, weight=1)
+            pctrl.grid_rowconfigure(4, weight=1)
+        except Exception:
+            pass
 
         ttk.Label(pctrl, text='Poll Interval (s)').grid(row=0, column=0, sticky='w')
         self.poll_interval_var = tk.DoubleVar(value=self._live_poll_interval)
@@ -398,26 +509,26 @@ class DLTSGui:
 
         ttk.Label(pctrl, text='Watch Folder').grid(row=1, column=0, sticky='w', pady=(6,0))
         self.watchfolder_e = ttk.Entry(pctrl, width=36)
-        self.watchfolder_e.grid(row=1, column=1, columnspan=2, sticky='w', padx=4, pady=(6,0))
+        self.watchfolder_e.grid(row=1, column=1, columnspan=2, sticky='ew', padx=4, pady=(6,0))
         ttk.Button(pctrl, text='Browse', command=lambda: self._pick_watch_folder()).grid(row=1, column=3, sticky='w', padx=4, pady=(6,0))
         ttk.Button(pctrl, text='Load Folder Now', command=lambda: self._load_watch_folder_now()).grid(row=2, column=0, columnspan=4, sticky='we', pady=(6,0))
 
         # small listbox showing loaded files and their temperature labels
         ttk.Label(pctrl, text='Loaded files:').grid(row=3, column=0, sticky='w', pady=(6,0))
-        self.loaded_files_list = tk.Listbox(pctrl, height=5, width=40)
-        self.loaded_files_list.grid(row=4, column=0, columnspan=4, sticky='we', pady=(2,0))
+        self.loaded_files_list = tk.Listbox(pctrl, height=5)
+        self.loaded_files_list.grid(row=4, column=0, columnspan=4, sticky='nsew', pady=(2,0))
 
         self.start_btn = ttk.Button(ctrl, text='Start Run', command=self.start_run)
-        self.start_btn.pack(padx=6, pady=6)
+        self.start_btn.grid(row=1, column=0, sticky='ew', padx=6, pady=6)
         self.stop_btn = ttk.Button(ctrl, text='Stop Run', command=self.stop_run, state='disabled')
-        self.stop_btn.pack(padx=6, pady=6)
+        self.stop_btn.grid(row=2, column=0, sticky='ew', padx=6, pady=6)
 
         self.log_text = tk.Text(ctrl, width=40, height=15)
-        self.log_text.pack(padx=6, pady=6)
+        self.log_text.grid(row=3, column=0, sticky='nsew', padx=6, pady=6)
 
         # Progress bar
         self.progress = ttk.Progressbar(ctrl, orient='horizontal', length=200, mode='determinate')
-        self.progress.pack(padx=6, pady=6)
+        self.progress.grid(row=4, column=0, sticky='ew', padx=6, pady=6)
         self.progress['value'] = 0
 
     def _build_postproc_tab(self):
@@ -426,19 +537,25 @@ class DLTSGui:
 
         frm = ttk.Frame(self.postTab, padding=8)
         frm.pack(fill='both', expand=True)
+        try:
+            frm.grid_columnconfigure(0, weight=1)
+            frm.grid_rowconfigure(1, weight=1)
+            frm.grid_rowconfigure(3, weight=1)
+        except Exception:
+            pass
 
-        ttk.Label(frm, text='Select data file(s) to analyze:').pack(anchor='w')
+        ttk.Label(frm, text='Select data file(s) to analyze:').grid(row=0, column=0, sticky='w')
         self.filelistbox = tk.Listbox(frm, height=6)
-        self.filelistbox.pack(fill='both', expand=True)
+        self.filelistbox.grid(row=1, column=0, sticky='nsew', pady=(4, 6))
 
         fbtns = ttk.Frame(frm)
-        fbtns.pack(fill='x')
+        fbtns.grid(row=2, column=0, sticky='ew')
         ttk.Button(fbtns, text='Add files', command=self.add_files).pack(side='left', padx=4, pady=4)
         ttk.Button(fbtns, text='Clear', command=lambda: self.filelistbox.delete(0,'end')).pack(side='left', padx=4, pady=4)
         ttk.Button(fbtns, text='Run Analysis', command=self.run_postproc).pack(side='right', padx=4, pady=4)
 
         self.postproc_txt = tk.Text(frm, height=10)
-        self.postproc_txt.pack(fill='both', expand=True)
+        self.postproc_txt.grid(row=3, column=0, sticky='nsew', pady=(6, 0))
 
     def connect_devices(self):
         # Allow simulation mode
@@ -455,6 +572,11 @@ class DLTSGui:
             self.connected = True
             self.status_lbl.config(text='Simulation devices ready', foreground='orange')
             self.log('Simulation mode: devices ready')
+            try:
+                self.load_device_params()
+            except Exception:
+                pass
+            self._update_params_status('Connected (simulation mode)')
             return
 
         try:
@@ -470,6 +592,11 @@ class DLTSGui:
             self.connected = True
             self.status_lbl.config(text='Devices connected', foreground='green')
             self.log('Devices connected')
+            try:
+                self.load_device_params()
+            except Exception:
+                pass
+            self._update_params_status('Connected devices')
         except Exception as e:
             # give the user the option to fall back to simulation
             self.log('Connection error: ' + str(e))
@@ -486,6 +613,11 @@ class DLTSGui:
                 self.connected = True
                 self.status_lbl.config(text='Simulation devices ready', foreground='orange')
                 self.log('Simulation mode: devices ready')
+                try:
+                    self.load_device_params()
+                except Exception:
+                    pass
+                self._update_params_status('Connected (simulation mode)')
             else:
                 messagebox.showerror('Connection Error', str(e))
 
@@ -541,10 +673,157 @@ class DLTSGui:
                 return str(value)
         return str(value)
 
+    def _capture_gui_param_snapshot(self):
+        """Capture current GUI input values so they can be restored later."""
+        snap = {
+            'tInitial': self.tinit_e.get(),
+            'tFinal': self.tfin_e.get(),
+            'numTemps': self.ntemp_e.get(),
+            'tRamp': self.tramp_e.get(),
+            'tStableDelay': self.tdelay_e.get(),
+            'numPointsPow2': self.npts_e.get(),
+            'numReps': self.nreps_e.get(),
+            'outputType': self.outtype_cb.get(),
+            'rootFolder': self.rootfolder_e.get(),
+            'livePlot': bool(self.liveplot_var.get()),
+            'senseRunFailure': bool(self.sensefail_var.get()),
+            'simulationMode': bool(self.sim_var.get()),
+            'zurich': {}
+        }
+        for pname, var in getattr(self, 'z_params_vars', {}).items():
+            try:
+                snap['zurich'][pname] = var.get()
+            except Exception:
+                pass
+        return snap
+
+    def _apply_gui_param_snapshot(self, snap):
+        """Restore GUI input values from a previously captured snapshot."""
+        def _set_entry(widget, value):
+            widget.delete(0, 'end')
+            widget.insert(0, str(value))
+
+        _set_entry(self.tinit_e, snap.get('tInitial', self.tinit_e.get()))
+        _set_entry(self.tfin_e, snap.get('tFinal', self.tfin_e.get()))
+        _set_entry(self.ntemp_e, snap.get('numTemps', self.ntemp_e.get()))
+        _set_entry(self.tramp_e, snap.get('tRamp', self.tramp_e.get()))
+        _set_entry(self.tdelay_e, snap.get('tStableDelay', self.tdelay_e.get()))
+        _set_entry(self.npts_e, snap.get('numPointsPow2', self.npts_e.get()))
+        _set_entry(self.nreps_e, snap.get('numReps', self.nreps_e.get()))
+        _set_entry(self.rootfolder_e, snap.get('rootFolder', self.rootfolder_e.get()))
+
+        try:
+            self.outtype_cb.set(snap.get('outputType', self.outtype_cb.get()))
+            self.liveplot_var.set(bool(snap.get('livePlot', self.liveplot_var.get())))
+            self.sensefail_var.set(bool(snap.get('senseRunFailure', self.sensefail_var.get())))
+            self.sim_var.set(bool(snap.get('simulationMode', self.sim_var.get())))
+        except Exception:
+            pass
+
+        zsnap = snap.get('zurich', {}) if isinstance(snap, dict) else {}
+        for pname, var in getattr(self, 'z_params_vars', {}).items():
+            if pname in zsnap:
+                try:
+                    var.set(str(zsnap[pname]))
+                except Exception:
+                    pass
+
+    def _apply_run_param_snapshot(self, run_params):
+        """Restore all run-input widgets from a runParams-style snapshot."""
+        if not isinstance(run_params, dict):
+            return
+
+        def _set_entry(widget, value):
+            widget.delete(0, 'end')
+            widget.insert(0, str(value))
+
+        t = run_params.get('temperature', {}) if isinstance(run_params.get('temperature', {}), dict) else {}
+        i = run_params.get('impedance', {}) if isinstance(run_params.get('impedance', {}), dict) else {}
+        d = run_params.get('data', {}) if isinstance(run_params.get('data', {}), dict) else {}
+
+        if 'tInitial' in t:
+            _set_entry(self.tinit_e, t['tInitial'])
+        if 'tFinal' in t:
+            _set_entry(self.tfin_e, t['tFinal'])
+        if 'numTemps' in t:
+            _set_entry(self.ntemp_e, t['numTemps'])
+        if 'tRamp' in t:
+            _set_entry(self.tramp_e, t['tRamp'])
+        if 'tStableDelay' in t:
+            _set_entry(self.tdelay_e, t['tStableDelay'])
+
+        if 'numPoints' in i:
+            try:
+                pwr = np.log2(float(i['numPoints']))
+                if np.isfinite(pwr):
+                    if abs(pwr - round(pwr)) < 1e-9:
+                        _set_entry(self.npts_e, int(round(pwr)))
+                    else:
+                        _set_entry(self.npts_e, ('{:.6f}'.format(pwr)).rstrip('0').rstrip('.'))
+            except Exception:
+                pass
+        if 'numReps' in i:
+            _set_entry(self.nreps_e, i['numReps'])
+
+        if 'outputType' in d:
+            try:
+                self.outtype_cb.set(str(d['outputType']))
+            except Exception:
+                pass
+        if 'rootFolder' in d:
+            _set_entry(self.rootfolder_e, d['rootFolder'])
+        if 'livePlot' in d:
+            self.liveplot_var.set(bool(d['livePlot']))
+        if 'senseRunFailure' in d:
+            self.sensefail_var.set(bool(d['senseRunFailure']))
+
+        # Restore Zurich fields that are represented explicitly in the GUI.
+        for pname, var in getattr(self, 'z_params_vars', {}).items():
+            if pname in i:
+                try:
+                    var.set(self._convert_to_readable_format(pname, i[pname]))
+                except Exception:
+                    pass
+
+    def reload_previous_params(self):
+        """Reload the selected applied GUI parameter set into the input widgets."""
+        if (not self._last_applied_run_params) and (not self._last_applied_gui_params):
+            messagebox.showinfo('Reload Params', 'No previously applied parameter set is available yet.')
+            return
+        try:
+            restored_from_run = False
+            selected_offset = self._get_selected_history_offset()
+
+            # Convert offset-from-latest into absolute list indices.
+            run_idx = None
+            gui_idx = None
+            if self._last_applied_run_params:
+                run_idx = max(0, len(self._last_applied_run_params) - 1 - selected_offset)
+            if self._last_applied_gui_params:
+                gui_idx = max(0, len(self._last_applied_gui_params) - 1 - selected_offset)
+
+            if (run_idx is not None) and self._last_applied_run_params:
+                self._apply_run_param_snapshot(self._last_applied_run_params[run_idx])
+                restored_from_run = True
+
+            if (not restored_from_run) and (gui_idx is not None) and self._last_applied_gui_params:
+                self._apply_gui_param_snapshot(self._last_applied_gui_params[gui_idx])
+
+            # Restore GUI-only options not represented in runParams.
+            if restored_from_run and (gui_idx is not None) and self._last_applied_gui_params:
+                try:
+                    self.sim_var.set(bool(self._last_applied_gui_params[gui_idx].get('simulationMode', self.sim_var.get())))
+                except Exception:
+                    pass
+            self.log(f'Reloaded parameter history index {selected_offset}')
+            self._update_params_status(f'Reloaded parameter history index {selected_offset}')
+        except Exception as e:
+            messagebox.showerror('Reload Params', f'Could not reload previous parameters: {e}')
+
     def apply_params(self):
         if not self.connected:
             messagebox.showwarning('Not connected', 'Please connect devices first')
-            return
+            return False
 
         # construct runParams similar to runDlts_Tools.initSetup but using GUI values
         tmpParams = dict()
@@ -611,11 +890,11 @@ class DLTSGui:
                     if new:
                         self.rootfolder_e.delete(0, 'end')
                         self.rootfolder_e.insert(0, new)
-                        return
+                        return False
                     else:
-                        return
+                        return False
             else:
-                return
+                return False
 
         # test write permission by creating and deleting a temporary file
         try:
@@ -630,8 +909,8 @@ class DLTSGui:
                 if new:
                     self.rootfolder_e.delete(0, 'end')
                     self.rootfolder_e.insert(0, new)
-                    return
-            return
+                    return False
+            return False
 
         timeFolder = time.strftime('%m%d%y')
         topFolder = os.path.join(dtaParams['rootFolder'], timeFolder)
@@ -659,6 +938,23 @@ class DLTSGui:
         except Exception:
             pass
 
+        # Append snapshots to history each time parameters are applied.
+        self._last_applied_run_params.append(copy.deepcopy(self.run.runParams))
+        self._last_applied_gui_params.append(self._capture_gui_param_snapshot())
+        if len(self._last_applied_run_params) > self._max_param_history:
+            self._last_applied_run_params = self._last_applied_run_params[-self._max_param_history:]
+        if len(self._last_applied_gui_params) > self._max_param_history:
+            self._last_applied_gui_params = self._last_applied_gui_params[-self._max_param_history:]
+        self._refresh_param_history_selector(select_offset=0)
+        self._update_params_status('Applied parameters to run config')
+        return True
+
+    def apply_and_push_params(self):
+        """Apply GUI inputs and immediately push them to the connected device."""
+        if not self.apply_params():
+            return
+        self.push_device_params()
+
     def load_device_params(self):
         """Load device parameters from the connected impedance device and
         populate editable fields in the Parameters tab."""
@@ -675,7 +971,7 @@ class DLTSGui:
             messagebox.showinfo('No params', 'Device has no editable params')
             return
 
-        self.log(f'Loaded {len(self.device_param_vars)} device parameters')
+        loaded_count = 0
         # Also copy values into the explicit Zurich parameter fields if present
         try:
             for pname, var in getattr(self, 'z_params_vars', {}).items():
@@ -684,8 +980,11 @@ class DLTSGui:
                     # Convert to readable format if it's a combobox parameter
                     readable_val = self._convert_to_readable_format(pname, val)
                     var.set(readable_val)
+                    loaded_count += 1
         except Exception:
             pass
+        self.log(f'Loaded {loaded_count} Zurich parameters from device')
+        self._update_params_status(f'Loaded {loaded_count} Zurich parameters from device')
 
     def push_device_params(self):
         """Push edited parameters back to the device's params dict and call
@@ -751,6 +1050,62 @@ class DLTSGui:
             msg += f' {len(failed)} failed.'
         messagebox.showinfo('Push Params', msg)
         self.log(msg)
+        self._update_params_status(msg)
+
+    def _update_params_status(self, action=''):
+        """Refresh the Parameters tab status box with current input values."""
+        if not hasattr(self, 'params_status_text'):
+            return
+
+        def _safe_get(widget, fallback=''):
+            try:
+                return widget.get()
+            except Exception:
+                return fallback
+
+        try:
+            ts = time.strftime('%H:%M:%S')
+            lines = [
+                f'[{ts}] {action}' if action else f'[{ts}]',
+                f'Connected: {self.connected}',
+                '',
+                'Temperature:',
+                f'  Initial C: {_safe_get(self.tinit_e)}',
+                f'  Final C: {_safe_get(self.tfin_e)}',
+                f'  # Temps: {_safe_get(self.ntemp_e)}',
+                f'  Ramp C/min: {_safe_get(self.tramp_e)}',
+                f'  Stable Delay s: {_safe_get(self.tdelay_e)}',
+                '',
+                'Impedance/Data:',
+                f'  Num Points (pow2): {_safe_get(self.npts_e)}',
+                f'  Num Reps: {_safe_get(self.nreps_e)}',
+                f'  Output Type: {_safe_get(self.outtype_cb)}',
+                f'  Root Folder: {_safe_get(self.rootfolder_e)}',
+                f'  Live Plot: {bool(self.liveplot_var.get())}',
+                f'  Sense Run Failure: {bool(self.sensefail_var.get())}',
+                f'  Simulation Mode: {bool(self.sim_var.get())}',
+                f'  Stored History Count: {max(len(self._last_applied_run_params), len(self._last_applied_gui_params))}',
+                f'  Selected History Index: {self._get_selected_history_offset() if hasattr(self, "param_history_index_var") else 0}',
+                ''
+            ]
+
+            # Show all Zurich fields currently set in the GUI.
+            lines.append('Zurich Parameters:')
+            for pname, _ in getattr(self, 'z_param_list', []):
+                sval = ''
+                try:
+                    sval = self.z_params_vars[pname].get()
+                except Exception:
+                    pass
+                lines.append(f'  {pname}: {sval}')
+
+            self.params_status_text.config(state='normal')
+            self.params_status_text.delete('1.0', 'end')
+            self.params_status_text.insert('end', '\n'.join(lines) + '\n')
+            self.params_status_text.see('1.0')
+            self.params_status_text.config(state='disabled')
+        except Exception:
+            pass
 
     def _run_loop(self):
         # Implementation of the measurement loop that mirrors runDlts_Tools.runExperiment
