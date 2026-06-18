@@ -53,11 +53,12 @@ How to run the GUI (recommended)
 
 3) If IPython already runs a Qt loop and you prefer not to restart it, use the launcher from inside IPython to spawn a new process:
 
-   ```python
-   from dlts_launch import launch_gui
-   proc = launch_gui(simulation=True)
-   # proc.terminate() to stop later
-   ```
+    ```python
+    %matplotlib tk
+    from dlts_launch import launch_gui
+    proc = launch_gui(simulation=True)
+    # proc.terminate() to stop later
+    ```
 
 Key runtime behaviors
 ----------------------
