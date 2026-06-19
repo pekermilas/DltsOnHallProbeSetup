@@ -42,8 +42,8 @@ class DLTSGui:
         self.root = root
         self.root.title('DLTS Control GUI')
         try:
-            self.root.geometry('1020x900')
-            self.root.minsize(860, 760)
+            self.root.geometry('1020x820')
+            self.root.minsize(860, 700)
         except Exception:
             pass
 
@@ -161,7 +161,7 @@ class DLTSGui:
 
         # Temperature group
         tframe = ttk.LabelFrame(frm, text='Temperature Controller Parameters', padding=8)
-        tframe.grid(row=0, column=0, sticky='nsew', padx=6, pady=6)
+        tframe.grid(row=0, column=0, sticky='new', padx=6, pady=(6, 2))
 
         ttk.Label(tframe, text='Initial (C)').grid(row=0, column=0, sticky='w')
         self.tinit_e = ttk.Entry(tframe, width=8)
@@ -285,7 +285,7 @@ class DLTSGui:
         self.z_params_vars = {}
         # Legacy dynamic device-param editor is not rendered; keep dict for push/load helpers.
         self.device_param_vars = {}
-        # lay out parameters starting at row 2 to leave space for impedance inputs
+        # lay out parameters starting at row 2 below impedance inputs
         for idx, (pname, pdef) in enumerate(self.z_param_list):
             r = (idx // 2) + 2
             c = (idx % 2) * 2
@@ -302,18 +302,28 @@ class DLTSGui:
                 ent.grid(row=r, column=c+1, sticky='ew', padx=4, pady=2)
             self.z_params_vars[pname] = var
 
-        # Lower-left container: output/data + history side by side
+        # Device / control buttons at the bottom of the impedance panel
+        cframe = ttk.Frame(imps_frame)
+        button_row = ((len(self.z_param_list) - 1) // 2) + 3
+        cframe.grid(row=button_row, column=0, columnspan=4, sticky='ew', pady=(8, 2))
+
+        self.connect_btn = ttk.Button(cframe, text='Connect Devices', command=self.connect_devices)
+        self.connect_btn.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
+
+        self.apply_btn = ttk.Button(cframe, text='Apply + Push Params', command=self.apply_and_push_params)
+        self.apply_btn.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
+
+        # Lower-left container: output/data panel
         lower_left = ttk.Frame(frm)
-        lower_left.grid(row=1, column=0, sticky='nsew', padx=(6, 2), pady=6)
+        lower_left.grid(row=1, column=0, sticky='new', padx=(6, 2), pady=(2, 6))
         try:
             lower_left.grid_columnconfigure(0, weight=1)
-            lower_left.grid_rowconfigure(0, weight=1)
         except Exception:
             pass
 
         # Data group
         dframe = ttk.LabelFrame(lower_left, text='Output Data Parameters', padding=8)
-        dframe.grid(row=0, column=0, sticky='nsew', padx=(0, 2), pady=0)
+        dframe.grid(row=0, column=0, sticky='new', padx=(0, 2), pady=0)
 
         ttk.Label(dframe, text='Output Type').grid(row=0, column=0, sticky='w')
         self.outtype_cb = ttk.Combobox(dframe, values=['txt','h5'], width=6)
@@ -341,16 +351,6 @@ class DLTSGui:
             dframe.grid_columnconfigure(1, weight=1)
         except Exception:
             pass
-
-        # Device / control buttons
-        cframe = ttk.Frame(frm)
-        cframe.grid(row=1, column=1, sticky='nsew', padx=6, pady=6)
-
-        self.connect_btn = ttk.Button(cframe, text='Connect Devices', command=self.connect_devices)
-        self.connect_btn.grid(row=0, column=0, padx=4, pady=4, sticky='ew')
-
-        self.apply_btn = ttk.Button(cframe, text='Apply + Push Params', command=self.apply_and_push_params)
-        self.apply_btn.grid(row=0, column=1, padx=4, pady=4, sticky='ew')
 
         self.status_lbl = ttk.Label(frm, text='Not connected', foreground='red')
         # relocate status to an open area on the Parameters tab (right side)
@@ -392,8 +392,8 @@ class DLTSGui:
 
         try:
             frm.grid_rowconfigure(3, weight=1)
-            frm.grid_rowconfigure(0, weight=3)
-            frm.grid_rowconfigure(1, weight=2)
+            frm.grid_rowconfigure(0, weight=0)
+            frm.grid_rowconfigure(1, weight=0)
             frm.grid_columnconfigure(0, weight=2, uniform='params_main')
             frm.grid_columnconfigure(1, weight=3, uniform='params_main')
 
@@ -463,8 +463,10 @@ class DLTSGui:
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky='nsew')
         # Add matplotlib navigation toolbar to allow pan/zoom interactivity
         try:
-            toolbar = NavigationToolbar2Tk(self.canvas, left)
-            toolbar.update()
+            # Use grid-managed toolbar to avoid pack/grid conflicts in the same container.
+            self.toolbar = NavigationToolbar2Tk(self.canvas, left, pack_toolbar=False)
+            self.toolbar.update()
+            self.toolbar.grid(row=1, column=0, sticky='ew')
         except Exception:
             pass
 
@@ -483,7 +485,7 @@ class DLTSGui:
         ctrl.grid(row=0, column=1, sticky='nsew')
         try:
             ctrl.grid_columnconfigure(0, weight=1)
-            ctrl.grid_rowconfigure(3, weight=1)
+            ctrl.grid_rowconfigure(4, weight=1)
         except Exception:
             pass
 
@@ -522,13 +524,15 @@ class DLTSGui:
         self.start_btn.grid(row=1, column=0, sticky='ew', padx=6, pady=6)
         self.stop_btn = ttk.Button(ctrl, text='Stop Run', command=self.stop_run, state='disabled')
         self.stop_btn.grid(row=2, column=0, sticky='ew', padx=6, pady=6)
+        self.clear_plot_btn = ttk.Button(ctrl, text='Clear Plot Area', command=self._clear_current_plot_area)
+        self.clear_plot_btn.grid(row=3, column=0, sticky='ew', padx=6, pady=6)
 
         self.log_text = tk.Text(ctrl, width=40, height=15)
-        self.log_text.grid(row=3, column=0, sticky='nsew', padx=6, pady=6)
+        self.log_text.grid(row=4, column=0, sticky='nsew', padx=6, pady=6)
 
         # Progress bar
         self.progress = ttk.Progressbar(ctrl, orient='horizontal', length=200, mode='determinate')
-        self.progress.grid(row=4, column=0, sticky='ew', padx=6, pady=6)
+        self.progress.grid(row=5, column=0, sticky='ew', padx=6, pady=6)
         self.progress['value'] = 0
 
     def _build_postproc_tab(self):
@@ -1262,6 +1266,42 @@ class DLTSGui:
 
         self.root.after(0, _draw)
 
+    def _clear_current_plot_area(self):
+        """Clear current live datasets and reset all live plot axes."""
+        try:
+            self._live_file_order = []
+            self._live_datasets = {}
+            self._refresh_loaded_files_list()
+            for ax in self.axes.flatten():
+                ax.clear()
+            titles = ['Aux Input 1', 'Impedance Re', 'Impedance Im', 'AbsZ']
+            for ax, title in zip(self.axes.flatten(), titles):
+                ax.set_title(title)
+            try:
+                self.fig.tight_layout()
+            except Exception:
+                pass
+            try:
+                self.canvas.draw_idle()
+            except Exception:
+                self.canvas.draw()
+            self.log('Live plot area cleared')
+        except Exception as e:
+            self.log('Clear plot error: ' + str(e))
+
+    def _refresh_loaded_files_list(self):
+        """Update the loaded-files listbox from current live dataset order."""
+        if not hasattr(self, 'loaded_files_list'):
+            return
+        try:
+            self.loaded_files_list.delete(0, 'end')
+            for fpath in self._live_file_order:
+                ds = self._live_datasets.get(fpath, {})
+                label = ds.get('label', os.path.basename(fpath))
+                self.loaded_files_list.insert('end', label)
+        except Exception as e:
+            self.log('Loaded-files list refresh error: ' + str(e))
+
     # -- Live file watcher and dataset management -------------------------------------------------
     def _register_live_dataset(self, fpath, data):
         """Register or update a live dataset coming from file path `fpath`.
@@ -1304,6 +1344,7 @@ class DLTSGui:
                     del self._live_datasets[old]
                 except Exception:
                     pass
+            self._refresh_loaded_files_list()
             # refresh plot display
             self._refresh_live_plots()
         except Exception as e:
@@ -1646,5 +1687,3 @@ def run_gui(simulation=False, block=True):
         return None
     else:
         return root, app
-
-
