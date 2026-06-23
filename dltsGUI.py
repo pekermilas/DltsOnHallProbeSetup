@@ -213,6 +213,8 @@ class DLTSGui:
             ('Current Range', '0.010'),
             ('Voltage Range', '3'),
             ('Omega Suppression', '80'),
+            ('Filter Harmonic', '1'),
+            ('Filter Bandwidth', '2'),
             ('Data Transfer Rate', '60000'),
             ('Equivalent Circuit Mode', '0 - 4-Terminal'),
             ('Threshold Input Signal', '59 - TU Output Value'),
@@ -234,6 +236,13 @@ class DLTSGui:
                 '0 - Manual',
                 '1 - Auto',
                 '2 - Current Zone'
+            ],
+            'Filter Harmonic': [
+                '1', '2', '3', '4', '5', '6', '7', '8',
+                '9', '10', '11', '12', '13', '14', '15', '16'
+            ],
+            'Filter Bandwidth': [
+                '1', '2', '3', '4', '5', '6', '7', '8'
             ],
             'Equivalent Circuit Mode': [
                 '0 - 4-Terminal',
@@ -479,7 +488,6 @@ class DLTSGui:
         except Exception:
             pass
 
-        # ...existing code...
 
         ctrl = ttk.Frame(self.liveTab)
         ctrl.grid(row=0, column=1, sticky='nsew')
