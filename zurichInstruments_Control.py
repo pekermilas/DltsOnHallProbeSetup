@@ -48,9 +48,10 @@ class ziDevice:
         self.device = None
         self.rm = None
         pList = ['Oscillation Frequency', 'Max bandwidth', 'Input Control', 'Current Range',
-                 'Voltage Range', 'Omega Suppression', 'Data Transfer Rate', 'Equivalent Circuit Mode',
-                 'Threshold Input Signal', 'State Enable Time', 'State Disable Time', 'Logic Unit Not',
-                 'Aux Output Signal', 'Aux Output Scale', 'Aux Output Offset', 'Aux Output Lower Limit',
+                 'Voltage Range', 'Omega Suppression', 'Filter Harmonic', 'Filter Bandwidth',
+                 'Data Transfer Rate', 'Equivalent Circuit Mode', 'Threshold Input Signal', 
+                 'State Enable Time', 'State Disable Time', 'Logic Unit Not', 'Aux Output Signal', 
+                 'Aux Output Scale', 'Aux Output Offset', 'Aux Output Lower Limit',
                  'Aux Output Upper Limit', 'Signal Output Add', 'Trigger Source Signal']
         self.params = dict.fromkeys(pList, 0)
         
@@ -88,6 +89,12 @@ class ziDevice:
             if pName == 'Omega Suppression':
                 pEntry = input("Please enter Omega Suppression (dB): ")
                 self.params[pName] = float(pEntry) if not len(pEntry)==0 else 80
+            if pName == 'Filter Harmonic':
+                pEntry = input("Please enter Filter Harmonic: ")
+                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
+            if pName == 'Filter Bandwidth':
+                pEntry = input("Please enter Filter Order Bandwidth: ")
+                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 2
             if pName == 'Data Transfer Rate':
                 pEntry = input("Please enter Data Transfer Rate (Sa/s): ")
                 self.params[pName] = float(pEntry) if not len(pEntry)==0 else 60000
@@ -153,6 +160,10 @@ class ziDevice:
                 self.session.daq_server.set('/dev32271/imps/0/voltage/range', self.params[pName])
             if pName == 'Omega Suppression':
                 self.session.daq_server.set('/dev32271/imps/0/omegasuppression', self.params[pName])
+            if pName == 'Filter Harmonic':
+                self.session.daq_server.set('/dev32271/imps/0/demod/harmonic', self.params[pName])
+            if pName == 'Filter Bandwidth':
+                self.session.daq_server.set('/dev32271/imps/0/demod/order', self.params[pName])
             if pName == 'Data Transfer Rate':
                 self.session.daq_server.set('/dev32271/imps/0/demod/rate', self.params[pName])
             if pName == 'Equivalent Circuit Mode':
@@ -208,6 +219,14 @@ class ziDevice:
             if pName == 'Omega Suppression':
                 returnVal = np.isclose(self.params[pName], 
                                        self.session.daq_server.get('*')['dev32271']['imps']['0']['omegasuppression']['value'][0], 
+                                       rtol=1e-03)
+            if pName == 'Filter Harmonic':
+                returnVal = np.isclose(self.params[pName], 
+                                       self.session.daq_server.get('*')['dev32271']['imps']['0']['demod']['harmonic']['value'][0], 
+                                       rtol=1e-03)
+            if pName == 'Filter Bandwidth':
+                returnVal = np.isclose(self.params[pName], 
+                                       self.session.daq_server.get('*')['dev32271']['imps']['0']['demod']['order']['value'][0], 
                                        rtol=1e-03)
             if pName == 'Data Transfer Rate':
                 returnVal = np.isclose(self.params[pName], 
