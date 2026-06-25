@@ -118,18 +118,23 @@ class dltsRun:
         return 0
 
     @staticmethod
-    def testDataLeveling(dataFile, plot=False, method='std'):
-        data = iaT.impdData(fName=dataFile)
+    def testDataLeveling(dataFile = None, plot=False, method='std'):
+        if dataFile is None:
+            data = iaT.impdData()
+        else:
+            data = iaT.impdData(fName=dataFile)
         data.readData()
 
         m, c, l = data.findDataLevelsScikitLearn()
         if plot:
-            plt.scatter(data.dataValues[list(data.dataValues)[0]]['timeStampImps'],
-                        data.dataValues[list(data.dataValues)[0]]['ImpedanceIm'], c=l[:],
-                        cmap='coolwarm', s=4)
+            for i in range(l.shape[0]):
+                plt.scatter(
+                    data.dataValues[list(data.dataValues)[0]]["timeStampImps"],
+                    data.dataValues[list(data.dataValues)[0]]["ImpedanceIm"],
+                    c=l[i, :], cmap="coolwarm", s=4)
             plt.show()
-        x = np.array(data.dataValues[list(data.dataValues)[0]]['timeStampImps'])
-        y = np.array(data.dataValues[list(data.dataValues)[0]]['ImpedanceIm'])
+            x = np.array(data.dataValues[list(data.dataValues)[0]]['timeStampImps'])
+            y = np.array(data.dataValues[list(data.dataValues)[0]]['ImpedanceIm'])
 
         if method == 'std':
             # Data sanity check by evolution of standard deviation
@@ -153,8 +158,8 @@ class dltsRun:
             idx = np.array(pairs)[np.where(np.array(diffs) == commonLength)[0]]
             if len(idx) > 0:
                 if len(idx) == 1:
-                    yy = np.array(y[idx[0]:idx[1]])
-                    xx = np.array(x[idx[0]:idx[1]])
+                    yy = np.array(y[idx[0][0]:idx[0][1]])
+                    xx = np.array(x[idx[0][0]:idx[0][1]])
                     xx = xx - xx[0]
                 if len(idx) > 1:
                     yy = np.array(y[idx[0][0]:idx[0][1]])
