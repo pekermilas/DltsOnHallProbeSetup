@@ -4,8 +4,139 @@ Created on Tue Jun 16 10:32:58 2026
 
 @author: spencer
 """
+import numpy as np
+
 runDLTS_Tools.py
 #-----------------------------------
+model_key = 'gmm'
+n_t = len(data.dataTemps)
+n_pts = len(data.dataValues[data.dataTemps[0]]['ImpedanceIm'])
+means = np.full((n_t, 2), np.nan)
+stds = np.full((n_t, 2), np.nan)
+labels = np.full((n_t, n_pts), -1.0)
+
+for i, t in enumerate(data.dataTemps):
+    raw = np.asarray(data.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
+    if raw.size != n_pts:
+        raise ValueError(f"Inconsistent ImpedanceIm length at {t} K.")
+
+    if not np.all(np.isfinite(raw)):
+        finite = raw[np.isfinite(raw)]
+        fill_val = np.median(finite) if finite.size > 0 else 0.0
+        raw = np.where(np.isfinite(raw), raw, fill_val)
+
+    scale = np.min(raw)
+    if np.isclose(scale, 0.0):
+        scale = np.max(np.abs(raw))
+    if np.isclose(scale, 0.0):
+        scale = 1.0
+
+    d = (raw / scale).reshape(-1, 1)
+    gmm = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
+    gmm.fit(d)
+    gmm_labels = gmm.predict(d).astype(int)
+    gmm_means = gmm.means_.flatten() * scale
+
+    km = KMeans(n_clusters=2, random_state=0, n_init=10)
+    km.fit(d)
+    km_labels = km.labels_.astype(int)
+    km_means = km.cluster_centers_.flatten() * scale
+
+
+# --- Pre-compute GMM / KMeans / Hybrid labels for all temperature indices -----
+n_temps       = len(data.dataTemps)
+all_km_labels     = [None] * n_temps
+all_gmm_labels    = [None] * n_temps
+all_hybrid_labels = [None] * n_temps
+
+for i in range(n_temps):
+    t   = data.dataTemps[i]
+    raw = np.asarray(data.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
+
+    # Fill any non-finite values with the median
+    if not np.all(np.isfinite(raw)):
+        finite   = raw[np.isfinite(raw)]
+        fill_val = np.median(finite) if finite.size > 0 else 0.0
+        raw      = np.where(np.isfinite(raw), raw, fill_val)
+
+    # Normalisation scale
+    scale = np.min(raw)
+    if np.isclose(scale, 0.0):
+        scale = np.max(np.abs(raw))
+    if np.isclose(scale, 0.0):
+        scale = 1.0
+
+    d = (raw / scale).reshape(-1, 1)
+
+    # --- GMM ---
+    gmm_model = GaussianMixture(n_components=2, random_state=0)
+    gmm_model.fit(d)
+    gmm_lbl   = gmm_model.fit_predict(d).astype(int)
+    # Cluster means back in original (possibly negative) space
+    gmm_means = gmm_model.means_.flatten() * scale
+    print(len(np.unique(gmm_lbl)))
+
+    # --- KMeans ---
+    km_model = KMeans(n_clusters=2, random_state=0, n_init=10)
+    km_model.fit(d)
+    km_lbl   = km_model.labels_.astype(int)
+    km_means = km_model.cluster_centers_.flatten() * scale
+
+    # Canonicalize: label 0 = cluster with the LARGER mean value.
+    # Use np.argmax so the comparison works correctly for negative data too.
+    if np.argmax(km_means) != 0:
+        km_lbl   = 1 - km_lbl
+        km_means = km_means[::-1].copy()
+
+    if np.argmax(gmm_means) != 0:
+        gmm_lbl   = 1 - gmm_lbl
+        gmm_means = gmm_means[::-1].copy()
+
+    # Hybrid: both agree → keep; disagree → KMeans wins
+    hybrid_lbl = np.where(gmm_lbl == km_lbl, gmm_lbl, km_lbl)
+
+    all_km_labels[i]     = km_lbl
+    all_gmm_labels[i]    = gmm_lbl
+    all_hybrid_labels[i] = hybrid_lbl
+
+# --- Interactive 3-panel plot (← / → to step through i) ---------------------
+current = [0]
+
+fig, axes = plt.subplots(nrows=3, figsize=(10, 8), sharex=True, sharey=True)
+axes[-1].set_xlabel('Time (s)', fontsize=10)
+
+def update_cluster_plot(idx):
+    t   = data.dataTemps[idx]
+    ts  = np.asarray(data.dataValues[t]['timeStampImps'])
+    imp = np.asarray(data.dataValues[t]['ImpedanceIm'])
+    for ax, lbl, ttl in zip(axes,
+                             [all_km_labels[idx], all_gmm_labels[idx], all_hybrid_labels[idx]],
+                             ['K-Means', 'GMM', 'Hybrid']):
+        ax.cla()
+        ax.scatter(ts, imp, c=lbl, cmap='coolwarm', s=4, vmin=0, vmax=1)
+        ax.set_ylabel(ttl, fontsize=10)
+    axes[-1].set_xlabel('Time (s)', fontsize=10)
+    fig.suptitle(f'i = {idx}  /  T = {t} K    (← / → to navigate)', fontsize=11)
+    fig.canvas.draw_idle()
+
+def on_cluster_key(event):
+    if event.key == 'right':
+        current[0] = (current[0] + 1) % n_temps
+    elif event.key == 'left':
+        current[0] = (current[0] - 1) % n_temps
+    else:
+        return
+    update_cluster_plot(current[0])
+
+fig.canvas.mpl_connect('key_press_event', on_cluster_key)
+update_cluster_plot(current[0])
+plt.tight_layout()
+plt.show()
+# --- end interactive cluster plot ---------------------------------------------
+
+
+
+
         # data = impdDev.pullData(plot=False, trigger=True, numPoints=numPoints)
         # impdDev.writeDataJson(data, rootFolder+fName)
 

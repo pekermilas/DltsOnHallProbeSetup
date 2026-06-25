@@ -18,6 +18,7 @@ from numpy.ma.extras import apply_along_axis
 from scipy.interpolate import make_smoothing_spline, CubicSpline
 import json
 from sklearn.mixture import GaussianMixture
+from sklearn.cluster import KMeans
 import h5py
 import statistics
 from uncertainties import unumpy, ufloat
@@ -128,36 +129,154 @@ class impdData:
                 print("Data is not a sweep!!!")
                 return 1
             
-    def findDataLevelsScikitLearn(self):
-        means = np.zeros((len(self.dataTemps),2))
-        covars = np.zeros((len(self.dataTemps),2))
-        labels = np.zeros((len(self.dataTemps),len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])))
-        for i in range(len(self.dataTemps)):
-            t = self.dataTemps[i]
-            scale = np.min(self.dataValues[t]['ImpedanceIm'])
-            d = np.array(self.dataValues[t]['ImpedanceIm']/scale, copy=True)
-            d = d.reshape(-1, 1)
-            gmm = GaussianMixture(n_components=2, random_state=0)
+    def findDataLevelsScikit(self, model='gmm'):
+        if self.dataTemps is None or self.dataValues is None or len(self.dataTemps) == 0:
+            raise ValueError("No loaded data found. Call readData() first.")
+
+        model_key = str(model).strip().lower()
+        if model_key not in ('gmm', 'kmeans', 'hybrid'):
+            raise ValueError("model must be one of: 'gmm', 'kmeans', 'hybrid'")
+
+        n_t = len(self.dataTemps)
+        n_pts = len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])
+        means = np.full((n_t, 2), np.nan)
+        stds = np.full((n_t, 2), np.nan)
+        labels = np.full((n_t, n_pts), -1.0)
+
+        for i, t in enumerate(self.dataTemps):
+            raw = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
+            if raw.size != n_pts:
+                raise ValueError(f"Inconsistent ImpedanceIm length at {t} K.")
+
+            if not np.all(np.isfinite(raw)):
+                finite = raw[np.isfinite(raw)]
+                fill_val = np.median(finite) if finite.size > 0 else 0.0
+                raw = np.where(np.isfinite(raw), raw, fill_val)
+
+            scale = np.min(raw)
+            if np.isclose(scale, 0.0):
+                scale = np.max(np.abs(raw))
+            if np.isclose(scale, 0.0):
+                labels[i] = np.zeros(n_pts)
+                means[i] = np.array([0.0, 0.0])
+                stds[i] = np.array([0.0, 0.0])
+                continue
+
+            d = (raw / scale).reshape(-1, 1)
+
+            gmm = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
             gmm.fit(d)
-            means[i] = gmm.means_.flatten()*scale
-            covars[i] = gmm.covariances_.flatten()*scale**2
-            labels[i] = gmm.predict(d)
-        return means, covars, labels
+            gmm_labels = gmm.predict(d).astype(int)
+            gmm_means = gmm.means_.flatten() * scale
+
+            km = KMeans(n_clusters=2, random_state=0, n_init=10)
+            km.fit(d)
+            km_labels = km.labels_.astype(int)
+            km_means = km.cluster_centers_.flatten() * scale
+
+            # Align GMM labels to KMeans labels before hybrid voting.
+            direct = abs(gmm_means[0] - km_means[0]) + abs(gmm_means[1] - km_means[1])
+            swapped = abs(gmm_means[0] - km_means[1]) + abs(gmm_means[1] - km_means[0])
+            if swapped < direct:
+                gmm_labels = 1 - gmm_labels
+
+            if model_key == 'gmm':
+                lbl = gmm_labels
+            elif model_key == 'kmeans':
+                lbl = km_labels
+            else:
+                # If both agree, use that label; otherwise, use KMeans label.
+                lbl = np.where(gmm_labels == km_labels, gmm_labels, km_labels)
+
+            labels[i] = lbl
+            for k in range(2):
+                sel = raw[lbl == k]
+                means[i, k] = np.mean(sel) if sel.size > 0 else np.nan
+                stds[i, k] = np.std(sel) if sel.size > 0 else np.nan
+
+            if np.all(np.isfinite(means[i])) and means[i, 0] < means[i, 1]:
+                means[i] = means[i][::-1]
+                stds[i] = stds[i][::-1]
+                labels[i] = 1 - labels[i]
+
+        return means, stds, labels
 
     def findDataLevelsPomegranate(self):
-        means = np.zeros((len(self.dataTemps),2))
-        covars = np.zeros((len(self.dataTemps),2))
-        labels = np.zeros((len(self.dataTemps),len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])))
+        # Import locally so the method works even in stale notebook sessions
+        # where module globals were loaded before these symbols existed.
+        try:
+            import torch
+            from pomegranate.gmm import GeneralMixtureModel as _GeneralMixtureModel
+            from pomegranate.distributions import Normal as _Normal
+        except Exception as exc:
+            raise ImportError(
+                "Could not import pomegranate mixture classes. "
+                "Verify the pomegranate installation and restart the Python kernel."
+            ) from exc
+
+        if self.dataTemps is None or self.dataValues is None or len(self.dataTemps) == 0:
+            raise ValueError("No loaded data found. Call readData() first.")
+
+        ref_len = len(np.asarray(self.dataValues[self.dataTemps[0]]['ImpedanceIm']))
+        means = np.full((len(self.dataTemps), 2), np.nan)
+        covars = np.full((len(self.dataTemps), 2), np.nan)
+        labels = np.full((len(self.dataTemps), ref_len), -1.0)
         for i in range(len(self.dataTemps)):
             t = self.dataTemps[i]
-            scale = np.min(self.dataValues[t]['ImpedanceIm'])
-            d = np.array(self.dataValues[t]['ImpedanceIm']/scale, copy=True)
+            raw = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
+            raw = raw[np.isfinite(raw)]
+
+            if len(raw) != ref_len:
+                raise ValueError(
+                    f"Inconsistent ImpedanceIm length at {t} K: expected {ref_len}, got {len(raw)}"
+                )
+
+            if raw.size == 0:
+                print(f"Warning: Skipping {t} K (empty ImpedanceIm trace).")
+                continue
+
+            scale = np.min(raw)
+            if np.isclose(scale, 0.0):
+                scale = np.max(np.abs(raw))
+            if np.isclose(scale, 0.0):
+                # Completely flat / zero trace: only one level can be identified.
+                means[i] = np.array([0.0, 0.0])
+                covars[i] = np.array([0.0, 0.0])
+                labels[i] = np.zeros(ref_len)
+                continue
+
+            d = np.array(raw / scale, copy=True)
             d = d.reshape(-1, 1)
 
-            import torch
+            # pomegranate can fail during initialization if one component gets no samples.
+            # This happens often for nearly constant/degenerate traces.
+            if np.unique(d).size < 2 or d.shape[0] < 2:
+                means[i] = np.array([np.mean(raw), np.mean(raw)])
+                covars[i] = np.array([np.var(raw), np.var(raw)])
+                labels[i] = np.zeros(ref_len)
+                continue
+
             torch.manual_seed(0)
-            model = GeneralMixtureModel([Normal(), Normal()])
-            model.fit(torch.tensor(d, dtype=torch.float32))
+            model = _GeneralMixtureModel([_Normal(), _Normal()])
+            tensor_d = torch.tensor(d, dtype=torch.float32)
+
+            try:
+                model.fit(tensor_d)
+            except Exception:
+                # Retry once with a tiny deterministic jitter to avoid empty clusters.
+                rng = np.random.default_rng(0)
+                jitter = 1e-6 * rng.normal(size=d.shape)
+                tensor_d = torch.tensor(d + jitter, dtype=torch.float32)
+                try:
+                    model.fit(tensor_d)
+                except Exception:
+                    # Fallback to sklearn GMM for this temperature if pomegranate still fails.
+                    gmm = GaussianMixture(n_components=2, random_state=0, reg_covar=1e-8)
+                    gmm.fit(d)
+                    means[i] = gmm.means_.flatten() * scale
+                    covars[i] = gmm.covariances_.flatten() * scale**2
+                    labels[i] = gmm.predict(d)
+                    continue
 
             extracted_means = np.array([model.distributions[j].means.detach().numpy().flatten()[0] for j in range(2)])
             extracted_covars = np.array([model.distributions[j].covs.detach().numpy().flatten()[0] for j in range(2)])
@@ -169,22 +288,54 @@ class impdData:
             labels[i] = pred.detach().numpy().flatten()
 
         for i in range(len(self.dataTemps)):
-            if means[i][0] < means[i][1]:
+            if np.all(np.isfinite(means[i])) and means[i][0] < means[i][1]:
                 means[i] = means[i][::-1]
                 covars[i] = covars[i][::-1]
                 labels[i] = 1 - labels[i]
 
         return means, covars, labels
 
-    def sampleEmissions(self, showLevels=False):
-        m,c,l = self.findDataLevelsPomegranate()
-        if showLevels:
+    def findDataLevels(self, library='scikitlearn', algorithm='gmm', plot=False):
+        lib_key = str(library).strip().lower()
+        alg_key = str(algorithm).strip().lower()
+
+        if lib_key in ('scikitlearn', 'sklearn'):
+            if alg_key in ('gmm', 'gaussianmixture'):
+                m, c, l = self.findDataLevelsScikit(model='gmm')
+            elif alg_key in ('kmeans',):
+                m, c, l = self.findDataLevelsScikit(model='kmeans')
+            elif alg_key in ('hybrid', 'gmmkmeans', 'kmeansgmm'):
+                m, c, l = self.findDataLevelsScikit(model='hybrid')
+            else:
+                raise ValueError(
+                    "Unknown sklearn algorithm: " + str(algorithm) +
+                    ". Valid options are: 'gmm', 'kmeans', 'hybrid'."
+                )
+        elif lib_key in ('pomegranate', 'pom', 'pome'):
+            if alg_key not in ('gmm', 'gaussianmixture'):
+                raise ValueError(
+                    "Unsupported pomegranate algorithm: " + str(algorithm) +
+                    ". Use 'gmm'."
+                )
+            m, c, l = self.findDataLevelsPomegranate()
+        else:
+            raise ValueError(
+                "Unknown library: " + str(library) +
+                ". Valid options are: 'scikitlearn', 'pomegranate'."
+            )
+
+        if plot:
             for i in range(len(m)):
                 t = self.dataTemps[i]
-                plt.scatter(self.dataValues[t]['timeStampImps'], 
-                            self.dataValues[t]['ImpedanceIm'],c=l[i], 
+                plt.scatter(self.dataValues[t]['timeStampImps'],
+                            self.dataValues[t]['ImpedanceIm'], c=l[i],
                             cmap='coolwarm', s=4)
-        
+
+        return m, c, l
+
+    def sampleEmissions(self, showLevels=False, library='scikitlearn', algorithm='gmm'):
+        m, c, l = self.findDataLevels(library=library, algorithm=algorithm, plot=showLevels)
+
         emissions = dict()
         for i in range(len(m)):
             for j in range(len(l[i])):
@@ -202,26 +353,25 @@ class impdData:
                     diffs.append(idx[j+1]-idx[j])
                     pairs.append([idx[j],idx[j+1]])
         
-
+            print(diffs, pairs)
             t = self.dataTemps[i]
             commonLength = statistics.mode(np.array(diffs)[np.array(diffs)>1])
             idx = np.array(pairs)[np.where(np.array(diffs)==commonLength)[0]]
             if len(idx)>0:
-                if len(idx)==1:
-                    y = np.array(self.dataValues[t]['ImpedanceIm'][idx[0]:idx[1]])
-                    x = np.array(self.dataValues[t]['timeStampImps'][idx[0]:idx[1]])
-                    x = x - x[0]
-                if len(idx)>1:
-                    y = np.array(self.dataValues[t]['ImpedanceIm'][idx[0][0]:idx[0][1]])
-                    x = np.array(self.dataValues[t]['timeStampImps'][idx[0][0]:idx[0][1]])
-                    x = x - x[0] 
-                    for k in range(1,len(idx)):
-                        temp = np.array(self.dataValues[t]['ImpedanceIm'][idx[k][0]:idx[k][1]])
-                        y = np.column_stack((y,temp))
-                        temp = np.array(self.dataValues[t]['timeStampImps'][idx[k][0]:idx[k][1]])
-                        temp = temp - temp[0]
-                        x = np.column_stack((x,temp))
-            
+                y = np.array(self.dataValues[t]["ImpedanceIm"][idx[0][0]:idx[0][1]])
+                x = np.array(self.dataValues[t]["timeStampImps"][idx[0][0]:idx[0][1]])
+                x = x - x[0]
+                for k in range(1, len(idx)):
+                    temp = np.array(
+                        self.dataValues[t]["ImpedanceIm"][idx[k][0]:idx[k][1]]
+                    )
+                    y = np.column_stack((y, temp))
+                    temp = np.array(
+                        self.dataValues[t]["timeStampImps"][idx[k][0]:idx[k][1]]
+                    )
+                    temp = temp - temp[0]
+                    x = np.column_stack((x, temp))
+
             yMean = np.mean(y,axis=1)
             yStd = np.std(y,axis=1)
         
