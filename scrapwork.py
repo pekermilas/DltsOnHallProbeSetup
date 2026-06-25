@@ -61,10 +61,10 @@ for i in range(n_temps):
 
     # Normalisation scale
     scale = np.min(raw)
-    if np.isclose(scale, 0.0):
-        scale = np.max(np.abs(raw))
-    if np.isclose(scale, 0.0):
-        scale = 1.0
+    # if np.isclose(scale, 0.0):
+    #     scale = np.max(np.abs(raw))
+    # if np.isclose(scale, 0.0):
+    #     scale = 1.0
 
     d = (raw / scale).reshape(-1, 1)
 
@@ -74,7 +74,7 @@ for i in range(n_temps):
     gmm_lbl   = gmm_model.fit_predict(d).astype(int)
     # Cluster means back in original (possibly negative) space
     gmm_means = gmm_model.means_.flatten() * scale
-    print(len(np.unique(gmm_lbl)))
+    # print(len(np.unique(gmm_lbl)))
 
     # --- KMeans ---
     km_model = KMeans(n_clusters=2, random_state=0, n_init=10)
