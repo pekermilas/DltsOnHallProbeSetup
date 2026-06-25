@@ -125,13 +125,13 @@ class dltsRun:
             data = iaT.impdData(fName=dataFile)
         data.readData()
 
-        m, c, l = data.findDataLevelsScikitLearn()
+        m, c, lbl = data.findDataLevelsScikitLearn()
         if plot:
-            for i in range(l.shape[0]):
+            for i in range(lbl.shape[0]):
                 plt.scatter(
                     data.dataValues[list(data.dataValues)[0]]["timeStampImps"],
                     data.dataValues[list(data.dataValues)[0]]["ImpedanceIm"],
-                    c=l[i, :], cmap="coolwarm", s=4)
+                    c=lbl[i, :], cmap="coolwarm", s=4)
             plt.show()
             x = np.array(data.dataValues[list(data.dataValues)[0]]['timeStampImps'])
             y = np.array(data.dataValues[list(data.dataValues)[0]]['ImpedanceIm'])
@@ -139,14 +139,14 @@ class dltsRun:
         if method == 'std':
             # Data sanity check by evolution of standard deviation
             # ------------------------------------------------------
-            for j in range(len(l[0])):
+            for j in range(len(lbl[0])):
                 if j == 0:
                     idx = [0]
-                    val = [l[0, 0]]
+                    val = [lbl[0, 0]]
                 else:
-                    if not l[0, j] == val[-1]:
+                    if not lbl[0, j] == val[-1]:
                         idx.append(j)
-                        val.append(l[0, j])
+                        val.append(lbl[0, j])
             diffs = []
             pairs = []
             for j in range(len(val)):
@@ -178,8 +178,8 @@ class dltsRun:
         if method == 'fit':
             # Data sanity check by fitting
             # ------------------------------------------------------
-            xx = x[l[0] == 1]
-            yy = y[l[0] == 1]
+            xx = x[lbl[0] == 1]
+            yy = y[lbl[0] == 1]
 
             xx = xx / xx[0]
             yy = yy / yy[0]
