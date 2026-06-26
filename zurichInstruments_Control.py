@@ -47,8 +47,8 @@ class ziDevice:
         self.session = None
         self.device = None
         self.rm = None
-        pList = ['Oscillation Frequency', 'Max bandwidth', 'Input Control', 'Current Range',
-                 'Voltage Range', 'Omega Suppression', 'Filter Harmonic', 'Filter Bandwidth',
+        pList = ['Oscillation Amplitude', 'Oscillation Frequency', 'Max bandwidth', 'Input Control',
+                 'Current Range', 'Voltage Range', 'Omega Suppression', 'Filter Harmonic', 'Filter Bandwidth',
                  'Data Transfer Rate', 'Equivalent Circuit Mode', 'Threshold Input Signal', 
                  'State Enable Time', 'State Disable Time', 'Logic Unit Not', 'Aux Output Signal', 
                  'Aux Output Scale', 'Aux Output Offset', 'Aux Output Lower Limit',
@@ -71,9 +71,15 @@ class ziDevice:
 
     def assignParam(self, pName='Oscillation Frequency'):
         if pName in list(self.params):
+            if pName == 'Oscillation Amplitude':
+                pEntry = input("Please enter Oscillation Amplitude (V): ")
+                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.300
             if pName == 'Oscillation Frequency':
                 pEntry = input("Please enter Oscillation Frequency (Hz): ")
                 self.params[pName] = float(pEntry) if not len(pEntry)==0 else 501000
+            if pName == 'Oscillation ON/OFF':
+                pEntry = input("Please enter Oscillation ON/OFF (0:OFF, 1:ON): ")
+                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
             if pName == 'Max bandwidth':
                 pEntry = input("Please enter Maximum Bandwidth (Hz): ")
                 self.params[pName] = float(pEntry) if not len(pEntry)==0 else 10000
@@ -148,8 +154,12 @@ class ziDevice:
     
     def setParam(self, pName='Oscillation Frequency'):
         if pName in list(self.params):
+            if pName == 'Oscillation Amplitude':
+                self.session.daq_server.set('/dev32271/imps/0/amplitude', self.params[pName])
             if pName == 'Oscillation Frequency':
                 self.session.daq_server.set('/dev32271/imps/0/freq', self.params[pName])
+            if pName == 'Oscillation ON/OFF':
+                self.session.daq_server.set('/dev32271/imps/0/output', self.params[pName])
             if pName == 'Max bandwidth':
                 self.session.daq_server.set('/dev32271/imps/0/maxbandwidth', self.params[pName])
             if pName == 'Input Control':
@@ -196,9 +206,17 @@ class ziDevice:
 
     def checkParam(self, pName='Oscillation Frequency'):
         if pName in list(self.params):
-            if pName =='Oscillation Frequency':
+            if pName =='Oscillation Amplitude':
                 returnVal = np.isclose(self.params[pName], 
-                                       self.session.daq_server.get('*')['dev32271']['imps']['0']['freq']['value'][0], 
+                                       self.session.daq_server.get('*')['dev32271']['imps']['0']['amplitude']['value'][0],
+                                       rtol=1e-03)
+            if pName =='Oscillation Frequency':
+                returnVal = np.isclose(self.params[pName],
+                                       self.session.daq_server.get('*')['dev32271']['imps']['0']['freq']['value'][0],
+                                       rtol=1e-03)
+            if pName =='Oscillation ON/OFF':
+                returnVal = np.isclose(self.params[pName],
+                                       self.session.daq_server.get('*')['dev32271']['imps']['0']['output']['value'][0],
                                        rtol=1e-03)
             if pName == 'Max bandwidth':
                 returnVal = np.isclose(self.params[pName], 
