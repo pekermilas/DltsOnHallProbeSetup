@@ -57,6 +57,20 @@ class impdData:
         if isinstance(self.fileName, str):
             self.fileName = [self.fileName]
 
+        # Skip files whose name (excluding path) contains no numeric digits.
+        filtered = []
+        for f in self.fileName:
+            basename = f.replace('\\', '/').rsplit('/', 1)[-1]
+            if any(c.isdigit() for c in basename):
+                filtered.append(f)
+            else:
+                print(f"Skipping '{basename}': no number found in filename.")
+        self.fileName = filtered
+
+        if not self.fileName:
+            print("No valid data files selected (none contained a number in the filename).")
+            return -1
+
         if self.rootFolder is None:
             idx = self.fileName[0][::-1].find('/')
             self.rootFolder = self.fileName[0][:-idx]
@@ -129,7 +143,7 @@ class impdData:
                 print("Data is not a sweep!!!")
                 return 1
             
-    def findDataLevelsScikit(self, model='gmm'):
+    def findDataLevelsScikit(self, model='gmm', interactivePlot=False):
         if self.dataTemps is None or self.dataValues is None or len(self.dataTemps) == 0:
             raise ValueError("No loaded data found. Call readData() first.")
 
@@ -154,12 +168,13 @@ class impdData:
                 raw = np.where(np.isfinite(raw), raw, fill_val)
 
             scale = np.min(raw)
-            if np.isclose(scale, 0.0):
-                scale = np.max(np.abs(raw))
-            if np.isclose(scale, 0.0):
-                labels[i] = np.zeros(n_pts)
-                means[i] = np.array([0.0, 0.0])
-                stds[i] = np.array([0.0, 0.0])
+            sorted_raw = np.sort(raw)
+            second_min = sorted_raw[1] if len(sorted_raw) > 1 else scale
+            if abs(second_min) > 0 and abs(scale) > 20.0 * abs(second_min):
+                print(f"Warning: Unusable data at index {i}, temperature {t} K — "
+                      f"scale ({scale:.4e}) is more than 20x smaller than second minimum "
+                      f"({second_min:.4e}). All labels set to -1.")
+                labels[i] = -1.0
                 continue
 
             d = (raw / scale).reshape(-1, 1)
@@ -174,19 +189,24 @@ class impdData:
             km_labels = km.labels_.astype(int)
             km_means = km.cluster_centers_.flatten() * scale
 
-            # Align GMM labels to KMeans labels before hybrid voting.
-            direct = abs(gmm_means[0] - km_means[0]) + abs(gmm_means[1] - km_means[1])
-            swapped = abs(gmm_means[0] - km_means[1]) + abs(gmm_means[1] - km_means[0])
-            if swapped < direct:
+            # Canonicalize both models: label 0 = higher mean level.
+            if np.argmax(km_means) != 0:
+                km_labels = 1 - km_labels
+                km_means = km_means[::-1].copy()
+
+            if np.argmax(gmm_means) != 0:
                 gmm_labels = 1 - gmm_labels
+                gmm_means = gmm_means[::-1].copy()
 
             if model_key == 'gmm':
                 lbl = gmm_labels
             elif model_key == 'kmeans':
                 lbl = km_labels
             else:
-                # If both agree, use that label; otherwise, use KMeans label.
-                lbl = np.where(gmm_labels == km_labels, gmm_labels, km_labels)
+                # Hybrid keeps only agreement points; disagreement points are dropped.
+                lbl = np.full_like(km_labels, -1)
+                agree = (gmm_labels == km_labels)
+                lbl[agree] = km_labels[agree]
 
             labels[i] = lbl
             for k in range(2):
@@ -197,7 +217,85 @@ class impdData:
             if np.all(np.isfinite(means[i])) and means[i, 0] < means[i, 1]:
                 means[i] = means[i][::-1]
                 stds[i] = stds[i][::-1]
-                labels[i] = 1 - labels[i]
+                if model_key == 'hybrid':
+                    valid = labels[i] >= 0
+                    labels[i, valid] = 1 - labels[i, valid]
+                else:
+                    labels[i] = 1 - labels[i]
+
+        if interactivePlot:
+            if model_key != 'hybrid':
+                print("Interactive view is only supported for model='hybrid'.")
+            else:
+                fig, axes = plt.subplots(nrows=3, figsize=(10, 8), sharex=True, sharey=True)
+                axes[-1].set_xlabel('Time (s)', fontsize=10)
+                current = [0]
+
+                def update_cluster_plot(idx):
+                    t = self.dataTemps[idx]
+                    ts = np.asarray(self.dataValues[t]['timeStampImps'])
+                    imp = np.asarray(self.dataValues[t]['ImpedanceIm'])
+
+                    scale_local = np.min(imp)
+                    sorted_imp = np.sort(imp)
+                    second_min_local = sorted_imp[1] if len(sorted_imp) > 1 else scale_local
+                    if abs(second_min_local) > 0 and abs(scale_local) > 20.0 * abs(second_min_local):
+                        for ax in axes:
+                            ax.cla()
+                            ax.text(0.5, 0.5, 'UNUSABLE DATA', transform=ax.transAxes,
+                                    ha='center', va='center', fontsize=14, color='red')
+                        fig.suptitle(f'i = {idx}  /  T = {t} K  [UNUSABLE — scale outlier]', fontsize=11)
+                        fig.canvas.draw_idle()
+                        return
+                    d_local = (imp / scale_local).reshape(-1, 1)
+
+                    gmm_local = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
+                    gmm_local.fit(d_local)
+                    gmm_lbl = gmm_local.predict(d_local).astype(int)
+                    gmm_means_local = gmm_local.means_.flatten() * scale_local
+
+                    km_local = KMeans(n_clusters=2, random_state=0, n_init=10)
+                    km_local.fit(d_local)
+                    km_lbl = km_local.labels_.astype(int)
+                    km_means_local = km_local.cluster_centers_.flatten() * scale_local
+
+                    if np.argmax(km_means_local) != 0:
+                        km_lbl = 1 - km_lbl
+                    if np.argmax(gmm_means_local) != 0:
+                        gmm_lbl = 1 - gmm_lbl
+
+                    keep = (gmm_lbl == km_lbl)
+                    hyb_lbl = np.full_like(km_lbl, -1)
+                    hyb_lbl[keep] = km_lbl[keep]
+
+                    axes[0].cla()
+                    axes[0].scatter(ts, imp, c=km_lbl, cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[0].set_ylabel('K-Means', fontsize=10)
+
+                    axes[1].cla()
+                    axes[1].scatter(ts, imp, c=gmm_lbl, cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[1].set_ylabel('GMM', fontsize=10)
+
+                    axes[2].cla()
+                    axes[2].scatter(ts[keep], imp[keep], c=hyb_lbl[keep], cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[2].set_ylabel('Hybrid', fontsize=10)
+                    axes[-1].set_xlabel('Time (s)', fontsize=10)
+                    fig.suptitle(f'i = {idx}  /  T = {t} K    (left/right to navigate)', fontsize=11)
+                    fig.canvas.draw_idle()
+
+                def on_key(event):
+                    if event.key == 'right':
+                        current[0] = (current[0] + 1) % len(self.dataTemps)
+                    elif event.key == 'left':
+                        current[0] = (current[0] - 1) % len(self.dataTemps)
+                    else:
+                        return
+                    update_cluster_plot(current[0])
+
+                fig.canvas.mpl_connect('key_press_event', on_key)
+                update_cluster_plot(current[0])
+                plt.tight_layout()
+                plt.show()
 
         return means, stds, labels
 
@@ -295,17 +393,19 @@ class impdData:
 
         return means, covars, labels
 
-    def findDataLevels(self, library='scikitlearn', algorithm='gmm', plot=False):
+    # This is a caller function. It calls findDataLevelsScikit or findDataLevelsPomegranate
+    # for finding data classes/levels
+    def findDataLevels(self, library='scikitlearn', algorithm='gmm', plot=False, interactivePlot=False):
         lib_key = str(library).strip().lower()
         alg_key = str(algorithm).strip().lower()
 
         if lib_key in ('scikitlearn', 'sklearn'):
             if alg_key in ('gmm', 'gaussianmixture'):
-                m, c, l = self.findDataLevelsScikit(model='gmm')
+                m, c, l = self.findDataLevelsScikit(model='gmm', interactivePlot=interactivePlot)
             elif alg_key in ('kmeans',):
-                m, c, l = self.findDataLevelsScikit(model='kmeans')
+                m, c, l = self.findDataLevelsScikit(model='kmeans', interactivePlot=interactivePlot)
             elif alg_key in ('hybrid', 'gmmkmeans', 'kmeansgmm'):
-                m, c, l = self.findDataLevelsScikit(model='hybrid')
+                m, c, l = self.findDataLevelsScikit(model='hybrid', interactivePlot=interactivePlot)
             else:
                 raise ValueError(
                     "Unknown sklearn algorithm: " + str(algorithm) +
@@ -327,9 +427,15 @@ class impdData:
         if plot:
             for i in range(len(m)):
                 t = self.dataTemps[i]
-                plt.scatter(self.dataValues[t]['timeStampImps'],
-                            self.dataValues[t]['ImpedanceIm'], c=l[i],
-                            cmap='coolwarm', s=4)
+                if alg_key in ('hybrid', 'gmmkmeans', 'kmeansgmm'):
+                    valid = l[i] >= 0
+                    plt.scatter(np.asarray(self.dataValues[t]['timeStampImps'])[valid],
+                                np.asarray(self.dataValues[t]['ImpedanceIm'])[valid], c=l[i][valid],
+                                cmap='coolwarm', s=4)
+                else:
+                    plt.scatter(self.dataValues[t]['timeStampImps'],
+                                self.dataValues[t]['ImpedanceIm'], c=l[i],
+                                cmap='coolwarm', s=4)
 
         return m, c, l
 

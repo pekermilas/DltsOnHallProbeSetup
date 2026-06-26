@@ -48,6 +48,7 @@ n_temps       = len(data.dataTemps)
 all_km_labels     = [None] * n_temps
 all_gmm_labels    = [None] * n_temps
 all_hybrid_labels = [None] * n_temps
+all_hybrid_keep   = [None] * n_temps
 
 for i in range(n_temps):
     t   = data.dataTemps[i]
@@ -92,12 +93,14 @@ for i in range(n_temps):
         gmm_lbl   = 1 - gmm_lbl
         gmm_means = gmm_means[::-1].copy()
 
-    # Hybrid: both agree → keep; disagree → KMeans wins
-    hybrid_lbl = np.where(gmm_lbl == km_lbl, gmm_lbl, km_lbl)
+    # Hybrid: keep only points where both models agree, drop disagreements.
+    hybrid_keep = (gmm_lbl == km_lbl)
+    hybrid_lbl = gmm_lbl[hybrid_keep]
 
     all_km_labels[i]     = km_lbl
     all_gmm_labels[i]    = gmm_lbl
     all_hybrid_labels[i] = hybrid_lbl
+    all_hybrid_keep[i]   = hybrid_keep
 
 # --- Interactive 3-panel plot (← / → to step through i) ---------------------
 current = [0]
@@ -109,12 +112,22 @@ def update_cluster_plot(idx):
     t   = data.dataTemps[idx]
     ts  = np.asarray(data.dataValues[t]['timeStampImps'])
     imp = np.asarray(data.dataValues[t]['ImpedanceIm'])
-    for ax, lbl, ttl in zip(axes,
-                             [all_km_labels[idx], all_gmm_labels[idx], all_hybrid_labels[idx]],
-                             ['K-Means', 'GMM', 'Hybrid']):
-        ax.cla()
-        ax.scatter(ts, imp, c=lbl, cmap='coolwarm', s=4, vmin=0, vmax=1)
-        ax.set_ylabel(ttl, fontsize=10)
+
+    axes[0].cla()
+    axes[0].scatter(ts, imp, c=all_km_labels[idx], cmap='coolwarm', s=4, vmin=0, vmax=1)
+    axes[0].set_ylabel('K-Means', fontsize=10)
+
+    axes[1].cla()
+    axes[1].scatter(ts, imp, c=all_gmm_labels[idx], cmap='coolwarm', s=4, vmin=0, vmax=1)
+    axes[1].set_ylabel('GMM', fontsize=10)
+
+    keep = all_hybrid_keep[idx]
+    ts_h = ts[keep]
+    imp_h = imp[keep]
+    lbl_h = all_hybrid_labels[idx]
+    axes[2].cla()
+    axes[2].scatter(ts_h, imp_h, c=lbl_h, cmap='coolwarm', s=4, vmin=0, vmax=1)
+    axes[2].set_ylabel('Hybrid', fontsize=10)
     axes[-1].set_xlabel('Time (s)', fontsize=10)
     fig.suptitle(f'i = {idx}  /  T = {t} K    (← / → to navigate)', fontsize=11)
     fig.canvas.draw_idle()
