@@ -47,9 +47,9 @@ class ziDevice:
         self.session = None
         self.device = None
         self.rm = None
-        pList = ['Oscillation Amplitude', 'Oscillation Frequency', 'Max bandwidth', 'Input Control',
-                 'Current Range', 'Voltage Range', 'Omega Suppression', 'Filter Harmonic', 'Filter Bandwidth',
-                 'Data Transfer Rate', 'Equivalent Circuit Mode', 'Threshold Input Signal', 
+        pList = ['Oscillation Amplitude', 'Oscillation Frequency', 'Oscillation ON/OFF', 'Max bandwidth', 
+                 'Input Control', 'Current Range', 'Voltage Range', 'Omega Suppression', 'Filter Harmonic', 
+                 'Filter Bandwidth', 'Data Transfer Rate', 'Equivalent Circuit Mode', 'Threshold Input Signal', 
                  'State Enable Time', 'State Disable Time', 'Logic Unit Not', 'Aux Output Signal', 
                  'Aux Output Scale', 'Aux Output Offset', 'Aux Output Lower Limit',
                  'Aux Output Upper Limit', 'Signal Output Add', 'Trigger Source Signal']
