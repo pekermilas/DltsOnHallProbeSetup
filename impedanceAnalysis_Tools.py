@@ -44,6 +44,7 @@ class impdData:
         self.rootFolder = None
         self.dataValues = None
         self.dataTemps = None
+        self.dataEmissions = None
         self.dataSignals = None
         self.dataType = None
         self.subType = None
@@ -439,80 +440,180 @@ class impdData:
 
         return m, c, l
 
-    def sampleEmissions(self, showLevels=False, library='scikitlearn', algorithm='gmm'):
-        m, c, l = self.findDataLevels(library=library, algorithm=algorithm, plot=showLevels)
+    def sampleEmissions(self, showLevels=False, library='scikitlearn', algorithm='gmm',
+                        interactivePlot=False, interactiveDataIndex=0,
+                        assignDataEmissions=False, useStoredEmissions=False):
+        # Build labels first, then segment each trace into continuous runs of the
+        # smaller-mean label while ignoring points marked as -1.
+        if useStoredEmissions and self.dataEmissions is not None:
+            emissions = self.dataEmissions
+        else:
+            m, c, l = self.findDataLevels(library=library, algorithm=algorithm, plot=showLevels)
 
-        emissions = dict()
-        for i in range(len(m)):
-            for j in range(len(l[i])):
-                if j==0:
-                    idx = [0]
-                    val = [l[i,0]]
+            emissions = dict()
+            for i, t in enumerate(self.dataTemps):
+                ts = np.asarray(self.dataValues[t]['timeStampImps'], dtype=float)
+                imp = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float)
+                lbl = np.asarray(l[i], dtype=int)
+
+                # # Use labels as a mask first: drop all -1 points from both
+                # # impedance and timestamps with identical indices.
+                # valid_mask = lbl != -1
+                # ts_masked = ts[valid_mask]
+                # imp_masked = imp[valid_mask]
+                # lbl_masked = lbl[valid_mask]
+
+                file_groups = dict()
+                if len(lbl_masked) == 0:
+                    emissions[t] = file_groups
+                    continue
+
+                counts = [np.sum(lbl_masked == 0), np.sum(lbl_masked == 1)]
+                smaller_label = int(np.argmin(counts)) if np.any(np.array(counts) > 0) else 1
+
+                group_start = None
+                group_idx = 0
+                for j in range(len(lbl)):
+                    if lbl[j] == smaller_label:
+                        if group_start is None:
+                            group_start = j
+
+
+
+
+
+
+                group_start = None
+                group_idx = 0
+                for j in range(len(lbl_masked)):
+                    if lbl_masked[j] == smaller_label:
+                        if group_start is None:
+                            group_start = j
+                    else:
+                        if group_start is not None:
+                            seg = np.column_stack((ts_masked[group_start:j], imp_masked[group_start:j]))
+                            if seg.size > 0:
+                                file_groups[group_idx] = seg
+                                group_idx += 1
+                            group_start = None
+
+                if group_start is not None:
+                    seg = np.column_stack((ts_masked[group_start:len(lbl_masked)], imp_masked[group_start:len(lbl_masked)]))
+                    if seg.size > 0:
+                        file_groups[group_idx] = seg
+
+                # Remove the last selected group from each data set.
+                if len(file_groups) > 0:
+                    last_key = max(file_groups.keys())
+                    del file_groups[last_key]
+
+                emissions[t] = file_groups
+
+            if assignDataEmissions:
+                self.dataEmissions = emissions
+
+        emissions_keys = {t: list(groups.keys()) for t, groups in emissions.items()}
+
+        if interactivePlot:
+            if interactiveDataIndex < 0 or interactiveDataIndex >= len(self.dataTemps):
+                raise IndexError("interactiveDataIndex is out of range for the loaded data set.")
+
+            t_sel = self.dataTemps[interactiveDataIndex]
+            groups = emissions.get(t_sel, {})
+            group_keys = sorted(groups.keys())
+            if len(group_keys) == 0:
+                print(f"No selected-label groups found for data index {interactiveDataIndex} (T = {t_sel} K).")
+                return emissions, emissions_keys
+
+            current = [0]
+            fig, axes = plt.subplots(nrows=3, figsize=(10, 10))
+
+            def update_plot(idx):
+                axes[0].cla()
+                axes[1].cla()
+                group = groups[group_keys[idx]]
+                xg = group[:, 0]
+                yg = group[:, 1]
+
+                axes[0].plot(xg, yg, 'o-', markersize=3, linewidth=1)
+                axes[0].set_xlabel('Time (s)')
+                axes[0].set_ylabel('Impedance Im')
+                axes[0].set_title(
+                    f'Data index {interactiveDataIndex} / T = {t_sel} K / '
+                    f'group {group_keys[idx] + 1} of {len(group_keys)}'
+                )
+
+                if len(group) >= 2:
+                    x_next = xg[1:]
+                    y_next = yg[1:]
+                    dx = xg[1:] - xg[:-1]
+                    dy = yg[1:] - yg[:-1]
+                    dx_min, dx_max = float(np.min(dx)), float(np.max(dx))
+                    dy_min, dy_max = float(np.min(dy)), float(np.max(dy))
+
+                    axes[1].plot(x_next, dx, 'o', markersize=3)
+                    axes[1].set_xlabel('x[i+1]')
+                    axes[1].set_ylabel('dx = x[i+1] - x[i]')
+                    axes[1].set_title(f'x[i+1] vs dx  |  min(dx)={dx_min:.3e}, max(dx)={dx_max:.3e}')
+
+                    axes[2].plot(y_next, dy, 'o', markersize=3)
+                    axes[2].set_xlabel('y[i+1]')
+                    axes[2].set_ylabel('dy = y[i+1] - y[i]')
+                    axes[2].set_title(f'y[i+1] vs dy  |  min(dy)={dy_min:.3e}, max(dy)={dy_max:.3e}')
                 else:
-                    if not l[i,j]==val[-1]:
-                        idx.append(j)
-                        val.append(l[i,j])
-            diffs = []
-            pairs = []
-            for j in range(len(val)):
-                if (val[j]==1) and (j+1<len(idx)):
-                    diffs.append(idx[j+1]-idx[j])
-                    pairs.append([idx[j],idx[j+1]])
-        
-            print(diffs, pairs)
-            t = self.dataTemps[i]
-            commonLength = statistics.mode(np.array(diffs)[np.array(diffs)>1])
-            idx = np.array(pairs)[np.where(np.array(diffs)==commonLength)[0]]
-            if len(idx)>0:
-                y = np.array(self.dataValues[t]["ImpedanceIm"][idx[0][0]:idx[0][1]])
-                x = np.array(self.dataValues[t]["timeStampImps"][idx[0][0]:idx[0][1]])
-                x = x - x[0]
-                for k in range(1, len(idx)):
-                    temp = np.array(
-                        self.dataValues[t]["ImpedanceIm"][idx[k][0]:idx[k][1]]
-                    )
-                    y = np.column_stack((y, temp))
-                    temp = np.array(
-                        self.dataValues[t]["timeStampImps"][idx[k][0]:idx[k][1]]
-                    )
-                    temp = temp - temp[0]
-                    x = np.column_stack((x, temp))
+                    for ax in (axes[1], axes[2]):
+                        ax.text(0.5, 0.5, 'Need at least 2 points',
+                                transform=ax.transAxes,
+                                ha='center', va='center')
+                    axes[1].set_xlabel('x[i+1]')
+                    axes[1].set_ylabel('dx = x[i+1] - x[i]')
+                    axes[1].set_title('x[i+1] vs dx')
+                    axes[2].set_xlabel('y[i+1]')
+                    axes[2].set_ylabel('dy = y[i+1] - y[i]')
+                    axes[2].set_title('y[i+1] vs dy')
 
-            yMean = np.mean(y,axis=1)
-            yStd = np.std(y,axis=1)
-        
-        
-            targetStd = np.min(yStd)*100
-            # BURDAN SONRA EN UZAK IKI ALINACAK NOKTAYI BU&LUP ARALARINDAKINI AL!!!
-            startIdx = np.min(np.where(yStd<targetStd)[0])
-            stopIdx = np.max(np.where(yStd<targetStd)[0])
-            
-            xx = x[startIdx:stopIdx+1,0]
-            yy = yMean[startIdx:stopIdx+1]
-            err = yStd[startIdx:stopIdx+1]
-            emissions[self.dataTemps[i]] = dict()
-            emissions[self.dataTemps[i]]['x'] = np.array(xx, copy=True)
-            emissions[self.dataTemps[i]]['y'] = np.array(yy, copy=True)
-            emissions[self.dataTemps[i]]['err'] = np.array(err, copy=True)
+                fig.canvas.draw_idle()
 
-        return emissions
+            def on_key(event):
+                if event.key == 'right':
+                    current[0] = (current[0] + 1) % len(group_keys)
+                elif event.key == 'left':
+                    current[0] = (current[0] - 1) % len(group_keys)
+                else:
+                    return
+                update_plot(current[0])
+
+            fig.canvas.mpl_connect('key_press_event', on_key)
+            update_plot(current[0])
+            plt.tight_layout()
+            plt.show()
+
+        return emissions, emissions_keys
 
     def calculateDeltaCapacitanceT1T2(self, t1, t2, plot=False):
-        emiss = self.sampleEmissions()
+        emiss, _ = self.sampleEmissions()
         allPairs = np.array(list(itertools.product(t1,t2)))
         delTs = allPairs[allPairs[:,0] < allPairs[:,1]]
 
         delC = np.zeros((len(self.dataTemps),len(delTs)+1))
         errC = np.zeros((len(self.dataTemps),len(delTs)+1))
         for i in range(len(self.dataTemps)):
-            x = emiss[self.dataTemps[i]]['x']
-            y = emiss[self.dataTemps[i]]['y']
-            err = emiss[self.dataTemps[i]]['err']
+            t = self.dataTemps[i]
+            groups = emiss.get(t, {})
+            if len(groups) == 0:
+                raise ValueError(f"No selected data groups found for temperature {t} K.")
+
+            # Prefer the longest group for downstream delta-C calculations.
+            best_key = max(groups, key=lambda k: groups[k].shape[0])
+            data_xy = groups[best_key]
+            x = data_xy[:, 0]
+            y = data_xy[:, 1]
+            err = np.full_like(y, np.std(y) if y.size > 0 else 0.0, dtype=float)
             yCS = CubicSpline(x, y, bc_type='natural')
             errCS = CubicSpline(x, err, bc_type='natural')
 
-            delC[i,0] = self.dataTemps[i]
-            errC[i,0] = self.dataTemps[i]
+            delC[i,0] = t
+            errC[i,0] = t
             for j in range(len(delTs)):
                 p0 = yCS(delTs[j,0])
                 e0 = np.abs(errCS(delTs[j,0]))
