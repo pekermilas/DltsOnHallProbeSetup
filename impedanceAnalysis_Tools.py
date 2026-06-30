@@ -440,155 +440,155 @@ class impdData:
 
         return m, c, l
 
-    def sampleEmissions(self, showLevels=False, library='scikitlearn', algorithm='gmm',
-                        interactivePlot=False, interactiveDataIndex=0,
-                        assignDataEmissions=False, useStoredEmissions=False):
-        # Build labels first, then segment each trace into continuous runs of the
-        # smaller-mean label while ignoring points marked as -1.
-        if useStoredEmissions and self.dataEmissions is not None:
-            emissions = self.dataEmissions
-        else:
-            m, c, l = self.findDataLevels(library=library, algorithm=algorithm, plot=showLevels)
-
-            emissions = dict()
-            for i, t in enumerate(self.dataTemps):
-                ts = np.asarray(self.dataValues[t]['timeStampImps'], dtype=float)
-                imp = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float)
-                lbl = np.asarray(l[i], dtype=int)
-
-                # # Use labels as a mask first: drop all -1 points from both
-                # # impedance and timestamps with identical indices.
-                # valid_mask = lbl != -1
-                # ts_masked = ts[valid_mask]
-                # imp_masked = imp[valid_mask]
-                # lbl_masked = lbl[valid_mask]
-
-                file_groups = dict()
-                if len(lbl_masked) == 0:
-                    emissions[t] = file_groups
-                    continue
-
-                counts = [np.sum(lbl_masked == 0), np.sum(lbl_masked == 1)]
-                smaller_label = int(np.argmin(counts)) if np.any(np.array(counts) > 0) else 1
-
-                group_start = None
-                group_idx = 0
-                for j in range(len(lbl)):
-                    if lbl[j] == smaller_label:
-                        if group_start is None:
-                            group_start = j
-
-
-
-
-
-
-                group_start = None
-                group_idx = 0
-                for j in range(len(lbl_masked)):
-                    if lbl_masked[j] == smaller_label:
-                        if group_start is None:
-                            group_start = j
-                    else:
-                        if group_start is not None:
-                            seg = np.column_stack((ts_masked[group_start:j], imp_masked[group_start:j]))
-                            if seg.size > 0:
-                                file_groups[group_idx] = seg
-                                group_idx += 1
-                            group_start = None
-
-                if group_start is not None:
-                    seg = np.column_stack((ts_masked[group_start:len(lbl_masked)], imp_masked[group_start:len(lbl_masked)]))
-                    if seg.size > 0:
-                        file_groups[group_idx] = seg
-
-                # Remove the last selected group from each data set.
-                if len(file_groups) > 0:
-                    last_key = max(file_groups.keys())
-                    del file_groups[last_key]
-
-                emissions[t] = file_groups
-
-            if assignDataEmissions:
-                self.dataEmissions = emissions
-
-        emissions_keys = {t: list(groups.keys()) for t, groups in emissions.items()}
-
-        if interactivePlot:
-            if interactiveDataIndex < 0 or interactiveDataIndex >= len(self.dataTemps):
-                raise IndexError("interactiveDataIndex is out of range for the loaded data set.")
-
-            t_sel = self.dataTemps[interactiveDataIndex]
-            groups = emissions.get(t_sel, {})
-            group_keys = sorted(groups.keys())
-            if len(group_keys) == 0:
-                print(f"No selected-label groups found for data index {interactiveDataIndex} (T = {t_sel} K).")
-                return emissions, emissions_keys
-
-            current = [0]
-            fig, axes = plt.subplots(nrows=3, figsize=(10, 10))
-
-            def update_plot(idx):
-                axes[0].cla()
-                axes[1].cla()
-                group = groups[group_keys[idx]]
-                xg = group[:, 0]
-                yg = group[:, 1]
-
-                axes[0].plot(xg, yg, 'o-', markersize=3, linewidth=1)
-                axes[0].set_xlabel('Time (s)')
-                axes[0].set_ylabel('Impedance Im')
-                axes[0].set_title(
-                    f'Data index {interactiveDataIndex} / T = {t_sel} K / '
-                    f'group {group_keys[idx] + 1} of {len(group_keys)}'
-                )
-
-                if len(group) >= 2:
-                    x_next = xg[1:]
-                    y_next = yg[1:]
-                    dx = xg[1:] - xg[:-1]
-                    dy = yg[1:] - yg[:-1]
-                    dx_min, dx_max = float(np.min(dx)), float(np.max(dx))
-                    dy_min, dy_max = float(np.min(dy)), float(np.max(dy))
-
-                    axes[1].plot(x_next, dx, 'o', markersize=3)
-                    axes[1].set_xlabel('x[i+1]')
-                    axes[1].set_ylabel('dx = x[i+1] - x[i]')
-                    axes[1].set_title(f'x[i+1] vs dx  |  min(dx)={dx_min:.3e}, max(dx)={dx_max:.3e}')
-
-                    axes[2].plot(y_next, dy, 'o', markersize=3)
-                    axes[2].set_xlabel('y[i+1]')
-                    axes[2].set_ylabel('dy = y[i+1] - y[i]')
-                    axes[2].set_title(f'y[i+1] vs dy  |  min(dy)={dy_min:.3e}, max(dy)={dy_max:.3e}')
-                else:
-                    for ax in (axes[1], axes[2]):
-                        ax.text(0.5, 0.5, 'Need at least 2 points',
-                                transform=ax.transAxes,
-                                ha='center', va='center')
-                    axes[1].set_xlabel('x[i+1]')
-                    axes[1].set_ylabel('dx = x[i+1] - x[i]')
-                    axes[1].set_title('x[i+1] vs dx')
-                    axes[2].set_xlabel('y[i+1]')
-                    axes[2].set_ylabel('dy = y[i+1] - y[i]')
-                    axes[2].set_title('y[i+1] vs dy')
-
-                fig.canvas.draw_idle()
-
-            def on_key(event):
-                if event.key == 'right':
-                    current[0] = (current[0] + 1) % len(group_keys)
-                elif event.key == 'left':
-                    current[0] = (current[0] - 1) % len(group_keys)
-                else:
-                    return
-                update_plot(current[0])
-
-            fig.canvas.mpl_connect('key_press_event', on_key)
-            update_plot(current[0])
-            plt.tight_layout()
-            plt.show()
-
-        return emissions, emissions_keys
+    # def sampleEmissions(self, showLevels=False, library='scikitlearn', algorithm='gmm',
+    #                     interactivePlot=False, interactiveDataIndex=0,
+    #                     assignDataEmissions=False, useStoredEmissions=False):
+    #     # Build labels first, then segment each trace into continuous runs of the
+    #     # smaller-mean label while ignoring points marked as -1.
+    #     if useStoredEmissions and self.dataEmissions is not None:
+    #         emissions = self.dataEmissions
+    #     else:
+    #         m, c, l = self.findDataLevels(library=library, algorithm=algorithm, plot=showLevels)
+    #
+    #         emissions = dict()
+    #         for i, t in enumerate(self.dataTemps):
+    #             ts = np.asarray(self.dataValues[t]['timeStampImps'], dtype=float)
+    #             imp = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float)
+    #             lbl = np.asarray(l[i], dtype=int)
+    #
+    #             # # Use labels as a mask first: drop all -1 points from both
+    #             # # impedance and timestamps with identical indices.
+    #             # valid_mask = lbl != -1
+    #             # ts_masked = ts[valid_mask]
+    #             # imp_masked = imp[valid_mask]
+    #             # lbl_masked = lbl[valid_mask]
+    #
+    #             file_groups = dict()
+    #             if len(lbl_masked) == 0:
+    #                 emissions[t] = file_groups
+    #                 continue
+    #
+    #             counts = [np.sum(lbl_masked == 0), np.sum(lbl_masked == 1)]
+    #             smaller_label = int(np.argmin(counts)) if np.any(np.array(counts) > 0) else 1
+    #
+    #             group_start = None
+    #             group_idx = 0
+    #             for j in range(len(lbl)):
+    #                 if lbl[j] == smaller_label:
+    #                     if group_start is None:
+    #                         group_start = j
+    #
+    #
+    #
+    #
+    #
+    #
+    #             group_start = None
+    #             group_idx = 0
+    #             for j in range(len(lbl_masked)):
+    #                 if lbl_masked[j] == smaller_label:
+    #                     if group_start is None:
+    #                         group_start = j
+    #                 else:
+    #                     if group_start is not None:
+    #                         seg = np.column_stack((ts_masked[group_start:j], imp_masked[group_start:j]))
+    #                         if seg.size > 0:
+    #                             file_groups[group_idx] = seg
+    #                             group_idx += 1
+    #                         group_start = None
+    #
+    #             if group_start is not None:
+    #                 seg = np.column_stack((ts_masked[group_start:len(lbl_masked)], imp_masked[group_start:len(lbl_masked)]))
+    #                 if seg.size > 0:
+    #                     file_groups[group_idx] = seg
+    #
+    #             # Remove the last selected group from each data set.
+    #             if len(file_groups) > 0:
+    #                 last_key = max(file_groups.keys())
+    #                 del file_groups[last_key]
+    #
+    #             emissions[t] = file_groups
+    #
+    #         if assignDataEmissions:
+    #             self.dataEmissions = emissions
+    #
+    #     emissions_keys = {t: list(groups.keys()) for t, groups in emissions.items()}
+    #
+    #     if interactivePlot:
+    #         if interactiveDataIndex < 0 or interactiveDataIndex >= len(self.dataTemps):
+    #             raise IndexError("interactiveDataIndex is out of range for the loaded data set.")
+    #
+    #         t_sel = self.dataTemps[interactiveDataIndex]
+    #         groups = emissions.get(t_sel, {})
+    #         group_keys = sorted(groups.keys())
+    #         if len(group_keys) == 0:
+    #             print(f"No selected-label groups found for data index {interactiveDataIndex} (T = {t_sel} K).")
+    #             return emissions, emissions_keys
+    #
+    #         current = [0]
+    #         fig, axes = plt.subplots(nrows=3, figsize=(10, 10))
+    #
+    #         def update_plot(idx):
+    #             axes[0].cla()
+    #             axes[1].cla()
+    #             group = groups[group_keys[idx]]
+    #             xg = group[:, 0]
+    #             yg = group[:, 1]
+    #
+    #             axes[0].plot(xg, yg, 'o-', markersize=3, linewidth=1)
+    #             axes[0].set_xlabel('Time (s)')
+    #             axes[0].set_ylabel('Impedance Im')
+    #             axes[0].set_title(
+    #                 f'Data index {interactiveDataIndex} / T = {t_sel} K / '
+    #                 f'group {group_keys[idx] + 1} of {len(group_keys)}'
+    #             )
+    #
+    #             if len(group) >= 2:
+    #                 x_next = xg[1:]
+    #                 y_next = yg[1:]
+    #                 dx = xg[1:] - xg[:-1]
+    #                 dy = yg[1:] - yg[:-1]
+    #                 dx_min, dx_max = float(np.min(dx)), float(np.max(dx))
+    #                 dy_min, dy_max = float(np.min(dy)), float(np.max(dy))
+    #
+    #                 axes[1].plot(x_next, dx, 'o', markersize=3)
+    #                 axes[1].set_xlabel('x[i+1]')
+    #                 axes[1].set_ylabel('dx = x[i+1] - x[i]')
+    #                 axes[1].set_title(f'x[i+1] vs dx  |  min(dx)={dx_min:.3e}, max(dx)={dx_max:.3e}')
+    #
+    #                 axes[2].plot(y_next, dy, 'o', markersize=3)
+    #                 axes[2].set_xlabel('y[i+1]')
+    #                 axes[2].set_ylabel('dy = y[i+1] - y[i]')
+    #                 axes[2].set_title(f'y[i+1] vs dy  |  min(dy)={dy_min:.3e}, max(dy)={dy_max:.3e}')
+    #             else:
+    #                 for ax in (axes[1], axes[2]):
+    #                     ax.text(0.5, 0.5, 'Need at least 2 points',
+    #                             transform=ax.transAxes,
+    #                             ha='center', va='center')
+    #                 axes[1].set_xlabel('x[i+1]')
+    #                 axes[1].set_ylabel('dx = x[i+1] - x[i]')
+    #                 axes[1].set_title('x[i+1] vs dx')
+    #                 axes[2].set_xlabel('y[i+1]')
+    #                 axes[2].set_ylabel('dy = y[i+1] - y[i]')
+    #                 axes[2].set_title('y[i+1] vs dy')
+    #
+    #             fig.canvas.draw_idle()
+    #
+    #         def on_key(event):
+    #             if event.key == 'right':
+    #                 current[0] = (current[0] + 1) % len(group_keys)
+    #             elif event.key == 'left':
+    #                 current[0] = (current[0] - 1) % len(group_keys)
+    #             else:
+    #                 return
+    #             update_plot(current[0])
+    #
+    #         fig.canvas.mpl_connect('key_press_event', on_key)
+    #         update_plot(current[0])
+    #         plt.tight_layout()
+    #         plt.show()
+    #
+    #     return emissions, emissions_keys
 
     def calculateDeltaCapacitanceT1T2(self, t1, t2, plot=False):
         emiss, _ = self.sampleEmissions()
