@@ -454,7 +454,82 @@ class impdData:
     def sampleEmissions(self, showLevels=False, library='scikitlearn', algorithm='gmm',
                         interactivePlot=False, interactiveDataIndex=0,
                         assignDataEmissions=False, useStoredEmissions=False,
-                        returnClusterIndices=False, temperature=None):
+                        returnClusterIndices=False, temperature=None,
+                        alignmentDebug=False):
+        def _align_emissions_and_clusters_for_temp(groups, entries, std_dist_global, temp_key=None):
+            # Enforce equal spacing between consecutive emission starts in timestamp
+            # space by trimming leading points and shifting each segment time axis.
+            groups_local = _normalize_emission_groups(groups)
+            entries_local = _normalize_cluster_entries(entries)
+
+            if len(entries_local) < 2 or len(groups_local) == 0:
+                if alignmentDebug and temp_key is not None:
+                    print(f"[sampleEmissions][{temp_key} K] alignment skipped: <2 emissions.")
+                return groups_local, entries_local
+
+            ordered_keys = sorted(groups_local.keys())
+            n = min(len(ordered_keys), len(entries_local))
+            if n < 2:
+                if alignmentDebug and temp_key is not None:
+                    print(f"[sampleEmissions][{temp_key} K] alignment skipped: <2 matched groups/indices.")
+                return groups_local, entries_local
+
+            start_times = [float(np.asarray(groups_local[ordered_keys[i]], dtype=float)[0, 0]) for i in range(n)]
+            diffs = np.diff(start_times)
+            if diffs.size == 0:
+                if alignmentDebug and temp_key is not None:
+                    print(f"[sampleEmissions][{temp_key} K] alignment skipped: no start-time gaps.")
+                return groups_local, entries_local
+
+            std_dist = float(std_dist_global)
+            if std_dist <= 0:
+                if alignmentDebug and temp_key is not None:
+                    print(f"[sampleEmissions][{temp_key} K] alignment skipped: global standard gap is non-positive.")
+                return groups_local, entries_local
+
+            if alignmentDebug and temp_key is not None:
+                first_gap_before = diffs[0] if diffs.size > 0 else np.nan
+                print(f"[sampleEmissions][{temp_key} K] BEFORE starts={np.array2string(np.asarray(start_times), precision=9)}")
+                print(f"[sampleEmissions][{temp_key} K] BEFORE gaps={np.array2string(np.asarray(diffs), precision=9)}; standard_gap(global)={std_dist:.9g}; first_gap={first_gap_before:.9g}")
+
+            base_start_time = start_times[0]
+            aligned_groups = {}
+            aligned_entries = []
+            eps = 1e-12
+
+            for i in range(n):
+                key = ordered_keys[i]
+                seg = np.asarray(groups_local[key], dtype=float)
+                emm_start, emm_stop, exc_start, exc_stop = entries_local[i]
+
+                target_start_time = base_start_time + i * std_dist
+                seg_t = np.asarray(seg[:, 0], dtype=float)
+                shift = int(np.searchsorted(seg_t, target_start_time - eps, side='left'))
+
+                if shift >= seg.shape[0]:
+                    continue
+
+                new_emm_start = emm_start + shift
+                if new_emm_start > emm_stop:
+                    continue
+
+                seg_aligned = np.array(seg[shift:, :], copy=True)
+                # Force exact target start timestamp for consistent spacing checks.
+                seg_aligned[:, 0] += (target_start_time - float(seg_aligned[0, 0]))
+
+                aligned_groups[len(aligned_groups)] = seg_aligned
+                aligned_entries.append((new_emm_start, emm_stop, exc_start, exc_stop))
+
+            if alignmentDebug and temp_key is not None:
+                aligned_keys = sorted(aligned_groups.keys())
+                aligned_start_times = [float(np.asarray(aligned_groups[k], dtype=float)[0, 0]) for k in aligned_keys] if len(aligned_keys) > 0 else []
+                aligned_diffs = np.diff(aligned_start_times) if len(aligned_start_times) >= 2 else np.array([])
+                first_gap_after = aligned_diffs[0] if aligned_diffs.size > 0 else np.nan
+                print(f"[sampleEmissions][{temp_key} K] AFTER  starts={np.array2string(np.asarray(aligned_start_times), precision=9)}")
+                print(f"[sampleEmissions][{temp_key} K] AFTER  gaps={np.array2string(np.asarray(aligned_diffs), precision=9)}; first_gap={first_gap_after:.9g}")
+
+            return aligned_groups, aligned_entries
+
         def _normalize_one_emission_segment(seg):
             arr = np.asarray(seg, dtype=float)
             if arr.ndim == 1 and arr.size >= 2 and arr.size % 2 == 0:
@@ -642,6 +717,35 @@ class impdData:
         # Also normalize the stored-path branch where old sessions can contain one tuple.
         cluster_indices = {k: _normalize_cluster_entries(v) for k, v in cluster_indices.items()}
         emissions = _normalize_emissions_map(emissions)
+
+        # Compute one global standard gap from all temperatures after all clusters are found.
+        all_start_diffs = []
+        for t, groups_t in emissions.items():
+            groups_norm = _normalize_emission_groups(groups_t)
+            ordered = sorted(groups_norm.keys())
+            if len(ordered) < 2:
+                continue
+            starts_t = [float(np.asarray(groups_norm[k], dtype=float)[0, 0]) for k in ordered]
+            diffs_t = np.diff(starts_t)
+            if diffs_t.size > 0:
+                all_start_diffs.extend([float(d) for d in diffs_t])
+
+        global_standard_gap = float(np.max(all_start_diffs)) if len(all_start_diffs) > 0 else 0.0
+        if alignmentDebug:
+            print(f"[sampleEmissions] GLOBAL standard gap={global_standard_gap:.9g}")
+
+        # Align emission starts per temperature and keep emissions/indices synchronized.
+        temp_keys = sorted(set(list(emissions.keys()) + list(cluster_indices.keys())))
+        for t in temp_keys:
+            aligned_groups, aligned_entries = _align_emissions_and_clusters_for_temp(
+                emissions.get(t, {}),
+                cluster_indices.get(t, []),
+                global_standard_gap,
+                temp_key=t,
+            )
+            emissions[t] = aligned_groups
+            cluster_indices[t] = aligned_entries
+
         # Persist emissions with a stable nested-dictionary structure for all callers.
         self.dataEmissions = emissions
         self.dataClusterIndices = cluster_indices
@@ -752,12 +856,16 @@ class impdData:
         if temp_key is not None:
             selected = cluster_indices.get(temp_key, [])
             if returnClusterIndices:
-                return emissions, emissions_keys, {temp_key: selected}
-            return emissions, emissions_keys, selected
+                # return emissions, emissions_keys, {temp_key: selected}
+                return {temp_key: selected}
+            # return emissions, emissions_keys, selected
+            return selected
 
         if returnClusterIndices:
-            return emissions, emissions_keys, cluster_indices
-        return emissions, emissions_keys
+            # return emissions, emissions_keys, cluster_indices
+            return cluster_indices
+        # return emissions, emissions_keys
+        return 0
 
     def calculateDeltaCapacitanceT1T2(self, t1, t2, plot=False):
         emiss, _ = self.sampleEmissions()
