@@ -29,9 +29,9 @@ import runDlts_Tools as rdT
 
 data =  iaT.impdData()
 data.readData()
-data.sampleEmissions(False, 'sklearn', 'hybrid',
-                     False, 0, False,
-                     False)
+data.sampleEmissions(showLevels=False, library='scikitlearn', algorithm='hybrid',
+                     interactivePlot=True, interactiveDataIndex=0,
+                     assignDataEmissions=False, useStoredEmissions=False)
 data.findDataLevels('sklearn','hybrid',False,True)
 
 import numpy as np
