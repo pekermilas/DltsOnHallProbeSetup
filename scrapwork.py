@@ -29,12 +29,14 @@ import runDlts_Tools as rdT
 
 data =  iaT.impdData()
 data.readData()
-data.sampleEmissions(showLevels=False, library='scikitlearn', algorithm='hybrid',
+data.sampleEmissions(showLevels=False, algorithm='hybrid',
                      interactivePlot=False, interactiveDataIndex=0,
-                     assignDataEmissions=False, useStoredEmissions=True,
+                     assignDataEmissions=False, useStoredEmissions=False,
                      returnClusterIndices=False, temperature=None,
                      alignmentDebug=True)
-data.findDataLevels('sklearn','hybrid',False,True)
+data.test(t1=0.003, t2=0.203, emissionIndex=0, plot=True)
+
+data.findDataLevels('hybrid', False, True)
 
 import numpy as np
 
