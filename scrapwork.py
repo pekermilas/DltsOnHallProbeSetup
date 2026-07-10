@@ -30,7 +30,7 @@ import runDlts_Tools as rdT
 data =  iaT.impdData()
 data.readData()
 data.sampleEmissions(showLevels=False, algorithm='hybrid',
-                     interactivePlot=False, interactiveDataIndex=0,
+                     interactivePlot=True, interactiveDataIndex=0,
                      assignDataEmissions=False, useStoredEmissions=False,
                      returnClusterIndices=False, temperature=None,
                      alignmentDebug=True)

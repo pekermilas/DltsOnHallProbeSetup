@@ -155,42 +155,64 @@ class impdData:
             raise ValueError("model must be one of: 'gmm', 'kmeans', 'hybrid'")
 
         n_t = len(self.dataTemps)
-        n_pts = len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])
-        means = np.full((n_t, 2), np.nan)
-        stds = np.full((n_t, 2), np.nan)
-        labels = np.full((n_t, n_pts), -1.0)
+        nEmm_pts = len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])
+        nExc_pts = len(self.dataValues[self.dataTemps[0]]["AuxInput1"])
+        meansEmm = np.full((n_t, 2), np.nan)
+        stdsEmm = np.full((n_t, 2), np.nan)
+        labelsEmm = np.full((n_t, nEmm_pts), -1.0)
+        meansExc = np.full((n_t, 2), np.nan)
+        stdsExc = np.full((n_t, 2), np.nan)
+        labelsExc = np.full((n_t, nExc_pts), -1.0)
 
         for i, t in enumerate(self.dataTemps):
-            raw = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
-            if raw.size != n_pts:
+            rawEmm = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
+            rawExc = np.asarray(self.dataValues[t]["AuxInput1"], dtype=float).ravel()
+            if rawEmm.size != nEmm_pts:
                 raise ValueError(f"Inconsistent ImpedanceIm length at {t} K.")
+            if rawExc.size != nExc_pts:
+                raise ValueError(f"Inconsistent AuxInput1 length at {t} K.")
 
-            if not np.all(np.isfinite(raw)):
-                finite = raw[np.isfinite(raw)]
-                fill_val = np.median(finite) if finite.size > 0 else 0.0
-                raw = np.where(np.isfinite(raw), raw, fill_val)
+            if not np.all(np.isfinite(rawEmm)):
+                finiteEmm = rawEmm[np.isfinite(rawEmm)]
+                fill_valEmm = np.median(finiteEmm) if finiteEmm.size > 0 else 0.0
+                rawEmm = np.where(np.isfinite(rawEmm), rawEmm, fill_valEmm)
+            if not np.all(np.isfinite(rawExc)):
+                finiteExc = rawExc[np.isfinite(rawExc)]
+                fill_valExc = np.median(finiteExc) if finiteExc.size > 0 else 0.0
+                rawExc = np.where(np.isfinite(rawExc), rawExc, fill_valExc)
 
-            scale = np.min(raw)
-            sorted_raw = np.sort(raw)
-            second_min = sorted_raw[1] if len(sorted_raw) > 1 else scale
-            if abs(second_min) > 0 and abs(scale) > 20.0 * abs(second_min):
+            scaleEmm = np.min(rawEmm)
+            sorted_rawEmm = np.sort(rawEmm)
+            second_minEmm = sorted_rawEmm[1] if len(sorted_rawEmm) > 1 else scaleEmm
+            scaleExc = np.min(rawExc)
+            sorted_rawExc = np.sort(rawExc)
+            second_minExc = sorted_rawExc[1] if len(sorted_rawExc) > 1 else scaleExc
+
+            if abs(second_minEmm) > 0 and abs(scaleEmm) > 20.0 * abs(second_minEmm):
                 print(f"Warning: Unusable data at index {i}, temperature {t} K — "
-                      f"scale ({scale:.4e}) is more than 20x smaller than second minimum "
-                      f"({second_min:.4e}). All labels set to -1.")
-                labels[i] = -1.0
+                      f"scale ({scaleEmm:.4e}) is more than 20x smaller than second minimum "
+                      f"({second_minEmm:.4e}). All labels set to -1.")
+                labelsEmm[i] = -1.0
                 continue
-
-            d = (raw / scale).reshape(-1, 1)
+            if abs(second_minExc) > 0 and abs(scaleExc) > 20.0 * abs(second_minExc):
+                print(f"Warning: Unusable data at index {i}, temperature {t} K — "
+                      f"scale ({scaleExc:.4e}) is more than 20x smaller than second minimum "
+                      f"({second_minExc:.4e}). All labels set to -1.")
+                labelsExc[i] = -1.0
+                continue
+            
+            # Find clusters first for Emission
+            d = (rawEmm / scaleEmm).reshape(-1, 1)
 
             gmm = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
             gmm.fit(d)
             gmm_labels = gmm.predict(d).astype(int)
-            gmm_means = gmm.means_.flatten() * scale
+            gmm_means = gmm.means_.flatten() * scaleEmm
 
             km = KMeans(n_clusters=2, random_state=0, n_init=10)
             km.fit(d)
             km_labels = km.labels_.astype(int)
-            km_means = km.cluster_centers_.flatten() * scale
+            km_means = km.cluster_centers_.flatten() * scaleEmm
 
             # Canonicalize both models: label 0 = higher mean level.
             if np.argmax(km_means) != 0:
@@ -211,38 +233,90 @@ class impdData:
                 agree = (gmm_labels == km_labels)
                 lbl[agree] = km_labels[agree]
 
-            labels[i] = lbl
+            labelsEmm[i] = lbl
             for k in range(2):
-                sel = raw[lbl == k]
-                means[i, k] = np.mean(sel) if sel.size > 0 else np.nan
-                stds[i, k] = np.std(sel) if sel.size > 0 else np.nan
+                sel = rawEmm[lbl == k]
+                meansEmm[i, k] = np.mean(sel) if sel.size > 0 else np.nan
+                stdsEmm[i, k] = np.std(sel) if sel.size > 0 else np.nan
 
-            if np.all(np.isfinite(means[i])) and means[i, 0] < means[i, 1]:
-                means[i] = means[i][::-1]
-                stds[i] = stds[i][::-1]
+            if np.all(np.isfinite(meansEmm[i])) and meansEmm[i, 0] < meansEmm[i, 1]:
+                meansEmm[i] = meansEmm[i][::-1]
+                stdsEmm[i] = stdsEmm[i][::-1]
                 if model_key == 'hybrid':
-                    valid = labels[i] >= 0
-                    labels[i, valid] = 1 - labels[i, valid]
+                    valid = labelsEmm[i] >= 0
+                    labelsEmm[i, valid] = 1 - labelsEmm[i, valid]
                 else:
-                    labels[i] = 1 - labels[i]
+                    labelsEmm[i] = 1 - labelsEmm[i]
+            #--------------------------------------------------------------------
+
+            # Then find clusters for Excitation
+            d = (rawExc / scaleExc).reshape(-1, 1)
+
+            gmm = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
+            gmm.fit(d)
+            gmm_labels = gmm.predict(d).astype(int)
+            gmm_means = gmm.means_.flatten() * scaleExc
+
+            km = KMeans(n_clusters=2, random_state=0, n_init=10)
+            km.fit(d)
+            km_labels = km.labels_.astype(int)
+            km_means = km.cluster_centers_.flatten() * scaleExc
+
+            # Canonicalize both models: label 0 = higher mean level.
+            if np.argmax(km_means) != 0:
+                km_labels = 1 - km_labels
+                km_means = km_means[::-1].copy()
+
+            if np.argmax(gmm_means) != 0:
+                gmm_labels = 1 - gmm_labels
+                gmm_means = gmm_means[::-1].copy()
+
+            if model_key == 'gmm':
+                lbl = gmm_labels
+            elif model_key == 'kmeans':
+                lbl = km_labels
+            else:
+                # Hybrid keeps only agreement points; disagreement points are dropped.
+                lbl = np.full_like(km_labels, -1)
+                agree = (gmm_labels == km_labels)
+                lbl[agree] = km_labels[agree]
+
+            labelsExc[i] = lbl
+            for k in range(2):
+                sel = rawExc[lbl == k]
+                meansExc[i, k] = np.mean(sel) if sel.size > 0 else np.nan
+                stdsExc[i, k] = np.std(sel) if sel.size > 0 else np.nan
+
+            if np.all(np.isfinite(meansExc[i])) and meansExc[i, 0] < meansExc[i, 1]:
+                meansExc[i] = meansExc[i][::-1]
+                stdsExc[i] = stdsExc[i][::-1]
+                if model_key == 'hybrid':
+                    valid = labelsExc[i] >= 0
+                    labelsExc[i, valid] = 1 - labelsExc[i, valid]
+                else:
+                    labelsExc[i] = 1 - labelsExc[i]
+            # --------------------------------------------------------------------
 
         if interactivePlot:
             if model_key != 'hybrid':
                 print("Interactive view is only supported for model='hybrid'.")
             else:
-                fig, axes = plt.subplots(nrows=3, figsize=(10, 8), sharex=True, sharey=True)
-                axes[-1].set_xlabel('Time (s)', fontsize=10)
+                fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(10, 8), sharex=True, sharey=True)
+                axes[-1,0].set_xlabel('Time (s)', fontsize=10)
+                axes[-1,1].set_xlabel("Time (s)", fontsize=10)
                 current = [0]
 
                 def update_cluster_plot(idx):
                     t = self.dataTemps[idx]
-                    ts = np.asarray(self.dataValues[t]['timeStampImps'])
+                    tsImp = np.asarray(self.dataValues[t]['timeStampImps'])
                     imp = np.asarray(self.dataValues[t]['ImpedanceIm'])
+                    aux = np.asarray(self.dataValues[t]['AuxInput1'])
+                    tsAux = np.asarray(self.dataValues[t]["timeStampDemods"])
 
-                    scale_local = np.min(imp)
-                    sorted_imp = np.sort(imp)
-                    second_min_local = sorted_imp[1] if len(sorted_imp) > 1 else scale_local
-                    if abs(second_min_local) > 0 and abs(scale_local) > 20.0 * abs(second_min_local):
+                    scale_localEmm = np.min(imp)
+                    sorted_impEmm = np.sort(imp)
+                    second_min_localEmm = sorted_impEmm[1] if len(sorted_impEmm) > 1 else scale_localEmm
+                    if abs(second_min_localEmm) > 0 and abs(scale_localEmm) > 20.0 * abs(second_min_localEmm):
                         for ax in axes:
                             ax.cla()
                             ax.text(0.5, 0.5, 'UNUSABLE DATA', transform=ax.transAxes,
@@ -250,39 +324,91 @@ class impdData:
                         fig.suptitle(f'i = {idx}  /  T = {t} K  [UNUSABLE — scale outlier]', fontsize=11)
                         fig.canvas.draw_idle()
                         return
-                    d_local = (imp / scale_local).reshape(-1, 1)
+                    d_localEmm = (imp / scale_localEmm).reshape(-1, 1)
 
-                    gmm_local = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
-                    gmm_local.fit(d_local)
-                    gmm_lbl = gmm_local.predict(d_local).astype(int)
-                    gmm_means_local = gmm_local.means_.flatten() * scale_local
+                    gmm_localEmm = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
+                    gmm_localEmm.fit(d_localEmm)
+                    gmm_lblEmm = gmm_localEmm.predict(d_localEmm).astype(int)
+                    gmm_means_localEmm = gmm_localEmm.means_.flatten() * scale_localEmm
 
-                    km_local = KMeans(n_clusters=2, random_state=0, n_init=10)
-                    km_local.fit(d_local)
-                    km_lbl = km_local.labels_.astype(int)
-                    km_means_local = km_local.cluster_centers_.flatten() * scale_local
+                    km_localEmm = KMeans(n_clusters=2, random_state=0, n_init=10)
+                    km_localEmm.fit(d_localEmm)
+                    km_lblEmm = km_localEmm.labels_.astype(int)
+                    km_means_localEmm = km_localEmm.cluster_centers_.flatten() * scale_localEmm
 
-                    if np.argmax(km_means_local) != 0:
-                        km_lbl = 1 - km_lbl
-                    if np.argmax(gmm_means_local) != 0:
-                        gmm_lbl = 1 - gmm_lbl
+                    if np.argmax(km_means_localEmm) != 0:
+                        km_lblEmm = 1 - km_lblEmm
+                    if np.argmax(gmm_means_localEmm) != 0:
+                        gmm_lblEmm = 1 - gmm_lblEmm
 
-                    keep = (gmm_lbl == km_lbl)
-                    hyb_lbl = np.full_like(km_lbl, -1)
-                    hyb_lbl[keep] = km_lbl[keep]
+                    keep = (gmm_lblEmm == km_lblEmm)
+                    hyb_lblEmm = np.full_like(km_lblEmm, -1)
+                    hyb_lblEmm[keep] = km_lblEmm[keep]
 
-                    axes[0].cla()
-                    axes[0].scatter(ts, imp, c=km_lbl, cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[0].set_ylabel('K-Means', fontsize=10)
+                    scale_localExc = np.min(aux)
+                    sorted_impExc = np.sort(aux)
+                    second_min_localExc = sorted_impExc[1] if len(sorted_impExc) > 1 else scale_localExc
+                    if abs(second_min_localExc) > 0 and abs(scale_localExc) > 20.0 * abs(second_min_localExc):
+                        for ax in axes:
+                            ax.cla()
+                            ax.text(0.5, 0.5, 'UNUSABLE DATA', transform=ax.transAxes,
+                                    ha='center', va='center', fontsize=14, color='red')
+                        fig.suptitle(f'i = {idx}  /  T = {t} K  [UNUSABLE — scale outlier]', fontsize=11)
+                        fig.canvas.draw_idle()
+                        return
+                    d_localExc = (aux / scale_localExc).reshape(-1, 1)
 
-                    axes[1].cla()
-                    axes[1].scatter(ts, imp, c=gmm_lbl, cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[1].set_ylabel('GMM', fontsize=10)
+                    gmm_localExc = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
+                    gmm_localExc.fit(d_localExc)
+                    gmm_lblExc = gmm_localExc.predict(d_localExc).astype(int)
+                    gmm_means_localExc = gmm_localExc.means_.flatten() * scale_localExc
 
-                    axes[2].cla()
-                    axes[2].scatter(ts[keep], imp[keep], c=hyb_lbl[keep], cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[2].set_ylabel('Hybrid', fontsize=10)
-                    axes[-1].set_xlabel('Time (s)', fontsize=10)
+                    km_localExc = KMeans(n_clusters=2, random_state=0, n_init=10)
+                    km_localExc.fit(d_localExc)
+                    km_lblExc = km_localExc.labels_.astype(int)
+                    km_means_localExc = km_localExc.cluster_centers_.flatten() * scale_localExc
+
+                    if np.argmax(km_means_localExc) != 0:
+                        km_lblExc = 1 - km_lblExc
+                    if np.argmax(gmm_means_localExc) != 0:
+                        gmm_lblExc = 1 - gmm_lblExc
+
+                    keep = (gmm_lblExc == km_lblExc)
+                    hyb_lblExc = np.full_like(km_lblExc, -1)
+                    hyb_lblExc[keep] = km_lblExc[keep]
+
+                    axes[0,0].cla()
+                    axes[0,0].scatter(tsImp, imp, c=km_lblEmm, cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[0,0].set_ylabel('K-Means', fontsize=10)
+                    # axes[0,0].set_ylim(np.min(imp) * 0.9, np.max(imp) * 1.1)
+
+                    axes[1,0].cla()
+                    axes[1,0].scatter(tsImp, imp, c=gmm_lblEmm, cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[1,0].set_ylabel('GMM', fontsize=10)
+                    # axes[1,0].set_ylim(np.min(imp) * 0.9, np.max(imp) * 1.1)
+
+                    axes[2,0].cla()
+                    axes[2,0].scatter(tsImp[keep], imp[keep], c=hyb_lblEmm[keep], cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[2,0].set_ylabel('Hybrid', fontsize=10)
+                    # axes[2,0].set_ylim(np.min(imp) * 0.9, np.max(imp) * 1.1)
+                    axes[-1,0].set_xlabel('Time (s)', fontsize=10)
+
+                    axes[0,1].cla()
+                    axes[0,1].scatter(tsAux, aux, c=km_lblExc, cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[0,1].set_ylabel('K-Means', fontsize=10)
+                    # axes[0,1].set_ylim(np.min(aux) * 0.9, np.max(aux) * 1.1)
+
+                    axes[1,1].cla()
+                    axes[1,1].scatter(tsAux, aux, c=gmm_lblExc, cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[1,1].set_ylabel('GMM', fontsize=10)
+                    # axes[1,1].set_ylim(np.min(aux) * 0.9, np.max(aux) * 1.1)
+
+                    axes[2,1].cla()
+                    axes[2,1].scatter(tsAux[keep], aux[keep], c=hyb_lblExc[keep], cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[2,1].set_ylabel('Hybrid', fontsize=10)
+                    # axes[2,1].set_ylim(np.min(aux) * 0.9, np.max(aux) * 1.1)
+                    axes[-1,1].set_xlabel('Time (s)', fontsize=10)
+
                     fig.suptitle(f'i = {idx}  /  T = {t} K    (left/right to navigate)', fontsize=11)
                     fig.canvas.draw_idle()
 
@@ -300,7 +426,7 @@ class impdData:
                 plt.tight_layout()
                 plt.show()
 
-        return means, stds, labels
+        return meansEmm, stdsEmm, labelsEmm
 
     # This is a caller function. It calls findDataLevelsScikit for finding data classes/levels
     def findDataLevels(self, algorithm='gmm', plot=False, interactivePlot=False):
