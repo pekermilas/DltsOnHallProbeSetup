@@ -23,7 +23,7 @@ import h5py
 import statistics
 from uncertainties import unumpy, ufloat
 import itertools
-from scipy.stats import weibull_min
+from scipy.stats import weibull_min, mode
 import torch
 from scipy.integrate import quad
 import lmfit
@@ -411,11 +411,57 @@ class impdData:
 
             blocks[self.dataTemps[i]]["high"] = dict()
             blocks[self.dataTemps[i]]["low"] = dict()
+
+            # Find the most frequent high and low block lengths, i.e. excitation and emission
+            # -------------------------------------------------------------------------------
+            freqHighLengths = dict()
             for h1, h2 in enumerate(high):
-                # blocks[self.dataTemps[i]]["high"][h1] = list(h2).append(h2[1]-h2[0])
-                blocks[self.dataTemps[i]]["high"][h1] = list(h2)
+                val = list(h2)
+                val.append(val[1]-val[0])
+                blocks[self.dataTemps[i]]["high"][h1] = val
+                if not val[1]-val[0] in freqHighLengths.keys():
+                    freqHighLengths[val[1]-val[0]] = 1
+                else:
+                    freqHighLengths[val[1]-val[0]] += 1
+            # freqHighLengths.popitem()
+            highFreqs = np.array([int(key) for key in freqHighLengths.keys()])
+            highVals = np.array([int(value) for value in freqHighLengths.values()])
+            highClusters = np.column_stack((highFreqs, highVals))
+            # sortedHighClusters = sorted(highClusters, key=lambda x: x[1])
+            print(highClusters)
+
+            freqLowLengths = dict()
             for l1, l2 in enumerate(low):
-                blocks[self.dataTemps[i]]["low"][l1] = list(l2)
+                val = list(l2)
+                val.append(val[1]-val[0])
+                blocks[self.dataTemps[i]]["low"][l1] = val
+                if not val[1]-val[0] in freqLowLengths.keys():
+                    freqLowLengths[val[1]-val[0]] = 1
+                else:
+                    freqLowLengths[val[1]-val[0]] += 1
+            freqLowLengths.popitem()
+            lowFreqs = np.array([int(key) for key in freqLowLengths.keys()])
+            lowVals = np.array([int(value) for value in freqLowLengths.values()])
+            lowClusters = np.column_stack((lowFreqs, lowVals))
+            # sortedLowClusters = sorted(lowClusters, key=lambda x: x[1])
+            print(lowClusters)
+
+            # mostFrequentHighLength = None
+            # mostFrequentHighCount = 0
+            # for item, count in freqHighLengths.items():
+            #     if count > mostFrequentHighCount:
+            #         mostFrequentHighCount = count
+            #         mostFrequentHighLength = item
+            #
+            # mostFrequentLowLength = None
+            # mostFrequentLowCount = 0
+            # for item, count in freqLowLengths.items():
+            #     if count > mostFrequentLowCount:
+            #         mostFrequentLowCount = count
+            #         mostFrequentLowLength = item
+
+            # -------------------------------------------------------------------------------
+            # print(sortedHighClusters,sortedLowClusters)
 
         return blocks
 
