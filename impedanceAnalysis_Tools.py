@@ -145,8 +145,8 @@ class impdData:
             else:
                 print("Data is not a sweep!!!")
                 return 1
-            
-    def findDataLevelsScikit(self, model='gmm', interactivePlot=False):
+
+    def findDataLevelsScikit(self, dataType = 'emission', model='gmm', interactivePlot=False):
         if self.dataTemps is None or self.dataValues is None or len(self.dataTemps) == 0:
             raise ValueError("No loaded data found. Call readData() first.")
 
@@ -155,64 +155,51 @@ class impdData:
             raise ValueError("model must be one of: 'gmm', 'kmeans', 'hybrid'")
 
         n_t = len(self.dataTemps)
-        nEmm_pts = len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])
-        nExc_pts = len(self.dataValues[self.dataTemps[0]]["AuxInput1"])
-        meansEmm = np.full((n_t, 2), np.nan)
-        stdsEmm = np.full((n_t, 2), np.nan)
-        labelsEmm = np.full((n_t, nEmm_pts), -1.0)
-        meansExc = np.full((n_t, 2), np.nan)
-        stdsExc = np.full((n_t, 2), np.nan)
-        labelsExc = np.full((n_t, nExc_pts), -1.0)
+        if dataType=='emission':
+            n_pts = len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])
+        if dataType=='excitation':
+            n_pts = len(self.dataValues[self.dataTemps[0]]["AuxInput1"])
+
+        means = np.full((n_t, 2), np.nan)
+        stds = np.full((n_t, 2), np.nan)
+        labels = np.full((n_t, n_pts), -1.0)
 
         for i, t in enumerate(self.dataTemps):
-            rawEmm = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
-            rawExc = np.asarray(self.dataValues[t]["AuxInput1"], dtype=float).ravel()
-            if rawEmm.size != nEmm_pts:
-                raise ValueError(f"Inconsistent ImpedanceIm length at {t} K.")
-            if rawExc.size != nExc_pts:
-                raise ValueError(f"Inconsistent AuxInput1 length at {t} K.")
+            if dataType=='emission':
+                raw = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
+            if dataType=='excitation':
+                raw = np.asarray(self.dataValues[t]["AuxInput1"], dtype=float).ravel()
 
-            if not np.all(np.isfinite(rawEmm)):
-                finiteEmm = rawEmm[np.isfinite(rawEmm)]
-                fill_valEmm = np.median(finiteEmm) if finiteEmm.size > 0 else 0.0
-                rawEmm = np.where(np.isfinite(rawEmm), rawEmm, fill_valEmm)
-            if not np.all(np.isfinite(rawExc)):
-                finiteExc = rawExc[np.isfinite(rawExc)]
-                fill_valExc = np.median(finiteExc) if finiteExc.size > 0 else 0.0
-                rawExc = np.where(np.isfinite(rawExc), rawExc, fill_valExc)
+            if raw.size != n_pts:
+                raise ValueError(f"Inconsistent data length at {t} K.")
 
-            scaleEmm = np.min(rawEmm)
-            sorted_rawEmm = np.sort(rawEmm)
-            second_minEmm = sorted_rawEmm[1] if len(sorted_rawEmm) > 1 else scaleEmm
-            scaleExc = np.min(rawExc)
-            sorted_rawExc = np.sort(rawExc)
-            second_minExc = sorted_rawExc[1] if len(sorted_rawExc) > 1 else scaleExc
+            if not np.all(np.isfinite(raw)):
+                finite = raw[np.isfinite(raw)]
+                fill_val = np.median(finite) if finite.size > 0 else 0.0
+                raw = np.where(np.isfinite(raw), raw, fill_val)
 
-            if abs(second_minEmm) > 0 and abs(scaleEmm) > 20.0 * abs(second_minEmm):
+            scale = np.min(raw)
+            sorted_raw = np.sort(raw)
+            second_min = sorted_raw[1] if len(sorted_raw) > 1 else scale
+
+            if abs(second_min) > 0 and abs(scale) > 20.0 * abs(second_min):
                 print(f"Warning: Unusable data at index {i}, temperature {t} K — "
-                      f"scale ({scaleEmm:.4e}) is more than 20x smaller than second minimum "
-                      f"({second_minEmm:.4e}). All labels set to -1.")
-                labelsEmm[i] = -1.0
+                      f"scale ({scale:.4e}) is more than 20x smaller than second minimum "
+                      f"({second_min:.4e}). All labels set to -1.")
+                labels[i] = -1.0
                 continue
-            if abs(second_minExc) > 0 and abs(scaleExc) > 20.0 * abs(second_minExc):
-                print(f"Warning: Unusable data at index {i}, temperature {t} K — "
-                      f"scale ({scaleExc:.4e}) is more than 20x smaller than second minimum "
-                      f"({second_minExc:.4e}). All labels set to -1.")
-                labelsExc[i] = -1.0
-                continue
-            
-            # Find clusters first for Emission
-            d = (rawEmm / scaleEmm).reshape(-1, 1)
+
+            d = (raw / scale).reshape(-1, 1)
 
             gmm = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
             gmm.fit(d)
             gmm_labels = gmm.predict(d).astype(int)
-            gmm_means = gmm.means_.flatten() * scaleEmm
+            gmm_means = gmm.means_.flatten() * scale
 
             km = KMeans(n_clusters=2, random_state=0, n_init=10)
             km.fit(d)
             km_labels = km.labels_.astype(int)
-            km_means = km.cluster_centers_.flatten() * scaleEmm
+            km_means = km.cluster_centers_.flatten() * scale
 
             # Canonicalize both models: label 0 = higher mean level.
             if np.argmax(km_means) != 0:
@@ -233,90 +220,59 @@ class impdData:
                 agree = (gmm_labels == km_labels)
                 lbl[agree] = km_labels[agree]
 
-            labelsEmm[i] = lbl
+            labels[i] = lbl
             for k in range(2):
-                sel = rawEmm[lbl == k]
-                meansEmm[i, k] = np.mean(sel) if sel.size > 0 else np.nan
-                stdsEmm[i, k] = np.std(sel) if sel.size > 0 else np.nan
+                sel = raw[lbl == k]
+                means[i, k] = np.mean(sel) if sel.size > 0 else np.nan
+                stds[i, k] = np.std(sel) if sel.size > 0 else np.nan
 
-            if np.all(np.isfinite(meansEmm[i])) and meansEmm[i, 0] < meansEmm[i, 1]:
-                meansEmm[i] = meansEmm[i][::-1]
-                stdsEmm[i] = stdsEmm[i][::-1]
+            if np.all(np.isfinite(means[i])) and means[i, 0] < means[i, 1]:
+                means[i] = means[i][::-1]
+                stds[i] = stds[i][::-1]
                 if model_key == 'hybrid':
-                    valid = labelsEmm[i] >= 0
-                    labelsEmm[i, valid] = 1 - labelsEmm[i, valid]
+                    valid = labels[i] >= 0
+                    labels[i, valid] = 1 - labels[i, valid]
                 else:
-                    labelsEmm[i] = 1 - labelsEmm[i]
-            #--------------------------------------------------------------------
-
-            # Then find clusters for Excitation
-            d = (rawExc / scaleExc).reshape(-1, 1)
-
-            gmm = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
-            gmm.fit(d)
-            gmm_labels = gmm.predict(d).astype(int)
-            gmm_means = gmm.means_.flatten() * scaleExc
-
-            km = KMeans(n_clusters=2, random_state=0, n_init=10)
-            km.fit(d)
-            km_labels = km.labels_.astype(int)
-            km_means = km.cluster_centers_.flatten() * scaleExc
-
-            # Canonicalize both models: label 0 = higher mean level.
-            if np.argmax(km_means) != 0:
-                km_labels = 1 - km_labels
-                km_means = km_means[::-1].copy()
-
-            if np.argmax(gmm_means) != 0:
-                gmm_labels = 1 - gmm_labels
-                gmm_means = gmm_means[::-1].copy()
-
-            if model_key == 'gmm':
-                lbl = gmm_labels
-            elif model_key == 'kmeans':
-                lbl = km_labels
-            else:
-                # Hybrid keeps only agreement points; disagreement points are dropped.
-                lbl = np.full_like(km_labels, -1)
-                agree = (gmm_labels == km_labels)
-                lbl[agree] = km_labels[agree]
-
-            labelsExc[i] = lbl
-            for k in range(2):
-                sel = rawExc[lbl == k]
-                meansExc[i, k] = np.mean(sel) if sel.size > 0 else np.nan
-                stdsExc[i, k] = np.std(sel) if sel.size > 0 else np.nan
-
-            if np.all(np.isfinite(meansExc[i])) and meansExc[i, 0] < meansExc[i, 1]:
-                meansExc[i] = meansExc[i][::-1]
-                stdsExc[i] = stdsExc[i][::-1]
-                if model_key == 'hybrid':
-                    valid = labelsExc[i] >= 0
-                    labelsExc[i, valid] = 1 - labelsExc[i, valid]
-                else:
-                    labelsExc[i] = 1 - labelsExc[i]
-            # --------------------------------------------------------------------
+                    labels[i] = 1 - labels[i]
 
         if interactivePlot:
             if model_key != 'hybrid':
                 print("Interactive view is only supported for model='hybrid'.")
             else:
-                fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(10, 8), sharex=True, sharey=True)
-                axes[-1,0].set_xlabel('Time (s)', fontsize=10)
-                axes[-1,1].set_xlabel("Time (s)", fontsize=10)
+                fig, axes = plt.subplots(nrows=3, figsize=(10, 8), sharex=True, sharey='col')
+                axes[-1].set_xlabel('Time (s)', fontsize=10)
                 current = [0]
+
+                def _safe_ylim(values, pad_frac=0.1):
+                    finite_vals = np.asarray(values, dtype=float)
+                    finite_vals = finite_vals[np.isfinite(finite_vals)]
+                    if finite_vals.size == 0:
+                        return (-1.0, 1.0)
+
+                    y_min = float(np.min(finite_vals))
+                    y_max = float(np.max(finite_vals))
+                    if y_min == y_max:
+                        pad = max(abs(y_min) * pad_frac, 1e-12)
+                    else:
+                        pad = (y_max - y_min) * pad_frac
+                    return (y_min - pad, y_max + pad)
 
                 def update_cluster_plot(idx):
                     t = self.dataTemps[idx]
-                    tsImp = np.asarray(self.dataValues[t]['timeStampImps'])
-                    imp = np.asarray(self.dataValues[t]['ImpedanceIm'])
-                    aux = np.asarray(self.dataValues[t]['AuxInput1'])
-                    tsAux = np.asarray(self.dataValues[t]["timeStampDemods"])
 
-                    scale_localEmm = np.min(imp)
-                    sorted_impEmm = np.sort(imp)
-                    second_min_localEmm = sorted_impEmm[1] if len(sorted_impEmm) > 1 else scale_localEmm
-                    if abs(second_min_localEmm) > 0 and abs(scale_localEmm) > 20.0 * abs(second_min_localEmm):
+                    if dataType=='emission':
+                        ts = np.asarray(self.dataValues[t]['timeStampImps'])
+                        data = np.asarray(self.dataValues[t]['ImpedanceIm'])
+                    if dataType=='excitation':
+                        ts = np.asarray(self.dataValues[t]["timeStampDemods"])
+                        data = np.asarray(self.dataValues[t]["AuxInput1"])
+
+                    data_ylim = _safe_ylim(data)
+
+                    scale_local = np.min(data)
+                    sorted_imp = np.sort(data)
+                    second_min_local = sorted_imp[1] if len(sorted_imp) > 1 else scale_local
+                    if abs(second_min_local) > 0 and abs(scale_local) > 20.0 * abs(second_min_local):
                         for ax in axes:
                             ax.cla()
                             ax.text(0.5, 0.5, 'UNUSABLE DATA', transform=ax.transAxes,
@@ -324,90 +280,42 @@ class impdData:
                         fig.suptitle(f'i = {idx}  /  T = {t} K  [UNUSABLE — scale outlier]', fontsize=11)
                         fig.canvas.draw_idle()
                         return
-                    d_localEmm = (imp / scale_localEmm).reshape(-1, 1)
+                    d_local = (data / scale_local).reshape(-1, 1)
 
-                    gmm_localEmm = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
-                    gmm_localEmm.fit(d_localEmm)
-                    gmm_lblEmm = gmm_localEmm.predict(d_localEmm).astype(int)
-                    gmm_means_localEmm = gmm_localEmm.means_.flatten() * scale_localEmm
+                    gmm_local = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
+                    gmm_local.fit(d_local)
+                    gmm_lbl = gmm_local.predict(d_local).astype(int)
+                    gmm_means_local = gmm_local.means_.flatten() * scale_local
 
-                    km_localEmm = KMeans(n_clusters=2, random_state=0, n_init=10)
-                    km_localEmm.fit(d_localEmm)
-                    km_lblEmm = km_localEmm.labels_.astype(int)
-                    km_means_localEmm = km_localEmm.cluster_centers_.flatten() * scale_localEmm
+                    km_local = KMeans(n_clusters=2, random_state=0, n_init=10)
+                    km_local.fit(d_local)
+                    km_lbl = km_local.labels_.astype(int)
+                    km_means_local = km_local.cluster_centers_.flatten() * scale_local
 
-                    if np.argmax(km_means_localEmm) != 0:
-                        km_lblEmm = 1 - km_lblEmm
-                    if np.argmax(gmm_means_localEmm) != 0:
-                        gmm_lblEmm = 1 - gmm_lblEmm
+                    if np.argmax(km_means_local) != 0:
+                        km_lbl = 1 - km_lbl
+                    if np.argmax(gmm_means_local) != 0:
+                        gmm_lbl = 1 - gmm_lbl
 
-                    keep = (gmm_lblEmm == km_lblEmm)
-                    hyb_lblEmm = np.full_like(km_lblEmm, -1)
-                    hyb_lblEmm[keep] = km_lblEmm[keep]
+                    keep = (gmm_lbl == km_lbl)
+                    hyb_lbl = np.full_like(km_lbl, -1)
+                    hyb_lbl[keep] = km_lbl[keep]
 
-                    scale_localExc = np.min(aux)
-                    sorted_impExc = np.sort(aux)
-                    second_min_localExc = sorted_impExc[1] if len(sorted_impExc) > 1 else scale_localExc
-                    if abs(second_min_localExc) > 0 and abs(scale_localExc) > 20.0 * abs(second_min_localExc):
-                        for ax in axes:
-                            ax.cla()
-                            ax.text(0.5, 0.5, 'UNUSABLE DATA', transform=ax.transAxes,
-                                    ha='center', va='center', fontsize=14, color='red')
-                        fig.suptitle(f'i = {idx}  /  T = {t} K  [UNUSABLE — scale outlier]', fontsize=11)
-                        fig.canvas.draw_idle()
-                        return
-                    d_localExc = (aux / scale_localExc).reshape(-1, 1)
+                    axes[0].cla()
+                    axes[0].scatter(ts, data, c=km_lbl, cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[0].set_ylabel('K-Means', fontsize=10)
 
-                    gmm_localExc = GaussianMixture(n_components=2, random_state=0, covariance_type='full', reg_covar=1e-8)
-                    gmm_localExc.fit(d_localExc)
-                    gmm_lblExc = gmm_localExc.predict(d_localExc).astype(int)
-                    gmm_means_localExc = gmm_localExc.means_.flatten() * scale_localExc
+                    axes[1].cla()
+                    axes[1].scatter(ts, data, c=gmm_lbl, cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[1].set_ylabel('GMM', fontsize=10)
 
-                    km_localExc = KMeans(n_clusters=2, random_state=0, n_init=10)
-                    km_localExc.fit(d_localExc)
-                    km_lblExc = km_localExc.labels_.astype(int)
-                    km_means_localExc = km_localExc.cluster_centers_.flatten() * scale_localExc
+                    axes[2].cla()
+                    axes[2].scatter(ts[keep], data[keep], c=hyb_lbl[keep], cmap='coolwarm', s=4, vmin=0, vmax=1)
+                    axes[2].set_ylabel('Hybrid', fontsize=10)
+                    axes[-1].set_xlabel('Time (s)', fontsize=10)
 
-                    if np.argmax(km_means_localExc) != 0:
-                        km_lblExc = 1 - km_lblExc
-                    if np.argmax(gmm_means_localExc) != 0:
-                        gmm_lblExc = 1 - gmm_lblExc
-
-                    keep = (gmm_lblExc == km_lblExc)
-                    hyb_lblExc = np.full_like(km_lblExc, -1)
-                    hyb_lblExc[keep] = km_lblExc[keep]
-
-                    axes[0,0].cla()
-                    axes[0,0].scatter(tsImp, imp, c=km_lblEmm, cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[0,0].set_ylabel('K-Means', fontsize=10)
-                    # axes[0,0].set_ylim(np.min(imp) * 0.9, np.max(imp) * 1.1)
-
-                    axes[1,0].cla()
-                    axes[1,0].scatter(tsImp, imp, c=gmm_lblEmm, cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[1,0].set_ylabel('GMM', fontsize=10)
-                    # axes[1,0].set_ylim(np.min(imp) * 0.9, np.max(imp) * 1.1)
-
-                    axes[2,0].cla()
-                    axes[2,0].scatter(tsImp[keep], imp[keep], c=hyb_lblEmm[keep], cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[2,0].set_ylabel('Hybrid', fontsize=10)
-                    # axes[2,0].set_ylim(np.min(imp) * 0.9, np.max(imp) * 1.1)
-                    axes[-1,0].set_xlabel('Time (s)', fontsize=10)
-
-                    axes[0,1].cla()
-                    axes[0,1].scatter(tsAux, aux, c=km_lblExc, cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[0,1].set_ylabel('K-Means', fontsize=10)
-                    # axes[0,1].set_ylim(np.min(aux) * 0.9, np.max(aux) * 1.1)
-
-                    axes[1,1].cla()
-                    axes[1,1].scatter(tsAux, aux, c=gmm_lblExc, cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[1,1].set_ylabel('GMM', fontsize=10)
-                    # axes[1,1].set_ylim(np.min(aux) * 0.9, np.max(aux) * 1.1)
-
-                    axes[2,1].cla()
-                    axes[2,1].scatter(tsAux[keep], aux[keep], c=hyb_lblExc[keep], cmap='coolwarm', s=4, vmin=0, vmax=1)
-                    axes[2,1].set_ylabel('Hybrid', fontsize=10)
-                    # axes[2,1].set_ylim(np.min(aux) * 0.9, np.max(aux) * 1.1)
-                    axes[-1,1].set_xlabel('Time (s)', fontsize=10)
+                    for row in range(3):
+                        axes[row].set_ylim(data_ylim)
 
                     fig.suptitle(f'i = {idx}  /  T = {t} K    (left/right to navigate)', fontsize=11)
                     fig.canvas.draw_idle()
@@ -426,36 +334,23 @@ class impdData:
                 plt.tight_layout()
                 plt.show()
 
-        return meansEmm, stdsEmm, labelsEmm
+        return means, stds, labels
 
     # This is a caller function. It calls findDataLevelsScikit for finding data classes/levels
-    def findDataLevels(self, algorithm='gmm', plot=False, interactivePlot=False):
+    def findDataLevels(self, dataType = 'emission', algorithm='gmm', interactivePlot=False):
         alg_key = str(algorithm).strip().lower()
 
         if alg_key in ('gmm', 'gaussianmixture'):
-            m, c, l = self.findDataLevelsScikit(model='gmm', interactivePlot=interactivePlot)
+            m, c, l = self.findDataLevelsScikit(dataType=dataType, model='gmm', interactivePlot=interactivePlot)
         elif alg_key in ('kmeans',):
-            m, c, l = self.findDataLevelsScikit(model='kmeans', interactivePlot=interactivePlot)
+            m, c, l = self.findDataLevelsScikit(dataType=dataType, model='kmeans', interactivePlot=interactivePlot)
         elif alg_key in ('hybrid', 'gmmkmeans', 'kmeansgmm'):
-            m, c, l = self.findDataLevelsScikit(model='hybrid', interactivePlot=interactivePlot)
+            m, c, l = self.findDataLevelsScikit(dataType=dataType, model='hybrid', interactivePlot=interactivePlot)
         else:
             raise ValueError(
                 "Unknown algorithm: " + str(algorithm) +
                 ". Valid options are: 'gmm', 'kmeans', 'hybrid'."
             )
-
-        if plot:
-            for i in range(len(m)):
-                t = self.dataTemps[i]
-                if alg_key in ('hybrid', 'gmmkmeans', 'kmeansgmm'):
-                    valid = l[i] >= 0
-                    plt.scatter(np.asarray(self.dataValues[t]['timeStampImps'])[valid],
-                                np.asarray(self.dataValues[t]['ImpedanceIm'])[valid], c=l[i][valid],
-                                cmap='coolwarm', s=4)
-                else:
-                    plt.scatter(self.dataValues[t]['timeStampImps'],
-                                self.dataValues[t]['ImpedanceIm'], c=l[i],
-                                cmap='coolwarm', s=4)
 
         return m, c, l
 
@@ -465,420 +360,75 @@ class impdData:
         idx = (np.abs(array - value)).argmin()
         return idx
 
-    def sampleEmissions(self, showLevels=False, algorithm='gmm',
-                        interactivePlot=False, interactiveDataIndex=0,
-                        assignDataEmissions=False, useStoredEmissions=False,
-                        returnClusterIndices=False, temperature=None,
-                        alignmentDebug=False):
-        def _align_emissions_and_clusters_for_temp(groups, entries, std_dist_global, temp_key=None):
-            # Enforce equal spacing between consecutive emission starts in timestamp
-            # space by trimming leading points and shifting each segment time axis.
-            groups_local = _normalize_emission_groups(groups)
-            entries_local = _normalize_cluster_entries(entries)
+    @staticmethod
+    def find_signal_blocks(arr, val):
+        def get_blocks_for_target(target):
+            modified = list(arr)
+            n = len(modified)
 
-            if len(entries_local) < 2 or len(groups_local) == 0:
-                if alignmentDebug and temp_key is not None:
-                    print(f"[sampleEmissions][{temp_key} K] alignment skipped: <2 emissions.")
-                return groups_local, entries_local
+            # Step 1: Convert -1s into the target value if they bridge two target blocks
+            i = 0
+            while i < n:
+                if modified[i] == -1:
+                    start = i
+                    while i < n and modified[i] == -1:
+                        i += 1
+                    end = i - 1
 
-            ordered_keys = sorted(groups_local.keys())
-            n = min(len(ordered_keys), len(entries_local))
-            if n < 2:
-                if alignmentDebug and temp_key is not None:
-                    print(f"[sampleEmissions][{temp_key} K] alignment skipped: <2 matched groups/indices.")
-                return groups_local, entries_local
+                    # Check immediate neighbors of the -1 block
+                    left_neighbor = modified[start - 1] if start > 0 else None
+                    right_neighbor = modified[end + 1] if end < n - 1 else None
 
-            start_times = [float(np.asarray(groups_local[ordered_keys[i]], dtype=float)[0, 0]) for i in range(n)]
-            diffs = np.diff(start_times)
-            if diffs.size == 0:
-                if alignmentDebug and temp_key is not None:
-                    print(f"[sampleEmissions][{temp_key} K] alignment skipped: no start-time gaps.")
-                return groups_local, entries_local
-
-            std_dist = float(std_dist_global)
-            if std_dist <= 0:
-                if alignmentDebug and temp_key is not None:
-                    print(f"[sampleEmissions][{temp_key} K] alignment skipped: global standard gap is non-positive.")
-                return groups_local, entries_local
-
-            if alignmentDebug and temp_key is not None:
-                first_gap_before = diffs[0] if diffs.size > 0 else np.nan
-                print(f"[sampleEmissions][{temp_key} K] BEFORE starts={np.array2string(np.asarray(start_times), precision=9)}")
-                print(f"[sampleEmissions][{temp_key} K] BEFORE gaps={np.array2string(np.asarray(diffs), precision=9)}; standard_gap(global)={std_dist:.9g}; first_gap={first_gap_before:.9g}")
-
-            base_start_time = start_times[0]
-            aligned_groups = {}
-            aligned_entries = []
-            eps = 1e-12
-
-            for i in range(n):
-                key = ordered_keys[i]
-                seg = np.asarray(groups_local[key], dtype=float)
-                emm_start, emm_stop, exc_start, exc_stop = entries_local[i]
-
-                target_start_time = base_start_time + i * std_dist
-                seg_t = np.asarray(seg[:, 0], dtype=float)
-                shift = int(np.searchsorted(seg_t, target_start_time - eps, side='left'))
-
-                if shift >= seg.shape[0]:
-                    continue
-
-                new_emm_start = emm_start + shift
-                if new_emm_start > emm_stop:
-                    continue
-
-                seg_aligned = np.array(seg[shift:, :], copy=True)
-                # Force exact target start timestamp for consistent spacing checks.
-                seg_aligned[:, 0] += (target_start_time - float(seg_aligned[0, 0]))
-
-                aligned_groups[len(aligned_groups)] = seg_aligned
-                aligned_entries.append((new_emm_start, emm_stop, exc_start, exc_stop))
-
-            if alignmentDebug and temp_key is not None:
-                aligned_keys = sorted(aligned_groups.keys())
-                aligned_start_times = [float(np.asarray(aligned_groups[k], dtype=float)[0, 0]) for k in aligned_keys] if len(aligned_keys) > 0 else []
-                aligned_diffs = np.diff(aligned_start_times) if len(aligned_start_times) >= 2 else np.array([])
-                first_gap_after = aligned_diffs[0] if aligned_diffs.size > 0 else np.nan
-                print(f"[sampleEmissions][{temp_key} K] AFTER  starts={np.array2string(np.asarray(aligned_start_times), precision=9)}")
-                print(f"[sampleEmissions][{temp_key} K] AFTER  gaps={np.array2string(np.asarray(aligned_diffs), precision=9)}; first_gap={first_gap_after:.9g}")
-
-            return aligned_groups, aligned_entries
-
-        def _normalize_one_emission_segment(seg):
-            arr = np.asarray(seg, dtype=float)
-            if arr.ndim == 1 and arr.size >= 2 and arr.size % 2 == 0:
-                arr = arr.reshape(-1, 2)
-            if arr.ndim != 2 or arr.shape[1] != 2:
-                return None
-            return arr
-
-        def _normalize_emission_groups(groups):
-            # Supported canonical shape: {idx: [[ts, imp], ...], ...}
-            if groups is None:
-                return {}
-
-            # Legacy convenience shape: {'x': [...], 'y': [...]} -> one segment.
-            if isinstance(groups, dict) and ('x' in groups and 'y' in groups):
-                x = np.asarray(groups['x'], dtype=float).ravel()
-                y = np.asarray(groups['y'], dtype=float).ravel()
-                n = min(x.size, y.size)
-                if n == 0:
-                    return {}
-                seg = np.column_stack((x[:n], y[:n]))
-                return {0: seg}
-
-            out = {}
-            if isinstance(groups, dict):
-                items = groups.items()
-            else:
-                items = enumerate(groups)
-
-            for k, seg in items:
-                norm = _normalize_one_emission_segment(seg)
-                if norm is None or norm.size == 0:
-                    continue
-                try:
-                    key = int(k)
-                except Exception:
-                    key = len(out)
-                out[key] = norm
-
-            return {idx: out[idx] for idx in sorted(out.keys())}
-
-        def _normalize_emissions_map(emissions_in):
-            if emissions_in is None or not isinstance(emissions_in, dict):
-                return {}
-            emissions_out = {}
-            for t, groups in emissions_in.items():
-                emissions_out[t] = _normalize_emission_groups(groups)
-            return emissions_out
-
-        def _normalize_cluster_entries(entries):
-            # Backward-compatible normalization: a single (start, stop, start, stop)
-            # tuple becomes a one-item list, and every entry is stored as ints.
-            if entries is None:
-                return []
-            if isinstance(entries, tuple) and len(entries) == 4:
-                entries = [entries]
-
-            out = []
-            for entry in entries:
-                if entry is None:
-                    continue
-                if isinstance(entry, np.ndarray):
-                    entry = entry.tolist()
-                if isinstance(entry, (list, tuple)) and len(entry) == 4:
-                    out.append(tuple(int(v) for v in entry))
-            return out
-
-        def _resolve_temperature_key(temp_query):
-            if temp_query is None:
-                return None
-            try:
-                q = float(temp_query)
-            except (TypeError, ValueError):
-                raise ValueError("temperature must be numeric (in K) or None.")
-
-            for t in self.dataTemps:
-                if np.isclose(float(t), q, rtol=0.0, atol=1e-9):
-                    return t
-            raise KeyError(f"Requested temperature {temp_query} K is not in loaded data.")
-
-        # Build labels first, then segment each trace into continuous runs of the
-        # smaller-mean label while ignoring points marked as -1.
-        if useStoredEmissions and self.dataEmissions is not None:
-            emissions = _normalize_emissions_map(self.dataEmissions)
-            cluster_indices = self.dataClusterIndices if self.dataClusterIndices is not None else {}
-            if interactivePlot:
-                m, c, l = self.findDataLevels(algorithm=algorithm, plot=False)
-        else:
-            m, c, l = self.findDataLevels(algorithm=algorithm, plot=False)
-
-            # Models were canonicalized: label 0 = higher mean, label 1 = lower mean, label -1 = transition/discard
-            emissions = dict()
-            cluster_indices = dict()
-            tExc = self.dataParams["impedance"]["State Disable Time"]
-            tEmm = self.dataParams['impedance']['State Enable Time']
-            tTotal = tEmm + tExc
-
-            for i, t in enumerate(self.dataTemps):
-                ts = np.asarray(self.dataValues[t]['timeStampImps'], dtype=float)
-                imp = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float)
-                lbl = np.asarray(l[i], dtype=int)
-
-                # Use labels as a mask first: drop all -1 points from both
-                # impedance and timestamps with identical indices.
-                valid_mask = lbl != -1
-                ts_masked = ts[valid_mask]
-                imp_masked = imp[valid_mask]
-                lbl_masked = lbl[valid_mask]
-
-                # Find all contiguous runs of 1s in lbl_masked
-                runs_1 = []
-                in_run = False
-                start = 0
-                for j in range(len(lbl_masked)):
-                    if lbl_masked[j] == 1:
-                        if not in_run:
-                            start = j
-                            in_run = True
-                    else:
-                        if in_run:
-                            runs_1.append([start, j - 1])
-                            in_run = False
-                if in_run:
-                    runs_1.append([start, len(lbl_masked) - 1])
-
-                # Calculate threshold for leveling to label 0
-                min_zeros = 10
-                if len(ts_masked) >= 2:
-                    dt = ts_masked[1] - ts_masked[0]
-                    if dt > 0:
-                        min_zeros = max(5, int(0.1 * (tExc / dt)))
-
-                # Merge runs of 1s if the number of 0s between them is less than min_zeros
-                merged_runs_1 = []
-                if len(runs_1) > 0:
-                    current_run = runs_1[0]
-                    for next_run in runs_1[1:]:
-                        num_zeros = next_run[0] - current_run[1] - 1
-                        if num_zeros < min_zeros:
-                            current_run[1] = next_run[1]
-                        else:
-                            merged_runs_1.append(current_run)
-                            current_run = next_run
-                    merged_runs_1.append(current_run)
-
-                file_groups = dict()
-                file_cluster_indices = []
-                group_idx = 0
-                
-                for run_idx, run in enumerate(merged_runs_1):
-                    emmStartIdx = run[0]
-                    emmStopIdx = run[1]
-                    excStartIdx = emmStopIdx + 1
-                    
-                    if excStartIdx < len(lbl_masked) and lbl_masked[excStartIdx] == 0:
-                        target_exc_stop_t = tExc + ts_masked[excStartIdx]
-                        excStopIdx = int(np.searchsorted(ts_masked, target_exc_stop_t, side='left'))
-                        excStopIdx = min(max(excStopIdx, excStartIdx), len(ts_masked) - 1)
-
-                        # Prevent this excitation segment from running into the next emission run.
-                        if run_idx + 1 < len(merged_runs_1):
-                            next_emm_start = merged_runs_1[run_idx + 1][0]
-                            excStopIdx = min(excStopIdx, next_emm_start - 1)
-
-                        if excStopIdx < excStartIdx:
-                            continue
-
-                        file_cluster_indices.append((emmStartIdx, emmStopIdx, excStartIdx, excStopIdx))
-                        
-                        seg = np.column_stack((ts_masked[emmStartIdx:emmStopIdx+1], imp_masked[emmStartIdx:emmStopIdx+1]))
-                        if seg.size > 0:
-                            file_groups[group_idx] = seg
-                            group_idx += 1
-
-                # Keep all detected clusters for this temperature.
-
-                emissions[t] = _normalize_emission_groups(file_groups)
-                cluster_indices[t] = file_cluster_indices
-
-            # Normalize once so callers always see "temperature -> list[(a,b,c,d)]".
-            cluster_indices = {k: _normalize_cluster_entries(v) for k, v in cluster_indices.items()}
-
-            self.dataClusterIndices = cluster_indices
-
-        # Also normalize the stored-path branch where old sessions can contain one tuple.
-        cluster_indices = {k: _normalize_cluster_entries(v) for k, v in cluster_indices.items()}
-        emissions = _normalize_emissions_map(emissions)
-
-        # Compute one global standard gap from all temperatures after all clusters are found.
-        all_start_diffs = []
-        for t, groups_t in emissions.items():
-            groups_norm = _normalize_emission_groups(groups_t)
-            ordered = sorted(groups_norm.keys())
-            if len(ordered) < 2:
-                continue
-            starts_t = [float(np.asarray(groups_norm[k], dtype=float)[0, 0]) for k in ordered]
-            diffs_t = np.diff(starts_t)
-            if diffs_t.size > 0:
-                all_start_diffs.extend([float(d) for d in diffs_t])
-
-        global_standard_gap = float(np.max(all_start_diffs)) if len(all_start_diffs) > 0 else 0.0
-        if alignmentDebug:
-            print(f"[sampleEmissions] GLOBAL standard gap={global_standard_gap:.9g}")
-
-        # Align emission starts per temperature and keep emissions/indices synchronized.
-        temp_keys = sorted(set(list(emissions.keys()) + list(cluster_indices.keys())))
-        for t in temp_keys:
-            aligned_groups, aligned_entries = _align_emissions_and_clusters_for_temp(
-                emissions.get(t, {}),
-                cluster_indices.get(t, []),
-                global_standard_gap,
-                temp_key=t,
-            )
-            emissions[t] = aligned_groups
-            cluster_indices[t] = aligned_entries
-
-        # Persist emissions with a stable nested-dictionary structure for all callers.
-        self.dataEmissions = emissions
-        self.dataClusterIndices = cluster_indices
-
-        if interactivePlot:
-            if interactiveDataIndex < 0 or interactiveDataIndex >= len(self.dataTemps):
-                raise IndexError("interactiveDataIndex is out of range for the loaded data set.")
-
-            current = [interactiveDataIndex]
-            fig, axes = plt.subplots(nrows=2, figsize=(10, 8))
-
-            def update_plot(idx):
-                t = self.dataTemps[idx]
-                ts = np.asarray(self.dataValues[t]['timeStampImps'], dtype=float)
-                imp = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float)
-                lbl = np.asarray(l[idx], dtype=int)
-
-                valid_mask = lbl != -1
-                ts_masked = ts[valid_mask]
-                imp_masked = imp[valid_mask]
-
-                # First plot: Selected emissions and excitations
-                axes[0].cla()
-
-                # Break plotted lines at large timestamp jumps so removed (-1) points
-                # appear as visible gaps in the selected traces.
-                if len(ts_masked) >= 2:
-                    base_dt = np.median(np.diff(ts_masked))
-                    gap_threshold = 1.5 * base_dt
+                    # Bridge if trapped strictly between two blocks of the target value
+                    if left_neighbor == target and right_neighbor == target:
+                        for k in range(start, end + 1):
+                            modified[k] = target
                 else:
-                    gap_threshold = np.inf
+                    i += 1
 
-                def plot_with_gaps(t_seg, i_seg, color, label):
-                    if len(t_seg) == 0:
-                        return
-                    if len(t_seg) == 1:
-                        axes[0].plot(t_seg, i_seg, '-o', color=color, label=label,
-                                     linewidth=1, markersize=2)
-                        return
-
-                    jump_idx = np.where(np.diff(t_seg) > gap_threshold)[0]
-                    start = 0
-                    first_chunk = True
-                    for j in jump_idx:
-                        end = j + 1
-                        if end > start:
-                            axes[0].plot(t_seg[start:end], i_seg[start:end], '-o', color=color,
-                                         label=label if first_chunk else "", linewidth=1, markersize=2)
-                            first_chunk = False
-                        start = end
-                    axes[0].plot(t_seg[start:], i_seg[start:], '-o', color=color,
-                                 label=label if first_chunk else "", linewidth=1, markersize=2)
-
-                for c_idx, (emmStart, emmStop, excStart, excStop) in enumerate(cluster_indices[t]):
-                    t_emm = ts_masked[emmStart:emmStop+1]
-                    i_emm = imp_masked[emmStart:emmStop+1]
-                    plot_with_gaps(t_emm, i_emm, 'green', 'Emissions' if c_idx == 0 else "")
-
-                    t_exc = ts_masked[excStart:excStop+1]
-                    i_exc = imp_masked[excStart:excStop+1]
-                    plot_with_gaps(t_exc, i_exc, 'red', 'Excitations' if c_idx == 0 else "")
-
-                axes[0].set_xlabel('Time (s)')
-                axes[0].set_ylabel('Impedance Im')
-                axes[0].set_title(f'Selected Emissions (Green) & Excitations (Red) | T = {t} K')
-                if len(cluster_indices[t]) > 0:
-                    axes[0].legend()
-
-                # Second plot: Whole data set with selected cluster boundaries starred
-                axes[1].cla()
-                axes[1].scatter(ts_masked, imp_masked, color='gray', s=4, label='Whole Data')
-                
-                star_ts = []
-                star_imp = []
-                for emmStart, emmStop, excStart, excStop in cluster_indices[t]:
-                    for idx_val in (emmStart, emmStop, excStart, excStop):
-                        if 0 <= idx_val < len(ts_masked):
-                            star_ts.append(ts_masked[idx_val])
-                            star_imp.append(imp_masked[idx_val])
-                if star_ts:
-                    axes[1].scatter(star_ts, star_imp, color='orange', marker='*', s=120, edgecolors='black', label='Starred Indices')
-                
-                axes[1].set_xlabel('Time (s)')
-                axes[1].set_ylabel('Impedance Im')
-                axes[1].set_title(f'Whole Masked Data with Selected Indices (*) | T = {t} K')
-                axes[1].legend()
-
-                fig.suptitle(f'Interactive Cluster View | T = {t} K | index {idx+1}/{len(self.dataTemps)} (left/right arrow keys to navigate)', fontsize=12)
-                fig.canvas.draw_idle()
-
-            def on_key(event):
-                if event.key == 'right':
-                    current[0] = (current[0] + 1) % len(self.dataTemps)
-                elif event.key == 'left':
-                    current[0] = (current[0] - 1) % len(self.dataTemps)
+            # Step 2: Extract the start and end indices of the consolidated target blocks
+            blocks = []
+            i = 0
+            while i < n:
+                if modified[i] == target:
+                    start = i
+                    while i < n and modified[i] == target:
+                        i += 1
+                    blocks.append((start, i - 1))
                 else:
-                    return
-                update_plot(current[0])
+                    i += 1
+            return blocks
 
-            fig.canvas.mpl_connect('key_press_event', on_key)
-            update_plot(current[0])
-            plt.tight_layout()
-            plt.show()
+        return get_blocks_for_target(val)
 
-        emissions_keys = list(emissions)
+    def excitationClusters(self):
+        m, c, l = self.findDataLevels(dataType="excitation", algorithm="hybrid", interactivePlot=False)
+        blocks = dict()
+        for i in range(len(self.dataTemps)):
+            blocks[self.dataTemps[i]] = dict()
+            high = self.find_signal_blocks(l[i],0)
+            low = self.find_signal_blocks(l[i],1)
 
-        temp_key = _resolve_temperature_key(temperature)
-        if temp_key is not None:
-            selected = cluster_indices.get(temp_key, [])
-            if returnClusterIndices:
-                # return emissions, emissions_keys, {temp_key: selected}
-                return {temp_key: selected}
-            # return emissions, emissions_keys, selected
-            return selected
+            blocks[self.dataTemps[i]]["high"] = dict()
+            blocks[self.dataTemps[i]]["low"] = dict()
+            for h1, h2 in enumerate(high):
+                # blocks[self.dataTemps[i]]["high"][h1] = list(h2).append(h2[1]-h2[0])
+                blocks[self.dataTemps[i]]["high"][h1] = list(h2)
+            for l1, l2 in enumerate(low):
+                blocks[self.dataTemps[i]]["low"][l1] = list(l2)
 
-        if returnClusterIndices:
-            # return emissions, emissions_keys, cluster_indices
-            return cluster_indices
-        # return emissions, emissions_keys
+        return blocks
+
+    def emissionClusters(self):
+        return 0
+
+    def emissionClusters(self):
+        return 0
+
+    def sampleEmissions(self, algorithm='gmm', interactivePlot=False,
+                        assignDataEmissions=False, useStoredEmissions=False):
+
+
         return 0
 
     def calculateDelCNormalized(self, t1=0.003, t2=0.203, emissionIndex=0, plot=False):

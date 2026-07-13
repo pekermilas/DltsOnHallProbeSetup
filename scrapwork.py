@@ -36,7 +36,7 @@ data.sampleEmissions(showLevels=False, algorithm='hybrid',
                      alignmentDebug=True)
 data.test(t1=0.003, t2=0.203, emissionIndex=0, plot=True)
 
-data.findDataLevels('hybrid', False, True)
+data.findDataLevels(dataType='emission',algorithm='hybrid',interactivePlot=True)
 
 import numpy as np
 
