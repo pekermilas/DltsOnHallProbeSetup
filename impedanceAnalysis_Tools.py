@@ -41,8 +41,13 @@ class impdData:
         self.rootFolder = None
         self.dataValues = None
         self.dataTemps = None
+        self.dataExcitationLevelParams = None
+        self.dataExcitationClusterParams = None
+
+        self.dataEmissionLevelParams = None
+        self.dataEmissionClusterParams = None
+
         self.dataEmissions = None
-        self.dataClusterIndices = None
         self.dataSignals = None
         self.dataType = None
         self.subType = None
@@ -337,20 +342,31 @@ class impdData:
         return means, stds, labels
 
     # This is a caller function. It calls findDataLevelsScikit for finding data classes/levels
-    def findDataLevels(self, dataType = 'emission', algorithm='gmm', interactivePlot=False):
+    def findDataLevels(self, dataType = 'emission', algorithm='gmm', recalculate=True, interactivePlot=False):
         alg_key = str(algorithm).strip().lower()
+        if not recalculate and self.dataExcitationLevelParams is not None:
+            m = self.dataExcitationLevelParams['means']
+            c = self.dataExcitationLevelParams['stds']
+            l = self.dataExcitationLevelParams['labels']
 
-        if alg_key in ('gmm', 'gaussianmixture'):
-            m, c, l = self.findDataLevelsScikit(dataType=dataType, model='gmm', interactivePlot=interactivePlot)
-        elif alg_key in ('kmeans',):
-            m, c, l = self.findDataLevelsScikit(dataType=dataType, model='kmeans', interactivePlot=interactivePlot)
-        elif alg_key in ('hybrid', 'gmmkmeans', 'kmeansgmm'):
-            m, c, l = self.findDataLevelsScikit(dataType=dataType, model='hybrid', interactivePlot=interactivePlot)
-        else:
-            raise ValueError(
-                "Unknown algorithm: " + str(algorithm) +
-                ". Valid options are: 'gmm', 'kmeans', 'hybrid'."
-            )
+        if not recalculate and self.dataExcitationLevelParams is None:
+            print("No    stored data levels found. Recalculating...")
+            recalculate = True
+
+        if recalculate:
+            if alg_key in ('gmm', 'gaussianmixture'):
+                m, c, l = self.findDataLevelsScikit(dataType=dataType, model='gmm', interactivePlot=interactivePlot)
+            elif alg_key in ('kmeans',):
+                m, c, l = self.findDataLevelsScikit(dataType=dataType, model='kmeans', interactivePlot=interactivePlot)
+            elif alg_key in ('hybrid', 'gmmkmeans', 'kmeansgmm'):
+                m, c, l = self.findDataLevelsScikit(dataType=dataType, model='hybrid', interactivePlot=interactivePlot)
+            else:
+                raise ValueError(
+                    "Unknown algorithm: " + str(algorithm) +
+                    ". Valid options are: 'gmm', 'kmeans', 'hybrid'."
+                )
+            self.dataExcitationLevelParams = dict()
+            self.dataExcitationLevelParams.update({'means':m, 'stds':c, 'labels':l})
 
         return m, c, l
 
@@ -401,69 +417,70 @@ class impdData:
 
         return get_blocks_for_target(val)
 
-    def excitationClusters(self):
-        m, c, l = self.findDataLevels(dataType="excitation", algorithm="hybrid", interactivePlot=False)
-        blocks = dict()
-        for i in range(len(self.dataTemps)):
-            blocks[self.dataTemps[i]] = dict()
-            high = self.find_signal_blocks(l[i],0)
-            low = self.find_signal_blocks(l[i],1)
+    def excitationClusters(self, recalculate=False):
+        if not recalculate and self.dataExcitationClusterParams is not None:
+            blocks = self.dataExcitationClusterParams['clusterBlocks']
+            clusterSizesFreqs = self.dataExcitationClusterParams['clusterSizesFreqs']
+        if not recalculate and self.dataExcitationClusterParams is None:
+            print("No    stored data clusters found. Recalculating...")
+            recalculate = True
+        if recalculate:
+            m, c, l = self.findDataLevels(dataType="excitation", algorithm="hybrid", recalculate=False ,interactivePlot=False)
+            blocks = dict()
+            clusterSizesFreqs = dict()
+            for i in range(len(self.dataTemps)):
+                blocks[self.dataTemps[i]] = dict()
+                high = self.find_signal_blocks(l[i],0)
+                low = self.find_signal_blocks(l[i],1)
 
-            blocks[self.dataTemps[i]]["high"] = dict()
-            blocks[self.dataTemps[i]]["low"] = dict()
+                blocks[self.dataTemps[i]]["high"] = dict()
+                blocks[self.dataTemps[i]]["low"] = dict()
 
-            # Find the most frequent high and low block lengths, i.e. excitation and emission
-            # -------------------------------------------------------------------------------
-            freqHighLengths = dict()
-            for h1, h2 in enumerate(high):
-                val = list(h2)
-                val.append(val[1]-val[0])
-                blocks[self.dataTemps[i]]["high"][h1] = val
-                if not val[1]-val[0] in freqHighLengths.keys():
-                    freqHighLengths[val[1]-val[0]] = 1
-                else:
-                    freqHighLengths[val[1]-val[0]] += 1
-            # freqHighLengths.popitem()
-            highFreqs = np.array([int(key) for key in freqHighLengths.keys()])
-            highVals = np.array([int(value) for value in freqHighLengths.values()])
-            highClusters = np.column_stack((highFreqs, highVals))
-            sortedHighClusters = sorted(highClusters, key=lambda x: x[1])
-            print(sortedHighClusters)
+                # 1. Identify the high and low clusters, i.e. excitation and emission sections
+                # 2. Sort the clusters by length for later alignment work
+                # -------------------------------------------------------------------------------
+                clusterSizesFreqs[self.dataTemps[i]] = dict()
+                freqHighLengths = dict()
+                for h1, h2 in enumerate(high):
+                    val = list(h2)
+                    val.append(val[1]-val[0])
+                    blocks[self.dataTemps[i]]["high"][h1] = val
+                    if not val[1]-val[0] in freqHighLengths.keys():
+                        freqHighLengths[val[1]-val[0]] = 1
+                    else:
+                        freqHighLengths[val[1]-val[0]] += 1
+                # freqHighLengths.popitem()
+                highFreqs = np.array([int(key) for key in freqHighLengths.keys()])
+                highVals = np.array([int(value) for value in freqHighLengths.values()])
+                highClusters = np.column_stack((highFreqs, highVals))
+                sortedHighClusters = sorted(highClusters, key=lambda x: x[1], reverse=True)
+                clusterSizesFreqs[self.dataTemps[i]]['high'] = sortedHighClusters
 
-            freqLowLengths = dict()
-            for l1, l2 in enumerate(low):
-                val = list(l2)
-                val.append(val[1]-val[0])
-                blocks[self.dataTemps[i]]["low"][l1] = val
-                if not val[1]-val[0] in freqLowLengths.keys():
-                    freqLowLengths[val[1]-val[0]] = 1
-                else:
-                    freqLowLengths[val[1]-val[0]] += 1
-            freqLowLengths.popitem()
-            lowFreqs = np.array([int(key) for key in freqLowLengths.keys()])
-            lowVals = np.array([int(value) for value in freqLowLengths.values()])
-            lowClusters = np.column_stack((lowFreqs, lowVals))
-            sortedLowClusters = sorted(lowClusters, key=lambda x: x[1])
-            print(sortedLowClusters)
+                freqLowLengths = dict()
+                for l1, l2 in enumerate(low):
+                    val = list(l2)
+                    val.append(val[1]-val[0])
+                    blocks[self.dataTemps[i]]["low"][l1] = val
+                    if not val[1]-val[0] in freqLowLengths.keys():
+                        freqLowLengths[val[1]-val[0]] = 1
+                    else:
+                        freqLowLengths[val[1]-val[0]] += 1
+                freqLowLengths.popitem()
+                lowFreqs = np.array([int(key) for key in freqLowLengths.keys()])
+                lowVals = np.array([int(value) for value in freqLowLengths.values()])
+                lowClusters = np.column_stack((lowFreqs, lowVals))
+                sortedLowClusters = sorted(lowClusters, key=lambda x: x[1], reverse=True)
+                clusterSizesFreqs[self.dataTemps[i]]['low'] = sortedLowClusters
 
-            # mostFrequentHighLength = None
-            # mostFrequentHighCount = 0
-            # for item, count in freqHighLengths.items():
-            #     if count > mostFrequentHighCount:
-            #         mostFrequentHighCount = count
-            #         mostFrequentHighLength = item
-            #
-            # mostFrequentLowLength = None
-            # mostFrequentLowCount = 0
-            # for item, count in freqLowLengths.items():
-            #     if count > mostFrequentLowCount:
-            #         mostFrequentLowCount = count
-            #         mostFrequentLowLength = item
+            self.dataExcitationClusterParams = dict()
+            self.dataExcitationClusterParams['clusterBlocks'] = blocks
+            self.dataExcitationClusterParams['clusterSizesFreqs'] = clusterSizesFreqs
 
-            # -------------------------------------------------------------------------------
-            # print(sortedHighClusters,sortedLowClusters)
+        return blocks, clusterSizesFreqs
 
-        return blocks
+    def alignExcitationClusters(self, recalculate=False):
+
+        return 0
 
     def emissionClusters(self):
         return 0
