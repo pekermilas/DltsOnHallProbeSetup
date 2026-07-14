@@ -427,8 +427,8 @@ class impdData:
             highFreqs = np.array([int(key) for key in freqHighLengths.keys()])
             highVals = np.array([int(value) for value in freqHighLengths.values()])
             highClusters = np.column_stack((highFreqs, highVals))
-            # sortedHighClusters = sorted(highClusters, key=lambda x: x[1])
-            print(highClusters)
+            sortedHighClusters = sorted(highClusters, key=lambda x: x[1])
+            print(sortedHighClusters)
 
             freqLowLengths = dict()
             for l1, l2 in enumerate(low):
@@ -443,8 +443,8 @@ class impdData:
             lowFreqs = np.array([int(key) for key in freqLowLengths.keys()])
             lowVals = np.array([int(value) for value in freqLowLengths.values()])
             lowClusters = np.column_stack((lowFreqs, lowVals))
-            # sortedLowClusters = sorted(lowClusters, key=lambda x: x[1])
-            print(lowClusters)
+            sortedLowClusters = sorted(lowClusters, key=lambda x: x[1])
+            print(sortedLowClusters)
 
             # mostFrequentHighLength = None
             # mostFrequentHighCount = 0
