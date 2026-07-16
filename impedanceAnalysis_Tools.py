@@ -43,10 +43,10 @@ class impdData:
         self.dataTemps = None
         self.dataExcitationLevelParams = None
         self.dataExcitationClusterParams = None
-
         self.dataEmissionLevelParams = None
         self.dataEmissionClusterParams = None
 
+        self.dataEmissionLevelParams = None
         self.dataEmissions = None
         self.dataSignals = None
         self.dataType = None
@@ -342,16 +342,28 @@ class impdData:
         return means, stds, labels
 
     # This is a caller function. It calls findDataLevelsScikit for finding data classes/levels
-    def findDataLevels(self, dataType = 'emission', algorithm='gmm', recalculate=True, interactivePlot=False):
+    def findDataLevels(self, dataType = 'excitation', algorithm='gmm', recalculate=True, interactivePlot=False):
         alg_key = str(algorithm).strip().lower()
-        if not recalculate and self.dataExcitationLevelParams is not None:
-            m = self.dataExcitationLevelParams['means']
-            c = self.dataExcitationLevelParams['stds']
-            l = self.dataExcitationLevelParams['labels']
-
-        if not recalculate and self.dataExcitationLevelParams is None:
-            print("No    stored data levels found. Recalculating...")
-            recalculate = True
+        if not recalculate: 
+            if dataType == 'excitation':
+                if self.dataExcitationLevelParams is not None:
+                    m = self.dataExcitationLevelParams['means']
+                    c = self.dataExcitationLevelParams['stds']
+                    l = self.dataExcitationLevelParams['labels']
+                if self.dataExcitationLevelParams is None:
+                    print("No stored data levels found. Recalculating...")
+                    recalculate = True
+            if dataType == 'emission':
+                if self.dataEmissionLevelParams is not None:
+                    m = self.dataEmissionLevelParams['means']
+                    c = self.dataEmissionLevelParams['stds']
+                    l = self.dataEmissionLevelParams['labels']
+                if self.dataEmissionLevelParams is None:
+                    print("No stored data levels found. Recalculating...")
+                    recalculate = True
+            if not dataType == 'excitation' and not dataType == 'emission':
+                print("Invalid data type. Must be 'excitation' or 'emission'.")
+                return -1
 
         if recalculate:
             if alg_key in ('gmm', 'gaussianmixture'):
@@ -365,9 +377,12 @@ class impdData:
                     "Unknown algorithm: " + str(algorithm) +
                     ". Valid options are: 'gmm', 'kmeans', 'hybrid'."
                 )
-            self.dataExcitationLevelParams = dict()
-            self.dataExcitationLevelParams.update({'means':m, 'stds':c, 'labels':l})
-
+            if dataType == "excitation":
+                self.dataExcitationLevelParams = dict()
+                self.dataExcitationLevelParams.update({'means':m, 'stds':c, 'labels':l})
+            elif dataType == "emission":
+                self.dataEmissionLevelParams = dict()
+                self.dataEmissionLevelParams.update({'means':m, 'stds':c, 'labels':l})
         return m, c, l
 
     @staticmethod
@@ -418,13 +433,12 @@ class impdData:
         return get_blocks_for_target(val)
 
     def excitationClusters(self, recalculate=False):
-        if not recalculate and self.dataExcitationClusterParams is not None:
-            blocks = self.dataExcitationClusterParams['clusterBlocks']
-            clusterSizesFreqs = self.dataExcitationClusterParams['clusterSizesFreqs']
-        if not recalculate and self.dataExcitationClusterParams is None:
-            print("No    stored data clusters found. Recalculating...")
-            recalculate = True
+        if not recalculate:
+            if self.dataExcitationClusterParams is None:
+                print("No stored data clusters found. Recalculating...")
+                recalculate = True
         if recalculate:
+            self.dataExcitationClusterParams = dict()
             m, c, l = self.findDataLevels(dataType="excitation", algorithm="hybrid", recalculate=False ,interactivePlot=False)
             blocks = dict()
             clusterSizesFreqs = dict()
@@ -472,46 +486,135 @@ class impdData:
                 sortedLowClusters = sorted(lowClusters, key=lambda x: x[1], reverse=True)
                 clusterSizesFreqs[self.dataTemps[i]]['low'] = sortedLowClusters
 
-            self.dataExcitationClusterParams = dict()
             self.dataExcitationClusterParams['clusterBlocks'] = blocks
             self.dataExcitationClusterParams['clusterSizesFreqs'] = clusterSizesFreqs
 
         # return blocks, clusterSizesFreqs
         return 0
 
-    def alignExcitationClusters(self, recalculate=False):
+    def emissionClusters(self, basis='free', recalculate=False):
         if not recalculate:
-            if self.dataExcitationLevelParams is None or self.dataExcitationClusterParams is None:
+            if self.dataEmissionClusterParams is None:
+                print("No stored data clusters found. Recalculating...")
                 recalculate = True
         if recalculate:
-            self.excitationClusters()
-            for i in range(len(self.dataTemps)):
-                T = self.dataTemps[i]
-                high = np.asarray(self.dataExcitationClusterParams['clusterSizesFreqs'][T]['high'])
-                low = np.asarray(self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"])
-                commonLengthHigh = np.min(high[:,0])
-                commonLengthLow = np.min(low[:,0])
+            self.dataEmissionClusterParams = dict()
+            if basis=='excitation':
+                self.alignExcitationClusters()
+                self.dataEmissionClusterParams["clusterBlocks"] = self.dataExcitationClusterParams["clusterBlocks"]
+                self.dataEmissionClusterParams["clusterSizesFreqs"] = self.dataExcitationClusterParams["clusterSizesFreqs"]
+            if basis=='free':
+                m, c, l = self.findDataLevels(dataType="emission", algorithm="hybrid", recalculate=False ,interactivePlot=False)
+                blocks = dict()
+                clusterSizesFreqs = dict()
+                for i in range(len(self.dataTemps)):
+                    blocks[self.dataTemps[i]] = dict()
+                    high = self.find_signal_blocks(l[i],0)
+                    low = self.find_signal_blocks(l[i],1)
 
-                for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["high"])):
-                    trim = self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] - commonLengthHigh
-                    if trim > 0:
-                        self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][1] -= trim
-                        self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] -= trim
+                    blocks[self.dataTemps[i]]["high"] = dict()
+                    blocks[self.dataTemps[i]]["low"] = dict()
 
-                for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["low"])):
-                    trim = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] - commonLengthLow
-                    if trim > 0:
-                        self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][1] -= trim
-                        self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] -= trim
+                    clusterSizesFreqs[self.dataTemps[i]] = dict()
+                    freqHighLengths = dict()
+                    for h1, h2 in enumerate(high):
+                        val = list(h2)
+                        val.append(val[1] - val[0])
+                        blocks[self.dataTemps[i]]["high"][h1] = val
+                        if not val[1] - val[0] in freqHighLengths.keys():
+                            freqHighLengths[val[1] - val[0]] = 1
+                        else:
+                            freqHighLengths[val[1] - val[0]] += 1
+                    # freqHighLengths.popitem()
+                    highFreqs = np.array([int(key) for key in freqHighLengths.keys()])
+                    highVals = np.array([int(value) for value in freqHighLengths.values()])
+                    highClusters = np.column_stack((highFreqs, highVals))
+                    sortedHighClusters = sorted(highClusters, key=lambda x: x[1], reverse=True)
+                    clusterSizesFreqs[self.dataTemps[i]]["high"] = sortedHighClusters
+
+                    freqLowLengths = dict()
+                    for l1, l2 in enumerate(low):
+                        val = list(l2)
+                        val.append(val[1] - val[0])
+                        blocks[self.dataTemps[i]]["low"][l1] = val
+                        if not val[1] - val[0] in freqLowLengths.keys():
+                            freqLowLengths[val[1] - val[0]] = 1
+                        else:
+                            freqLowLengths[val[1] - val[0]] += 1
+                    freqLowLengths.popitem()
+                    lowFreqs = np.array([int(key) for key in freqLowLengths.keys()])
+                    lowVals = np.array([int(value) for value in freqLowLengths.values()])
+                    lowClusters = np.column_stack((lowFreqs, lowVals))
+                    sortedLowClusters = sorted(lowClusters, key=lambda x: x[1], reverse=True)
+                    clusterSizesFreqs[self.dataTemps[i]]["low"] = sortedLowClusters
+            self.dataEmissionClusterParams["clusterBlocks"] = blocks
+            self.dataEmissionClusterParams["clusterSizesFreqs"] = clusterSizesFreqs
         return 0
 
-    def emissionClusters(self, basis='free', recalculate=False):
-        # Emissions will be either sync-ed with excitation pulses or freely selected/identified
-        # By the end of selection/identification process, they will be either sampled or individually picked/used
+    def alignClusters(self, dataType='excitation', recalculate=False):
+        if not recalculate:
+            if dataType == 'excitation':
+                if self.dataExcitationLevelParams is None or self.dataExcitationClusterParams is None:
+                    print("No stored data clusters found. Recalculating...")
+                    recalculate = True
+            if dataType == 'emission':
+                if self.dataEmissionClusterParams is None:
+                    print("No stored data clusters found. Recalculating...")
+                    recalculate = True
+            if not dataType == 'excitation' and not dataType == 'emission':
+                print("Invalid data type. Must be 'excitation' or 'emission'.")
+                return -1
+        if recalculate:
+            if not dataType == 'excitation' and not dataType == 'emission':
+                print("Invalid data type. Must be 'excitation' or 'emission'.")
+                return -1
+            else:
+                if dataType == 'excitation':
+                    self.excitationClusters()
+                if dataType == 'emission':
+                    self.emissionClusters()
+
+                for i in range(len(self.dataTemps)):
+                    T = self.dataTemps[i]
+                    if dataType == 'excitation':
+                        high = np.asarray(self.dataExcitationClusterParams['clusterSizesFreqs'][T]['high'])
+                        low = np.asarray(self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"])
+                    elif dataType == 'emission':
+                        high = np.asarray(self.dataEmissionClusterParams['clusterSizesFreqs'][T]['high'])
+                        low = np.asarray(self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"])
+                    commonLengthHigh = np.min(high[:,0])
+                    commonLengthLow = np.min(low[:,0])
+
+                    if dataType == 'excitation':
+                        for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["high"])):
+                            trim = self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] - commonLengthHigh
+                            if trim > 0:
+                                self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][1] -= trim
+                                self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] -= trim
+
+                        for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["low"])):
+                            trim = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] - commonLengthLow
+                            if trim > 0:
+                                self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][1] -= trim
+                                self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] -= trim
+                    if dataType == 'emission':
+                        for j in range(len(self.dataEmissionClusterParams["clusterBlocks"][T]["high"])):
+                            trim = self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][-1] - commonLengthHigh
+                            if trim > 0:
+                                self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][1] -= trim
+                                self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][-1] -= trim
+
+                        for j in range(len(self.dataEmissionClusterParams["clusterBlocks"][T]["low"])):
+                            trim = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][-1] - commonLengthLow
+                            if trim > 0:
+                                self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][1] -= trim
+                                self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][-1] -= trim
         return 0
 
-    def emissionClusters(self):
-        return 0
+
+
+    # def emissionClusters(self):
+    #     return
 
     def sampleEmissions(self, algorithm='gmm', interactivePlot=False,
                         assignDataEmissions=False, useStoredEmissions=False):
