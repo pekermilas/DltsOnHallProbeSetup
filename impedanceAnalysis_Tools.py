@@ -476,13 +476,38 @@ class impdData:
             self.dataExcitationClusterParams['clusterBlocks'] = blocks
             self.dataExcitationClusterParams['clusterSizesFreqs'] = clusterSizesFreqs
 
-        return blocks, clusterSizesFreqs
-
-    def alignExcitationClusters(self, recalculate=False):
-
+        # return blocks, clusterSizesFreqs
         return 0
 
-    def emissionClusters(self):
+    def alignExcitationClusters(self, recalculate=False):
+        if not recalculate:
+            if self.dataExcitationLevelParams is None or self.dataExcitationClusterParams is None:
+                recalculate = True
+        if recalculate:
+            self.excitationClusters()
+            for i in range(len(self.dataTemps)):
+                T = self.dataTemps[i]
+                high = np.asarray(self.dataExcitationClusterParams['clusterSizesFreqs'][T]['high'])
+                low = np.asarray(self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"])
+                commonLengthHigh = np.min(high[:,0])
+                commonLengthLow = np.min(low[:,0])
+
+                for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["high"])):
+                    trim = self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] - commonLengthHigh
+                    if trim > 0:
+                        self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][1] -= trim
+                        self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] -= trim
+
+                for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["low"])):
+                    trim = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] - commonLengthLow
+                    if trim > 0:
+                        self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][1] -= trim
+                        self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] -= trim
+        return 0
+
+    def emissionClusters(self, basis='free', recalculate=False):
+        # Emissions will be either sync-ed with excitation pulses or freely selected/identified
+        # By the end of selection/identification process, they will be either sampled or individually picked/used
         return 0
 
     def emissionClusters(self):
