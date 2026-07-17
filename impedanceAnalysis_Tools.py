@@ -109,7 +109,7 @@ class impdData:
             return 0
         
         except FileNotFoundError:
-            print("Error: The file does not exist.")
+            print("Error: Params file does not exist.")
             self.fileName = None
             return -1
 
@@ -660,6 +660,7 @@ class impdData:
                     self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"] = lowList
 
         return 0
+
 
 
     def sampleEmissions(self, algorithm='gmm', interactivePlot=False,
