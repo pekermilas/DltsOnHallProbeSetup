@@ -680,7 +680,11 @@ class impdData:
                 x = np.asarray(self.dataValues[T]['timeStampImps'][selectedIndex[0]+trimHead:selectedIndex[1]+1-trimTail])
                 x = x-x[0]
                 y = np.asarray(self.dataValues[T]['ImpedanceIm'][selectedIndex[0]+trimHead:selectedIndex[1]+1-trimTail])
-                self.dataEmissions[T] = np.column_stack((x, y))
+                self.dataEmissions[T] = dict()
+                self.dataEmissions[T]["x"] = x
+                self.dataEmissions[T]["y"] = y
+                self.dataEmissions[T]["ymean"] = y
+                self.dataEmissions[T]["yerr"] = np.zeros(y.shape[0])
         if emissionIndex < 0:
             self.dataEmissions = dict()
             for i in range(len(self.dataTemps)):
@@ -696,7 +700,11 @@ class impdData:
                     else:
                         temp = np.asarray(self.dataValues[T]["ImpedanceIm"][selectedIndex[0]+trimHead : selectedIndex[1]+1-trimTail])
                         y = np.column_stack((y, temp))
-                self.dataEmissions[T] = np.column_stack((x, y))
+                self.dataEmissions[T] = dict()
+                self.dataEmissions[T]['x'] = x
+                self.dataEmissions[T]["y"] = y
+                self.dataEmissions[T]['ymean'] = np.mean(y,axis=1)
+                self.dataEmissions[T]['yerr'] = np.std(y,axis=1)
 
         return 0
 
