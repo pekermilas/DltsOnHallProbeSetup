@@ -45,9 +45,8 @@ class impdData:
         self.dataExcitationClusterParams = None
         self.dataEmissionLevelParams = None
         self.dataEmissionClusterParams = None
-
-        self.dataEmissionLevelParams = None
         self.dataEmissions = None
+
         self.dataSignals = None
         self.dataType = None
         self.subType = None
@@ -549,18 +548,6 @@ class impdData:
         return 0
 
     def alignClusters(self, dataType='excitation', method='free'):
-        if dataType == 'excitation':
-            if self.dataExcitationLevelParams is None or self.dataExcitationClusterParams is None:
-                print("No stored data clusters found. Recalculating...")
-                recalculate = True
-        if dataType == 'emission':
-            if self.dataEmissionLevelParams is None or self.dataEmissionClusterParams is None:
-                print("No stored data clusters found. Recalculating...")
-                recalculate = True
-        if not dataType == 'excitation' and not dataType == 'emission':
-            print("Invalid data type. Must be 'excitation' or 'emission'.")
-            return -1
-
         if not dataType == 'excitation' and not dataType == 'emission':
             print("Invalid data type. Must be 'excitation' or 'emission'.")
             return -1
@@ -654,20 +641,67 @@ class impdData:
                     lowList = []
                     for k in lows.keys():
                         lowList.append(np.array((k, lows[k])))
-                    print(highList)
-                    print(lowList)
+
                     self.dataEmissionClusterParams["clusterSizesFreqs"][T]["high"] = highList
                     self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"] = lowList
 
+            for i in range(len(self.dataTemps)):
+                T = self.dataTemps[i]
+                if dataType == 'excitation':
+                    targetKey = list(self.dataExcitationClusterParams["clusterBlocks"][T]['low'])[-1]
+                    self.dataExcitationClusterParams["clusterBlocks"][T]["low"].pop(targetKey)
+                    self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
+                if dataType == 'emission':
+                    targetKey = list(self.dataEmissionClusterParams["clusterBlocks"][T]['low'])[-1]
+                    self.dataEmissionClusterParams["clusterBlocks"][T]["low"].pop(targetKey)
+                    self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
+
+        return 0
+
+    def selectedEmissions(self, emissionIndex=0, trimHead = 10, trimTail = 10, plot=False):
+        if self.dataEmissionClusterParams is None or self.dataEmissionLevelParams is None:
+            self.findClusters(dataType='emission', method='synced', recalculate=True, align=True)
+
+        T = self.dataTemps[0]
+        maxIndex = self.dataEmissionClusterParams["clusterSizesFreqs"][T]['low'][0][1]-1
+        minIndex = -1
+        if emissionIndex > maxIndex:
+            print(f"Warning: emissionIndex {emissionIndex} exceeds max index {maxIndex}. Using max index instead.")
+            emissionIndex = maxIndex
+        if emissionIndex < minIndex:
+            print(f"Warning: emissionIndex {emissionIndex} is below min index {minIndex}. Using min index instead.")
+            emissionIndex = 0
+        if emissionIndex > minIndex and emissionIndex < maxIndex:
+            self.dataEmissions = dict()
+            for i in range(len(self.dataTemps)):
+                T = self.dataTemps[i]
+                selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]['low'][emissionIndex]
+                print(selectedIndex)
+                x = np.asarray(self.dataValues[T]['timeStampImps'][selectedIndex[0]+trimHead:selectedIndex[1]+1-trimTail])
+                x = x-x[0]
+                y = np.asarray(self.dataValues[T]['ImpedanceIm'][selectedIndex[0]+trimHead:selectedIndex[1]+1-trimTail])
+                self.dataEmissions[T] = np.column_stack((x, y))
+        if emissionIndex < 0:
+            self.dataEmissions = dict()
+            for i in range(len(self.dataTemps)):
+                T = self.dataTemps[i]
+                selectedIndices = list(self.dataEmissionClusterParams["clusterBlocks"][T]["low"])
+                selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][selectedIndices[0]]
+                x = np.asarray(self.dataValues[T]["timeStampImps"][selectedIndex[0]+trimHead : selectedIndex[1]+1-trimTail])
+                x = x - x[0]
+                for j in range(len(selectedIndices)):
+                    selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][selectedIndices[j]]
+                    if j == 0:
+                        y = np.asarray(self.dataValues[T]["ImpedanceIm"][selectedIndex[0]+trimHead : selectedIndex[1]+1-trimTail])
+                    else:
+                        temp = np.asarray(self.dataValues[T]["ImpedanceIm"][selectedIndex[0]+trimHead : selectedIndex[1]+1-trimTail])
+                        y = np.column_stack((y, temp))
+                self.dataEmissions[T] = np.column_stack((x, y))
+
         return 0
 
 
 
-    def sampleEmissions(self, algorithm='gmm', interactivePlot=False,
-                        assignDataEmissions=False, useStoredEmissions=False):
-
-
-        return 0
 
     def calculateDelCNormalized(self, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
         if self.dataClusterIndices is None:
