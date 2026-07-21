@@ -508,7 +508,7 @@ class impdData:
                 m, c, l = self.findDataLevels(
                     dataType=dataType,
                     algorithm="hybrid",
-                    recalculate=False,
+                    recalculate=True,
                     interactivePlot=False,
                 )
                 blocks, clusterSizesFreqs = self.find_cluster_stats(self.dataTemps, l)
@@ -522,7 +522,7 @@ class impdData:
                     m, c, l = self.findDataLevels(
                         dataType=dataType,
                         algorithm="hybrid",
-                        recalculate=False,
+                        recalculate=True,
                         interactivePlot=False,
                     )
                     blocks, clusterSizesFreqs = self.find_cluster_stats(self.dataTemps, l)
@@ -534,7 +534,7 @@ class impdData:
                     m, c, l = self.findDataLevels(
                         dataType='excitation',
                         algorithm="hybrid",
-                        recalculate=False,
+                        recalculate=True,
                         interactivePlot=False)
                     blocks, clusterSizesFreqs = self.find_cluster_stats(self.dataTemps, l)
                     self.dataEmissionClusterParams["clusterBlocks"] = blocks
@@ -648,10 +648,18 @@ class impdData:
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
                 if dataType == 'excitation':
+                    # firstClusterLen = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][0][-1]
+                    # if firstClusterLen < 10:
+                    #     self.dataExcitationClusterParams["clusterBlocks"][T]["low"].pop(0)
+                    #     self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
                     targetKey = list(self.dataExcitationClusterParams["clusterBlocks"][T]['low'])[-1]
                     self.dataExcitationClusterParams["clusterBlocks"][T]["low"].pop(targetKey)
                     self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
                 if dataType == 'emission':
+                    # firstClusterLen = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][0][-1]
+                    # if firstClusterLen < 10:
+                    #     self.dataEmissionClusterParams["clusterBlocks"][T]["low"].pop(0)
+                    #     self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
                     targetKey = list(self.dataEmissionClusterParams["clusterBlocks"][T]['low'])[-1]
                     self.dataEmissionClusterParams["clusterBlocks"][T]["low"].pop(targetKey)
                     self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
