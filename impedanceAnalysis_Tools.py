@@ -47,10 +47,10 @@ class impdData:
         self.dataEmissionClusterParams = None
         self.dataEmissions = None
 
-        self.dataSignals = None
-        self.dataType = None
-        self.subType = None
-        self.dataParams = None
+        # self.dataSignals = None
+        # self.dataType = None
+        # self.subType = None
+        # self.dataParams = None
 
     def readData(self):
         print("Fix other data file import cases and exception for not choosing file! ")
@@ -384,6 +384,13 @@ class impdData:
             elif dataType == "emission":
                 self.dataEmissionLevelParams = dict()
                 self.dataEmissionLevelParams.update({'means':m, 'stds':c, 'labels':l})
+
+        for i in range(len(self.dataTemps)):
+            prePulseIndices = np.arange(np.where(l[i]==0)[0][0])
+            postPulseIndices = np.arange(np.where(l[i]==1)[0][-1], len(l[i]))
+            l[i][prePulseIndices] = -1
+            l[i][postPulseIndices] = -1
+
         return m, c, l
 
     @staticmethod
@@ -572,26 +579,26 @@ class impdData:
                     for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["high"])):
                         trim = self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] - commonLengthHigh
                         if trim > 0:
-                            self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][1] -= trim
-                            self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] -= trim
+                            self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][1] -= int(trim)
+                            self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] -= int(trim)
 
                     for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["low"])):
                         trim = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] - commonLengthLow
                         if trim > 0:
-                            self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][1] -= trim
-                            self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] -= trim
+                            self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][1] -= int(trim)
+                            self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] -= int(trim)
                 if dataType == 'emission':
                     for j in range(len(self.dataEmissionClusterParams["clusterBlocks"][T]["high"])):
                         trim = self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][-1] - commonLengthHigh
                         if trim > 0:
-                            self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][1] -= trim
-                            self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][-1] -= trim
+                            self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][1] -= int(trim)
+                            self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][-1] -= int(trim)
 
                     for j in range(len(self.dataEmissionClusterParams["clusterBlocks"][T]["low"])):
                         trim = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][-1] - commonLengthLow
                         if trim > 0:
-                            self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][1] -= trim
-                            self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][-1] -= trim
+                            self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][1] -= int(trim)
+                            self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][-1] -= int(trim)
 
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
@@ -645,24 +652,61 @@ class impdData:
                     self.dataEmissionClusterParams["clusterSizesFreqs"][T]["high"] = highList
                     self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"] = lowList
 
+            lengthsHigh = np.zeros(len(self.dataTemps))
+            lengthsLow = np.zeros(len(self.dataTemps))
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
-                if dataType == 'excitation':
-                    # firstClusterLen = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][0][-1]
-                    # if firstClusterLen < 10:
-                    #     self.dataExcitationClusterParams["clusterBlocks"][T]["low"].pop(0)
-                    #     self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
-                    targetKey = list(self.dataExcitationClusterParams["clusterBlocks"][T]['low'])[-1]
-                    self.dataExcitationClusterParams["clusterBlocks"][T]["low"].pop(targetKey)
-                    self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
                 if dataType == 'emission':
-                    # firstClusterLen = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][0][-1]
-                    # if firstClusterLen < 10:
-                    #     self.dataEmissionClusterParams["clusterBlocks"][T]["low"].pop(0)
-                    #     self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
-                    targetKey = list(self.dataEmissionClusterParams["clusterBlocks"][T]['low'])[-1]
-                    self.dataEmissionClusterParams["clusterBlocks"][T]["low"].pop(targetKey)
-                    self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
+                    if len(self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"])>1:
+                        targetKey = list(self.dataEmissionClusterParams["clusterBlocks"][T]['low'])[-1]
+                        self.dataEmissionClusterParams["clusterBlocks"][T]["low"].pop(targetKey)
+                        self.dataEmissionClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
+
+                    lengthsHigh[i] = self.dataEmissionClusterParams["clusterBlocks"][T]["high"][0][-1]
+                    lengthsLow[i] = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][0][-1]
+                if dataType == 'excitation':
+                    if len(self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"])>1:
+                        targetKey = list(self.dataExcitationClusterParams["clusterBlocks"][T]["low"])[-1]
+                        self.dataExcitationClusterParams["clusterBlocks"][T]["low"].pop(targetKey)
+                        self.dataExcitationClusterParams["clusterSizesFreqs"][T]["low"].pop(-1)
+                    
+                    lengthsHigh[i] = self.dataExcitationClusterParams["clusterBlocks"][T]["high"][0][-1]
+                    lengthsLow[i] = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][0][-1]
+
+            shortestHigh = np.min(lengthsHigh)
+            shortestLow = np.min(lengthsLow)
+            for i in range(len(self.dataTemps)):
+                T = self.dataTemps[i]
+                if dataType == 'emission':
+                    if self.dataEmissionClusterParams['clusterSizesFreqs'][T]['high'][0][0]>shortestHigh:
+                        self.dataEmissionClusterParams['clusterSizesFreqs'][T]['high'][0][0] = shortestHigh
+                        for j in range(len(self.dataEmissionClusterParams["clusterBlocks"][T]["high"])):
+                            trim = self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][-1]-shortestHigh
+                            if trim > 0:
+                                self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][1] -= int(trim)
+                                self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][-1] -= int(trim)
+                    if self.dataEmissionClusterParams['clusterSizesFreqs'][T]['low'][0][0]>shortestLow:
+                        self.dataEmissionClusterParams['clusterSizesFreqs'][T]['low'][0][0] = shortestLow
+                        for j in range(len(self.dataEmissionClusterParams["clusterBlocks"][T]["low"])):
+                            trim = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][-1]-shortestLow
+                            if trim > 0:
+                                self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][1] -= int(trim)
+                                self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][-1] -= int(trim)
+                if dataType == 'excitation':
+                    if self.dataExcitationClusterParams['clusterSizesFreqs'][T]['high'][0][0]>shortestHigh:
+                        self.dataExcitationClusterParams['clusterSizesFreqs'][T]['high'][0][0] = shortestHigh
+                        for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["high"])):
+                            trim = self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1]-shortestHigh
+                            if trim > 0:
+                                self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][1] -= int(trim)
+                                self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1] -= int(trim)
+                    if self.dataExcitationClusterParams['clusterSizesFreqs'][T]['low'][0][0]>shortestLow:
+                        self.dataExcitationClusterParams['clusterSizesFreqs'][T]['low'][0][0] = shortestLow
+                        for j in range(len(self.dataExcitationClusterParams["clusterBlocks"][T]["low"])):
+                            trim = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1]-shortestLow
+                            if trim > 0:
+                                self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][1] -= int(trim)
+                                self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1] -= int(trim)
 
         return 0
 
@@ -684,7 +728,7 @@ class impdData:
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
                 selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]['low'][emissionIndex]
-                print(selectedIndex)
+                selectedIndex = [int(x) for x in selectedIndex]
                 x = np.asarray(self.dataValues[T]['timeStampImps'][selectedIndex[0]+trimHead:selectedIndex[1]+1-trimTail])
                 x = x-x[0]
                 y = np.asarray(self.dataValues[T]['ImpedanceIm'][selectedIndex[0]+trimHead:selectedIndex[1]+1-trimTail])
@@ -699,10 +743,12 @@ class impdData:
                 T = self.dataTemps[i]
                 selectedIndices = list(self.dataEmissionClusterParams["clusterBlocks"][T]["low"])
                 selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][selectedIndices[0]]
+                selectedIndex = [int(x) for x in selectedIndex]
                 x = np.asarray(self.dataValues[T]["timeStampImps"][selectedIndex[0]+trimHead : selectedIndex[1]+1-trimTail])
                 x = x - x[0]
                 for j in range(len(selectedIndices)):
                     selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][selectedIndices[j]]
+                    selectedIndex = [int(x) for x in selectedIndex]
                     if j == 0:
                         y = np.asarray(self.dataValues[T]["ImpedanceIm"][selectedIndex[0]+trimHead : selectedIndex[1]+1-trimTail])
                     else:
@@ -717,7 +763,53 @@ class impdData:
         return 0
 
 
+    @staticmethod
+    def filteringEmissions(data):
+        from sklearn.decomposition import PCA
 
+        # 1. Generate a noisy 1D signal
+        noisy_signal = np.asarray(data['ymean'])
+        original_signal = np.asarray(data['y'])
+        original_x = np.asarray(data['x'])
+
+        # 2. Frame the 1D signal into a 2D matrix (Sliding Window)
+        window_size = 50
+        X = np.array(
+            [
+                noisy_signal[i : i + window_size]
+                for i in range(len(noisy_signal) - window_size)
+            ]
+        )
+
+        # 3. Apply PCA and keep only the first principal component
+        # The 1st component will capture the dominant slow-frequency wave
+        pca = PCA(n_components=1)
+        X_transformed = pca.fit_transform(X)
+        X_filtered = pca.inverse_transform(X_transformed)
+
+        # 4. Reconstruct the 1D signal from the overlapping windows
+        filtered_signal = np.zeros_like(noisy_signal)
+        counts = np.zeros_like(noisy_signal)
+
+        for i in range(len(X_filtered)):
+            filtered_signal[i : i + window_size] += X_filtered[i]
+            counts[i : i + window_size] += 1
+
+        filtered_signal /= counts
+
+        # 5. Plot the Results
+        plt.figure(figsize=(12, 6))
+        plt.plot(original_x, noisy_signal, label="Noisy Signal", alpha=0.5, color="gray")
+        plt.plot(original_x, filtered_signal, label="PCA Filtered Signal", color="red", linewidth=2)
+        for i in range(data['y'].shape[1]):
+            plt.plot(original_x, original_signal[:, i], ',', label=f"Original Signal {i+1}", alpha=0.3)
+        plt.legend()
+        plt.title("1D Signal Denoising using Scikit-Learn PCA")
+        plt.xlabel("Sample Index")
+        plt.ylabel("Amplitude")
+        plt.show()
+
+        return 0
 
     def calculateDelCNormalized(self, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
         if self.dataClusterIndices is None:
@@ -792,8 +884,10 @@ class impdData:
             plt.show()
         return 0
 
-    def test(self, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
-        self.calculateDelCNormalized(t1, t2, emissionIndex, plot)
+    def test(self, index = -1, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
+        self.selectedEmissions(emissionIndex=-1)
+        self.filteringEmissions(self.dataEmissions[self.dataTemps[index]])
+        # self.calculateDelCNormalized(t1, t2, emissionIndex, plot)
         return 0
 
 
