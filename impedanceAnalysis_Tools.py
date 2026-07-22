@@ -28,6 +28,8 @@ import torch
 from scipy.integrate import quad
 import lmfit
 from lmfit.models import LognormalModel, GaussianModel
+from sklearn.decomposition import PCA
+import pywt
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
@@ -462,7 +464,7 @@ class impdData:
                 val = list(h2)
                 val.append(val[1] - val[0])
                 blocks[dataLabels[i]]["high"][h1] = val
-                if not (val[1] - val[0]) in freqHighLengths.keys():
+                if (val[1] - val[0]) not in freqHighLengths.keys():
                     freqHighLengths[val[1] - val[0]] = 1
                 else:
                     freqHighLengths[val[1] - val[0]] += 1
@@ -478,7 +480,7 @@ class impdData:
                 val = list(l2)
                 val.append(val[1] - val[0])
                 blocks[dataLabels[i]]["low"][l1] = val
-                if not (val[1] - val[0]) in freqLowLengths.keys():
+                if (val[1] - val[0]) not in freqLowLengths.keys():
                     freqLowLengths[val[1] - val[0]] = 1
                 else:
                     freqLowLengths[val[1] - val[0]] += 1
@@ -606,14 +608,14 @@ class impdData:
                     highs = dict()
                     for j in self.dataExcitationClusterParams['clusterBlocks'][T]['high'].keys():
                         length = self.dataExcitationClusterParams["clusterBlocks"][T]["high"][j][-1]
-                        if not length in highs.keys():
+                        if length not in highs.keys():
                             highs[length] = 1
                         else:
                             highs[length] += 1
                     lows = dict()
                     for j in self.dataExcitationClusterParams['clusterBlocks'][T]['low'].keys():
                         length = self.dataExcitationClusterParams["clusterBlocks"][T]["low"][j][-1]
-                        if not length in lows.keys():
+                        if length not in lows.keys():
                             lows[length] = 1
                         else:
                             lows[length] += 1
@@ -631,14 +633,14 @@ class impdData:
                     highs = dict()
                     for j in self.dataEmissionClusterParams['clusterBlocks'][T]['high'].keys():
                         length = self.dataEmissionClusterParams["clusterBlocks"][T]["high"][j][-1]
-                        if not length in highs.keys():
+                        if length not in highs.keys():
                             highs[length] = 1
                         else:
                             highs[length] += 1
                     lows = dict()
                     for j in self.dataEmissionClusterParams['clusterBlocks'][T]['low'].keys():
                         length = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][j][-1]
-                        if not length in lows.keys():
+                        if length not in lows.keys():
                             lows[length] = 1
                         else:
                             lows[length] += 1
@@ -762,54 +764,266 @@ class impdData:
 
         return 0
 
+    @staticmethod
+    def waveletDenoise(signal, wavelet="db4", level=1, mode="soft"):
+        """
+        Denoises a 1D signal using Discrete Wavelet Transform (DWT).
+
+        Parameters:
+        - signal: Dict() of arrays object containing the noisy data, x, y, and ymean.
+        - wavelet: String name of the wavelet family (e.g., 'db4', 'sym8', 'coif1').
+        - level: Decomposition depth level.
+        - mode: Thresholding style ('soft' or 'hard').
+        """
+        yMean = np.asarray(signal["ymean"])
+        y = np.asarray(signal["y"])
+        x = np.asarray(signal["x"])
+
+        # 1. Decompose the signal into Wavelet coefficients
+        # Returns: [cA_n, cD_n, cD_n-1, ..., cD1]
+        coeffs = pywt.wavedec(yMean, wavelet, level=level)
+
+        # 2. Extract the finest detail coefficients (cD1) to estimate noise variance
+        cD1 = coeffs[-1]
+
+        # Calculate Median Absolute Deviation (MAD) as a robust estimator for sigma
+        # 0.6745 is the scaling factor for a standard normal distribution
+        median_absolute_deviation = np.median(np.abs(cD1 - np.median(cD1)))
+        sigma = median_absolute_deviation / 0.6745
+
+        # 3. Calculate the Universal Threshold value
+        n = len(yMean)
+        threshold = sigma * np.sqrt(2 * np.log(n))
+
+        # 4. Apply thresholding to all detail coefficients (leave approximation cA_n untouched)
+        new_coeffs = [coeffs[0]]  # Keep the approximation coefficients (coarse signal trend)
+        for detail_coeff in coeffs[1:]:
+            # Filter high-frequency noise out of the detail tracks
+            thresholded_detail = pywt.threshold(detail_coeff, value=threshold, mode=mode)
+            new_coeffs.append(thresholded_detail)
+
+        # 5. Reconstruct the clean signal from the modified coefficients
+        yFiltered = pywt.waverec(new_coeffs, wavelet)
+        yDenoised = yFiltered[:n]
+
+        # Ensure the reconstructed signal matches the original length
+        return x, yDenoised
 
     @staticmethod
-    def filteringEmissions(data):
-        from sklearn.decomposition import PCA
+    def pcaDenoise(signal, window_size=None):
+        """
+        Denoises a 1D signal using Principal Component Analysis (PCA).
 
-        # 1. Generate a noisy 1D signal
-        noisy_signal = np.asarray(data['ymean'])
-        original_signal = np.asarray(data['y'])
-        original_x = np.asarray(data['x'])
+        Parameters:
+        - signal: Dict() of arrays object containing the noisy data, x, y, and ymean.
+        - window_size: Size of the sliding window for framing the signal.
+        - plot: Boolean flag to plot the original and denoised signals.
+        """
 
-        # 2. Frame the 1D signal into a 2D matrix (Sliding Window)
-        window_size = 50
-        X = np.array(
-            [
-                noisy_signal[i : i + window_size]
-                for i in range(len(noisy_signal) - window_size)
-            ]
-        )
+        yMean = np.asarray(signal["ymean"])
+        y = np.asarray(signal["y"])
+        x = np.asarray(signal["x"])
+
+        # 1. Frame the 1D signal into a 2D matrix (Sliding Window)
+        if window_size is None:
+            window_size = len(yMean) // 1000
+        Y = np.array([yMean[i : i + window_size] for i in range(len(yMean) - window_size)])
 
         # 3. Apply PCA and keep only the first principal component
         # The 1st component will capture the dominant slow-frequency wave
         pca = PCA(n_components=1)
-        X_transformed = pca.fit_transform(X)
-        X_filtered = pca.inverse_transform(X_transformed)
+        yTransformed = pca.fit_transform(Y)
+        yFiltered = pca.inverse_transform(yTransformed)
 
         # 4. Reconstruct the 1D signal from the overlapping windows
-        filtered_signal = np.zeros_like(noisy_signal)
-        counts = np.zeros_like(noisy_signal)
+        yDenoised = np.zeros_like(yMean)
+        counts = np.zeros_like(yMean)
 
-        for i in range(len(X_filtered)):
-            filtered_signal[i : i + window_size] += X_filtered[i]
+        for i in range(len(yFiltered)):
+            yDenoised[i : i + window_size] += yFiltered[i]
             counts[i : i + window_size] += 1
 
-        filtered_signal /= counts
+        # Avoid dividing by zero at the position of -1
+        yDenoised[:-1] /= counts[:-1]
+        yDenoised[-1] = np.mean([yDenoised[-2], yDenoised[-3]])
 
-        # 5. Plot the Results
-        plt.figure(figsize=(12, 6))
-        plt.plot(original_x, noisy_signal, label="Noisy Signal", alpha=0.5, color="gray")
-        plt.plot(original_x, filtered_signal, label="PCA Filtered Signal", color="red", linewidth=2)
-        for i in range(data['y'].shape[1]):
-            plt.plot(original_x, original_signal[:, i], ',', label=f"Original Signal {i+1}", alpha=0.3)
-        plt.legend()
-        plt.title("1D Signal Denoising using Scikit-Learn PCA")
-        plt.xlabel("Sample Index")
-        plt.ylabel("Amplitude")
-        plt.show()
+        # if plot:
+        #     fig, ax = plt.subplots(figsize=(12, 6))
+        #     ax.plot(x, yMean, label="Noisy Signal", alpha=0.5, color="gray")
+        #     # ax.plot(x, yDenoised, label="PCA Filtered Signal", color="red", linewidth=2)
+        #     ax.plot(x, yDenoised, ".", label="PCA Filtered Signal", color="red")
+        #
+        #     for i in range(y.shape[1]):
+        #         ax.plot(x, y[:, i], ",", label=f"Original Signal {i + 1}", alpha=0.3)
+        #     ax.legend()
+        #     ax.set_title("1D Signal Denoising using Scikit-Learn PCA")
+        #     ax.set_xlabel("Sample Index")
+        #     ax.set_ylabel("Amplitude")
+        #     plt.show()
+        
+        return x, yDenoised
+
+    def filterEmissions(self, method='pca', recalculate=False, interactivePlot=True):
+        method_key = str(method).strip().lower()
+        if method_key not in ('pca', 'wavelet'):
+            raise ValueError("method must be one of: 'pca', 'wavelet'")
+
+        if self.dataEmissions is None:
+            self.selectedEmissions(emissionIndex=-1, trimHead=10, trimTail=10, plot=False)
+
+        if self.dataEmissions is None or len(self.dataEmissions) == 0:
+            raise ValueError("No emission data found. Run selectedEmissions() first.")
+
+        if not recalculate and 'yFiltered' not in self.dataEmissions[self.dataTemps[0]]:
+            recalculate = True
+
+        if not recalculate and 'filterMethod' in self.dataEmissions[self.dataTemps[0]]:
+            if self.dataEmissions[self.dataTemps[0]]['filterMethod'] != method_key:
+                recalculate = True
+
+        if recalculate:
+            for i in range(len(self.dataTemps)):
+                T = self.dataTemps[i]
+                if method_key == 'pca':
+                    x, yDenoised = self.pcaDenoise(self.dataEmissions[T])
+                if method_key == 'wavelet':
+                    x, yDenoised = self.waveletDenoise(self.dataEmissions[T], wavelet="db4", level=4, mode="soft")
+
+                self.dataEmissions[T]['yFiltered'] = yDenoised
+                if method_key == 'pca':
+                    self.dataEmissions[T]['filterMethod'] = 'pca'
+                if method_key == 'wavelet':
+                    self.dataEmissions[T]['filterMethod'] = 'wavelet'
+
+        if interactivePlot:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            current = [0]
+
+            def update_filtered_plot(idx):
+                T = self.dataTemps[idx]
+                x = np.asarray(self.dataEmissions[T]['x'])
+                yFiltered = np.asarray(self.dataEmissions[T]['yFiltered'])
+                yRaw = np.asarray(self.dataEmissions[T]['y'])
+
+                ax.cla()
+                ax.plot(x, yFiltered, '-', color='red', linewidth=1.5, label='Filtered')
+
+                # Overlay original traces as dense point markers.
+                if yRaw.ndim == 1:
+                    ax.plot(x, yRaw, ',', color='black', alpha=0.35, label='Raw')
+                else:
+                    for j in range(yRaw.shape[1]):
+                        lbl = 'Raw' if j == 0 else None
+                        ax.plot(x, yRaw[:, j], ',', color='black', alpha=0.35, label=lbl)
+
+                ax.set_xlabel('Time (s)', fontsize=10)
+                ax.set_ylabel('Signal (a.u.)', fontsize=10)
+                ax.set_title(f'i = {idx}  /  T = {T} K    (left/right to navigate)', fontsize=11)
+                ax.legend(loc='best', fontsize=9)
+                fig.canvas.draw_idle()
+
+            def on_key(event):
+                if event.key == 'right':
+                    current[0] = (current[0] + 1) % len(self.dataTemps)
+                elif event.key == 'left':
+                    current[0] = (current[0] - 1) % len(self.dataTemps)
+                else:
+                    return
+                update_filtered_plot(current[0])
+
+            fig.canvas.mpl_connect('key_press_event', on_key)
+            update_filtered_plot(current[0])
+            plt.tight_layout()
+            plt.show()
 
         return 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # @staticmethod
+    # def filteringEmissions(data, method='pca', plot=True):
+    #
+    #     yMean = np.asarray(data["ymean"])
+    #     y = np.asarray(data["y"])
+    #     x = np.asarray(data["x"])
+    #
+    #     if method == 'pca':
+    #         # 1. Frame the 1D signal into a 2D matrix (Sliding Window)
+    #         window_size = len(yMean)//1000
+    #         Y = np.array([ yMean[i : i + window_size] for i in range(len(yMean) - window_size) ])
+    #
+    #         # 3. Apply PCA and keep only the first principal component
+    #         # The 1st component will capture the dominant slow-frequency wave
+    #         pca = PCA(n_components=1)
+    #         yTransformed = pca.fit_transform(Y)
+    #         yFiltered = pca.inverse_transform(yTransformed)
+    #
+    #         # 4. Reconstruct the 1D signal from the overlapping windows
+    #         yDenoised = np.zeros_like(yMean)
+    #         counts = np.zeros_like(yMean)
+    #
+    #         for i in range(len(yFiltered)):
+    #             yDenoised[i : i + window_size] += yFiltered[i]
+    #             counts[i : i + window_size] += 1
+    #
+    #         # Avoid dividing by zero at the position of -1
+    #         yDenoised[:-1] /= counts[:-1]
+    #         yDenoised[-1] = np.mean([yDenoised[-2],yDenoised[-3]])
+    #
+    #         if plot:
+    #             fig, ax = plt.subplots(figsize=(12, 6))
+    #             ax.plot(x, yMean, label="Noisy Signal", alpha=0.5, color="gray")
+    #             # ax.plot(x, yDenoised, label="PCA Filtered Signal", color="red", linewidth=2)
+    #             ax.plot(x, yDenoised, '.', label="PCA Filtered Signal", color="red")
+    #
+    #             for i in range(data['y'].shape[1]):
+    #                 ax.plot(x, y[:, i], ',', label=f"Original Signal {i+1}", alpha=0.3)
+    #             ax.legend()
+    #             ax.set_title("1D Signal Denoising using Scikit-Learn PCA")
+    #             ax.set_xlabel("Sample Index")
+    #             ax.set_ylabel("Amplitude")
+    #             plt.show()
+    #
+    #     # TEST THIS!!!
+    #     if method == 'ica':
+    #         ica = FastICA(n_components=2, random_state=42)
+    #         components = ica.fit_transform(original_signal)
+    #
+    #         denoised_signal = components[:, 0]
+    #         denoised_signal = (denoised_signal/ np.max(np.abs(denoised_signal))* np.max(np.abs(noisy_signal)))
+    #
+    #         if plot:
+    #             fig, ax = plt.subplots(figsize=(12, 6))
+    #             ax.plot(original_x, noisy_signal, label="Noisy Signal", alpha=0.5)
+    #             for i in range(data['y'].shape[1]):
+    #                 ax.plot(original_x, original_signal[:,i], '.', label=f"Original Signal {i+1}",color="black")
+    #
+    #             ax.plot(original_x,denoised_signal,label="ICA Denoised Signal",color="red",linestyle="--")
+    #             ax.legend()
+    #             ax.set_title("1D Signal Denoising using FastICA")
+    #             ax.set_xlabel("Sample Index")
+    #             ax.set_ylabel("Amplitude")
+    #             plt.show()
+    #
+    #     # TEST THIS!!!
+    #     # if method == 'fft':
+    #         # aa
+    #     return 0
 
     def calculateDelCNormalized(self, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
         if self.dataClusterIndices is None:
