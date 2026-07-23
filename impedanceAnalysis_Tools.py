@@ -12,24 +12,29 @@ import zhinst.ziPython as zi
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from tkinter.filedialog import askopenfilenames
+import statsmodels.api as sm
 
-from numpy.ma.extras import apply_along_axis
-from scipy.interpolate import make_smoothing_spline, CubicSpline
-import json
-from sklearn.mixture import GaussianMixture
-from sklearn.cluster import KMeans
+import itertools
 import h5py
 import statistics
-from uncertainties import unumpy, ufloat
-import itertools
-from scipy.stats import weibull_min, mode
 import torch
-from scipy.integrate import quad
 import lmfit
-from lmfit.models import LognormalModel, GaussianModel
-from sklearn.decomposition import PCA
 import pywt
+import json
+
+from tkinter.filedialog import askopenfilenames
+from numpy.ma.extras import apply_along_axis
+from uncertainties import unumpy, ufloat
+from sklearn.mixture import GaussianMixture
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA, FastICA
+from scipy.stats import weibull_min, mode
+from scipy.integrate import quad
+from scipy.signal import savgol_filter
+from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import make_smoothing_spline, CubicSpline
+from lmfit.models import LognormalModel, GaussianModel
+from fastlowess import Lowess
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
@@ -846,27 +851,47 @@ class impdData:
         # Avoid dividing by zero at the position of -1
         yDenoised[:-1] /= counts[:-1]
         yDenoised[-1] = np.mean([yDenoised[-2], yDenoised[-3]])
-
-        # if plot:
-        #     fig, ax = plt.subplots(figsize=(12, 6))
-        #     ax.plot(x, yMean, label="Noisy Signal", alpha=0.5, color="gray")
-        #     # ax.plot(x, yDenoised, label="PCA Filtered Signal", color="red", linewidth=2)
-        #     ax.plot(x, yDenoised, ".", label="PCA Filtered Signal", color="red")
-        #
-        #     for i in range(y.shape[1]):
-        #         ax.plot(x, y[:, i], ",", label=f"Original Signal {i + 1}", alpha=0.3)
-        #     ax.legend()
-        #     ax.set_title("1D Signal Denoising using Scikit-Learn PCA")
-        #     ax.set_xlabel("Sample Index")
-        #     ax.set_ylabel("Amplitude")
-        #     plt.show()
         
+        return x, yDenoised
+
+    @staticmethod
+    def savitzkyGolayDenoise(signal, window_size=None, order=2):
+        """
+        Denoises a 1D signal using a Savitzky-Golay filter.
+        """
+        yMean = np.asarray(signal["ymean"])
+        y = np.asarray(signal["y"])
+        x = np.asarray(signal["x"])
+
+        # 2. Apply the Savitzky-Golay filter
+        if window_size is None:
+            window_size = len(yMean) // 1000
+        yDenoised = savgol_filter(yMean, window_length=window_size, polyorder=order)
+
+        return x, yDenoised
+
+    @staticmethod
+    def lowessDenoise(signal, fraction=None):
+        """
+        Denoises a 1D signal using a Locally Weighted Scatterplot Smoothing (LOWESS) interpolation.
+        """
+        yMean = np.asarray(signal["ymean"])
+        y = np.asarray(signal["y"])
+        x = np.asarray(signal["x"])
+
+        if fraction is None:
+            fraction = 0.1
+        # lowess_result = sm.nonparametric.lowess(yMean, x, frac=fraction)
+        # yDenoised = lowess_result[:, 1]
+        lowess_result = Lowess(fraction=fraction, iterations=3, robustness_method="bisquare").fit(x, yMean)
+        yDenoised = lowess_result.y
+
         return x, yDenoised
 
     def filterEmissions(self, method='pca', recalculate=False, interactivePlot=True):
         method_key = str(method).strip().lower()
-        if method_key not in ('pca', 'wavelet'):
-            raise ValueError("method must be one of: 'pca', 'wavelet'")
+        if method_key not in ('pca', 'wavelet', 'sgolay', 'lowess'):
+            raise ValueError("method must be one of: 'pca', 'wavelet', 'sgolay', 'lowess'")
 
         if self.dataEmissions is None:
             self.selectedEmissions(emissionIndex=-1, trimHead=10, trimTail=10, plot=False)
@@ -885,15 +910,23 @@ class impdData:
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
                 if method_key == 'pca':
-                    x, yDenoised = self.pcaDenoise(self.dataEmissions[T])
+                    x, yDenoised = self.pcaDenoise(self.dataEmissions[T], window_size=None)
                 if method_key == 'wavelet':
                     x, yDenoised = self.waveletDenoise(self.dataEmissions[T], wavelet="db4", level=4, mode="soft")
-
+                if method_key == 'sgolay':
+                    x, yDenoised = self.savitzkyGolayDenoise(self.dataEmissions[T], window_size=None, order=2)
+                if method_key == 'lowess':
+                    x, yDenoised = self.lowessDenoise(self.dataEmissions[T], fraction=None)
                 self.dataEmissions[T]['yFiltered'] = yDenoised
+
                 if method_key == 'pca':
                     self.dataEmissions[T]['filterMethod'] = 'pca'
                 if method_key == 'wavelet':
                     self.dataEmissions[T]['filterMethod'] = 'wavelet'
+                if method_key == 'sgolay':
+                    self.dataEmissions[T]['filterMethod'] = 'sgolay'
+                if method_key == 'lowess':
+                    self.dataEmissions[T]['filterMethod'] = 'lowess'
 
         if interactivePlot:
             fig, ax = plt.subplots(figsize=(10, 6))
