@@ -33,6 +33,7 @@ from scipy.integrate import quad
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import make_smoothing_spline, CubicSpline
+from scipy.interpolate import CubicSpline
 from lmfit.models import LognormalModel, GaussianModel
 from fastlowess import Lowess
 
@@ -770,7 +771,7 @@ class impdData:
         return 0
 
     @staticmethod
-    def waveletDenoise(signal, wavelet="db4", level=1, mode="soft"):
+    def waveletDenoise(signal, index=-1, wavelet="db4", level=1, mode="soft"):
         """
         Denoises a 1D signal using Discrete Wavelet Transform (DWT).
 
@@ -784,9 +785,19 @@ class impdData:
         y = np.asarray(signal["y"])
         x = np.asarray(signal["x"])
 
+        maxIndex = y.shape[1]-1
+        if index == -1:
+            yRaw = np.array(yMean, copy=True)
+        if index > -1 and index < maxIndex:
+            yRaw = np.array(y[:,index], copy=True)
+        if index > maxIndex:
+            yRaw = np.array(y[:, maxIndex], copy=True)
+        if index < -1:
+            yRaw = np.array(y[:, 0], copy=True)
+
         # 1. Decompose the signal into Wavelet coefficients
         # Returns: [cA_n, cD_n, cD_n-1, ..., cD1]
-        coeffs = pywt.wavedec(yMean, wavelet, level=level)
+        coeffs = pywt.wavedec(yRaw, wavelet, level=level)
 
         # 2. Extract the finest detail coefficients (cD1) to estimate noise variance
         cD1 = coeffs[-1]
@@ -797,7 +808,7 @@ class impdData:
         sigma = median_absolute_deviation / 0.6745
 
         # 3. Calculate the Universal Threshold value
-        n = len(yMean)
+        n = len(yRaw)
         threshold = sigma * np.sqrt(2 * np.log(n))
 
         # 4. Apply thresholding to all detail coefficients (leave approximation cA_n untouched)
@@ -812,10 +823,10 @@ class impdData:
         yDenoised = yFiltered[:n]
 
         # Ensure the reconstructed signal matches the original length
-        return x, yDenoised
+        return x, yDenoised, yRaw
 
     @staticmethod
-    def pcaDenoise(signal, window_size=None):
+    def pcaDenoise(signal, index=-1, window_size=None):
         """
         Denoises a 1D signal using Principal Component Analysis (PCA).
 
@@ -829,10 +840,20 @@ class impdData:
         y = np.asarray(signal["y"])
         x = np.asarray(signal["x"])
 
+        maxIndex = y.shape[1]-1
+        if index == -1:
+            yRaw = np.array(yMean, copy=True)
+        if index > -1 and index < maxIndex:
+            yRaw = np.array(y[:,index], copy=True)
+        if index > maxIndex:
+            yRaw = np.array(y[:, maxIndex], copy=True)
+        if index < -1:
+            yRaw = np.array(y[:, 0], copy=True)
+
         # 1. Frame the 1D signal into a 2D matrix (Sliding Window)
         if window_size is None:
-            window_size = len(yMean) // 1000
-        Y = np.array([yMean[i : i + window_size] for i in range(len(yMean) - window_size)])
+            window_size = len(yRaw) // 1000
+        Y = np.array([yRaw[i : i + window_size] for i in range(len(yRaw) - window_size)])
 
         # 3. Apply PCA and keep only the first principal component
         # The 1st component will capture the dominant slow-frequency wave
@@ -841,8 +862,8 @@ class impdData:
         yFiltered = pca.inverse_transform(yTransformed)
 
         # 4. Reconstruct the 1D signal from the overlapping windows
-        yDenoised = np.zeros_like(yMean)
-        counts = np.zeros_like(yMean)
+        yDenoised = np.zeros_like(yRaw)
+        counts = np.zeros_like(yRaw)
 
         for i in range(len(yFiltered)):
             yDenoised[i : i + window_size] += yFiltered[i]
@@ -852,10 +873,10 @@ class impdData:
         yDenoised[:-1] /= counts[:-1]
         yDenoised[-1] = np.mean([yDenoised[-2], yDenoised[-3]])
         
-        return x, yDenoised
+        return x, yDenoised, yRaw
 
     @staticmethod
-    def savitzkyGolayDenoise(signal, window_size=None, order=2):
+    def savitzkyGolayDenoise(signal, index=-1, window_size=None, order=2):
         """
         Denoises a 1D signal using a Savitzky-Golay filter.
         """
@@ -863,15 +884,25 @@ class impdData:
         y = np.asarray(signal["y"])
         x = np.asarray(signal["x"])
 
+        maxIndex = y.shape[1]-1
+        if index == -1:
+            yRaw = np.array(yMean, copy=True)
+        if index > -1 and index < maxIndex:
+            yRaw = np.array(y[:,index], copy=True)
+        if index > maxIndex:
+            yRaw = np.array(y[:, maxIndex], copy=True)
+        if index < -1:
+            yRaw = np.array(y[:, 0], copy=True)
+
         # 2. Apply the Savitzky-Golay filter
         if window_size is None:
-            window_size = len(yMean) // 1000
-        yDenoised = savgol_filter(yMean, window_length=window_size, polyorder=order)
+            window_size = len(yRaw) // 1000
+        yDenoised = savgol_filter(yRaw, window_length=window_size, polyorder=order)
 
-        return x, yDenoised
+        return x, yDenoised, yRaw
 
     @staticmethod
-    def lowessDenoise(signal, fraction=None):
+    def lowessDenoise(signal, index=-1, fraction=None):
         """
         Denoises a 1D signal using a Locally Weighted Scatterplot Smoothing (LOWESS) interpolation.
         """
@@ -879,16 +910,24 @@ class impdData:
         y = np.asarray(signal["y"])
         x = np.asarray(signal["x"])
 
+        maxIndex = y.shape[1]-1
+        if index == -1:
+            yRaw = np.array(yMean, copy=True)
+        if index > -1 and index < maxIndex:
+            yRaw = np.array(y[:,index], copy=True)
+        if index > maxIndex:
+            yRaw = np.array(y[:, maxIndex], copy=True)
+        if index < -1:
+            yRaw = np.array(y[:, 0], copy=True)
+
         if fraction is None:
             fraction = 0.1
-        # lowess_result = sm.nonparametric.lowess(yMean, x, frac=fraction)
-        # yDenoised = lowess_result[:, 1]
-        lowess_result = Lowess(fraction=fraction, iterations=3, robustness_method="bisquare").fit(x, yMean)
+        lowess_result = Lowess(fraction=fraction, iterations=3, robustness_method="bisquare").fit(x, yRaw)
         yDenoised = lowess_result.y
 
-        return x, yDenoised
+        return x, yDenoised, yRaw
 
-    def filterEmissions(self, method='pca', recalculate=False, interactivePlot=True):
+    def filterEmissions(self, method='pca', filterIndex=-1, recalculate=False, interactivePlot=True):
         method_key = str(method).strip().lower()
         if method_key not in ('pca', 'wavelet', 'sgolay', 'lowess'):
             raise ValueError("method must be one of: 'pca', 'wavelet', 'sgolay', 'lowess'")
@@ -910,14 +949,15 @@ class impdData:
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
                 if method_key == 'pca':
-                    x, yDenoised = self.pcaDenoise(self.dataEmissions[T], window_size=None)
+                    x, yDenoised, yRaw = self.pcaDenoise(self.dataEmissions[T], index=filterIndex, window_size=None)
                 if method_key == 'wavelet':
-                    x, yDenoised = self.waveletDenoise(self.dataEmissions[T], wavelet="db4", level=4, mode="soft")
+                    x, yDenoised, yRaw = self.waveletDenoise(self.dataEmissions[T], index=filterIndex, wavelet="db4", level=4, mode="soft")
                 if method_key == 'sgolay':
-                    x, yDenoised = self.savitzkyGolayDenoise(self.dataEmissions[T], window_size=None, order=2)
+                    x, yDenoised, yRaw = self.savitzkyGolayDenoise(self.dataEmissions[T], index=filterIndex, window_size=None, order=2)
                 if method_key == 'lowess':
-                    x, yDenoised = self.lowessDenoise(self.dataEmissions[T], fraction=None)
+                    x, yDenoised, yRaw = self.lowessDenoise(self.dataEmissions[T], index=filterIndex, fraction=None)
                 self.dataEmissions[T]['yFiltered'] = yDenoised
+                self.dataEmissions[T]['yRaw'] = yRaw
 
                 if method_key == 'pca':
                     self.dataEmissions[T]['filterMethod'] = 'pca'
@@ -928,6 +968,8 @@ class impdData:
                 if method_key == 'lowess':
                     self.dataEmissions[T]['filterMethod'] = 'lowess'
 
+                self.dataEmissions[T]['filterIndex'] = filterIndex
+
         if interactivePlot:
             fig, ax = plt.subplots(figsize=(10, 6))
             current = [0]
@@ -936,7 +978,7 @@ class impdData:
                 T = self.dataTemps[idx]
                 x = np.asarray(self.dataEmissions[T]['x'])
                 yFiltered = np.asarray(self.dataEmissions[T]['yFiltered'])
-                yRaw = np.asarray(self.dataEmissions[T]['y'])
+                yRaw = np.asarray(self.dataEmissions[T]['yRaw'])
 
                 ax.cla()
                 ax.plot(x, yFiltered, '-', color='red', linewidth=1.5, label='Filtered')
@@ -971,79 +1013,69 @@ class impdData:
 
         return 0
 
+    def calculateDelCNormalized(self, t1=0.003, t2=0.203,
+                                emissionIndex=-1, denoiseEmission=False, smoothCapacitance=True,
+                                plot=False):
+
+        if self.dataEmissions is None:
+            self.selectedEmissions(emissionIndex=-1, trimHead=10, trimTail=10, plot=False)
+
+        if denoiseEmission and 'filterMethod' not in self.dataEmissions[self.dataTemps[0]]:
+            self.filterEmissions(method='pca', filterIndex=emissionIndex, recalculate=False, interactivePlot=False)
+
+        # If emission index is -1 and denoiseEmission is False, use ymean and yerr
+        # If emission index is -1 and denoiseEmission is True, use yFiltered and yerr
+        # If emission index is larger than existing indices, use the last emission
+        # If emission index is smaller than -1, use the first emission
+        # If emission index is any of the existing indices, use the index
 
 
-    def calculateDelCNormalized(self, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
-        if self.dataClusterIndices is None:
-            self.sampleEmissions()
+        tauEmissions = np.zeros((len(self.dataTemps),2))
+        delCNormalized = np.zeros((len(self.dataTemps),2))
+        for i in range(len(self.dataTemps)):
+            if denoiseEmission:
+                t = np.asarray(self.dataEmissions[self.dataTemps[i]]['x'])
+                C = np.asarray(self.dataEmissions[self.dataTemps[i]]['yFiltered'])
+                Cerr = np.asarray(self.dataEmissions[self.dataTemps[i]]['yerr'])
 
-        # If emission index is -1 average over all emissions
-        # If emission index is larger than existing indices go use the last one
-        # If emission index is anything else use it as it is
-        tauEmissions = np.zeros(len(self.dataTemps))
-        delCNormalized = np.zeros(len(self.dataTemps))
-        if emissionIndex >= 0:
-            if emissionIndex > len(self.dataClusterIndices[self.dataTemps[0]]) - 1:
-                emissionIndex = len(self.dataClusterIndices[self.dataTemps[0]]) - 1
-            for i in range(len(self.dataTemps)):
-                t = self.dataEmissions[self.dataTemps[i]][emissionIndex][:,0]
-                t = t-t[0]
+            else:
+                t = np.asarray(self.dataEmissions[self.dataTemps[i]]['x'])
+                C = np.asarray(self.dataEmissions[self.dataTemps[i]]['yRaw'])
+                Cerr = np.asarray(self.dataEmissions[self.dataTemps[i]]['yerr'])
 
-                C = self.dataEmissions[self.dataTemps[i]][emissionIndex][:,1]
-                # # Model C values using smoothing cubic spline
-                # C_spline = make_smoothing_spline(t, C)
-                # Cinf = C_spline(t[-1])
-                Cinf = C[-1]
-                C = C/Cinf
-                
-                # Tau emission calculation
-                x1 = t[self.find_nearest(t, t1)]
-                x2 = t[self.find_nearest(t, t2)]
-                tauEmissions[i] = (x2-x1)/np.log(x2/x1)
+            if t1 < np.min(t): t1 = np.min(t)
+            if t2 > np.max(t): t2 = np.max(t)
 
-                # Normalized delta C calculation
-                delCNormalized[i] = C[self.find_nearest(t, t2)]-C[self.find_nearest(t, t1)]
-        else:
-            print("averaging all emissions")
-            for i in range(len(self.dataTemps)):
-                tempTauEmissions = np.zeros(len(self.dataClusterIndices[self.dataTemps[i]]))
-                tempDelCNormalized = np.zeros(len(self.dataClusterIndices[self.dataTemps[i]]))
-                for j in range(len(self.dataClusterIndices[self.dataTemps[i]])):
-                    t = self.dataEmissions[self.dataTemps[i]][j][:,0]
-                    t = t-t[0]
+            if smoothCapacitance:
+                # Model C and Cerr values using smoothing cubic spline
+                csC = CubicSpline(t, C)
+                csCerr = CubicSpline(t, Cerr)
 
-                    C = self.dataEmissions[self.dataTemps[i]][j][:,1]
-                    # # Model C values using smoothing cubic spline
-                    # C_spline = make_smoothing_spline(t, C)
-                    # Cinf = C_spline(t[-1])
-                    Cinf = C[-1]
-                    C = C/Cinf
+                delCNormalized[i] = np.array([self.dataTemps[i], csC(t2) - csC(t1)]) / csC(t[-1])
+                tauEmissions[i] = np.array([self.dataTemps[i], (t2 - t1) / np.log(t2 / t1)])
+            else:
+                nearestIndex1 = self.find_nearest(t, t1)
+                nearestIndex2 = self.find_nearest(t, t2)
+                delCNormalized[i] = np.array([self.dataTemps[i], C[nearestIndex2] - C[nearestIndex1]]) / csC(t[-1])
+                tauEmissions[i] = np.array([self.dataTemps[i],
+                                            (t[nearestIndex2] - t[nearestIndex1]) / np.log(
+                                                t[nearestIndex2] / t[nearestIndex1])])
 
-                    # Tau emission calculation
-                    x1 = t[self.find_nearest(t, t1)]
-                    x2 = t[self.find_nearest(t, t2)]
-                    tempTauEmissions[j] = (x2-x1)/np.log(x2/x1)
-
-                    # Normalized delta C calculation
-                    tempDelCNormalized[j] = C[self.find_nearest(t, t2)]-C[self.find_nearest(t, t1)]
-                tauEmissions[i] = np.mean(tempTauEmissions)
-                delCNormalized[i] = np.mean(tempDelCNormalized)
-
-        if plot:
-            fig, ax1 = plt.subplots()
-            temps = np.array(self.dataTemps)
-            ax1.plot(temps-273, delCNormalized,'.')
-            ax1.set_xlabel("Temperature (C)")
-            ax1.set_ylabel("Normalized Delta C")
-            ax1.set_title("Normalized Delta C vs Temperature")
-            ax1.tick_params(axis="x", labelcolor="blue")
-
-            ax2 = ax1.twiny()
-            ax2.plot(temps, delCNormalized, ".")
-            ax2.set_xlabel("Temperature (K)")
-            ax2.tick_params(axis="x", labelcolor="red")
-
-            plt.show()
+        # if plot:
+        #     fig, ax1 = plt.subplots()
+        #     temps = np.array(self.dataTemps)
+        #     ax1.plot(temps-273, delCNormalized,'.')
+        #     ax1.set_xlabel("Temperature (C)")
+        #     ax1.set_ylabel("Normalized Delta C")
+        #     ax1.set_title("Normalized Delta C vs Temperature")
+        #     ax1.tick_params(axis="x", labelcolor="blue")
+        #
+        #     ax2 = ax1.twiny()
+        #     ax2.plot(temps, delCNormalized, ".")
+        #     ax2.set_xlabel("Temperature (K)")
+        #     ax2.tick_params(axis="x", labelcolor="red")
+        #
+        #     plt.show()
         return 0
 
     def test(self, index = -1, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
