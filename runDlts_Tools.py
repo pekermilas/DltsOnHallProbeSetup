@@ -10,7 +10,7 @@ import copy
 from tkinter.filedialog import askopenfilenames
 
 from numpy.ma.extras import apply_along_axis
-from scipy.interpolate import make_smoothing_spline, CubicSpline
+from scipy.interpolate import CubicSpline
 import json
 from sklearn.mixture import GaussianMixture
 import h5py

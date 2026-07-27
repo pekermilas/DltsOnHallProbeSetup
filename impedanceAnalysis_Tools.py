@@ -32,7 +32,6 @@ from scipy.stats import weibull_min, mode
 from scipy.integrate import quad
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
-from scipy.interpolate import make_smoothing_spline, CubicSpline
 from scipy.interpolate import CubicSpline
 from lmfit.models import LognormalModel, GaussianModel
 from fastlowess import Lowess
@@ -1020,8 +1019,8 @@ class impdData:
         if self.dataEmissions is None:
             self.selectedEmissions(emissionIndex=-1, trimHead=10, trimTail=10, plot=False)
 
-        if denoiseEmission and 'filterMethod' not in self.dataEmissions[self.dataTemps[0]]:
-            self.filterEmissions(method='pca', filterIndex=emissionIndex, recalculate=False, interactivePlot=False)
+        # if denoiseEmission and 'filterMethod' not in self.dataEmissions[self.dataTemps[0]]:
+        self.filterEmissions(method='pca', filterIndex=emissionIndex, recalculate=False, interactivePlot=False)
 
         # If emission index is -1 and denoiseEmission is False, use ymean and yerr
         # If emission index is -1 and denoiseEmission is True, use yFiltered and yerr
@@ -1031,7 +1030,7 @@ class impdData:
 
 
         tauEmissions = np.zeros((len(self.dataTemps),2))
-        delCNormalized = np.zeros((len(self.dataTemps),2))
+        delCNormalized = np.zeros((len(self.dataTemps),3))
         for i in range(len(self.dataTemps)):
             if denoiseEmission:
                 t = np.asarray(self.dataEmissions[self.dataTemps[i]]['x'])
@@ -1050,13 +1049,14 @@ class impdData:
                 # Model C and Cerr values using smoothing cubic spline
                 csC = CubicSpline(t, C)
                 csCerr = CubicSpline(t, Cerr)
-
-                delCNormalized[i] = np.array([self.dataTemps[i], csC(t2) - csC(t1)]) / csC(t[-1])
+                deltaC = csC(t2) - csC(t1)
+                delCNormalized[i] = np.array([self.dataTemps[i], deltaC, deltaC / csC(t[-1])])
                 tauEmissions[i] = np.array([self.dataTemps[i], (t2 - t1) / np.log(t2 / t1)])
             else:
                 nearestIndex1 = self.find_nearest(t, t1)
                 nearestIndex2 = self.find_nearest(t, t2)
-                delCNormalized[i] = np.array([self.dataTemps[i], C[nearestIndex2] - C[nearestIndex1]]) / csC(t[-1])
+                deltaC = C[nearestIndex2] - C[nearestIndex1]
+                delCNormalized[i] = np.array([self.dataTemps[i], deltaC, deltaC / C[-1]])
                 tauEmissions[i] = np.array([self.dataTemps[i],
                                             (t[nearestIndex2] - t[nearestIndex1]) / np.log(
                                                 t[nearestIndex2] / t[nearestIndex1])])
@@ -1076,7 +1076,7 @@ class impdData:
         #     ax2.tick_params(axis="x", labelcolor="red")
         #
         #     plt.show()
-        return 0
+        return tauEmissions, delCNormalized
 
     def test(self, index = -1, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
         self.selectedEmissions(emissionIndex=-1)
