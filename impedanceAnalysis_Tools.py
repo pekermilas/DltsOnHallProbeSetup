@@ -33,6 +33,7 @@ from scipy.integrate import quad
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import CubicSpline
+from scipy.optimize import differential_evolution
 from lmfit.models import LognormalModel, GaussianModel
 from fastlowess import Lowess
 
@@ -1016,6 +1017,9 @@ class impdData:
                                 emissionIndex=-1, denoiseEmission=False, smoothCapacitance=True,
                                 plot=False):
 
+        # Denoising the Emission is for better estimating the many sample averaged data
+        # Smoothing the Capacitance is for estimating the real value of C right at t1 and/or t2
+
         if self.dataEmissions is None:
             self.selectedEmissions(emissionIndex=-1, trimHead=10, trimTail=10, plot=False)
 
@@ -1028,9 +1032,7 @@ class impdData:
         # If emission index is smaller than -1, use the first emission
         # If emission index is any of the existing indices, use the index
 
-
-        tauEmissions = np.zeros((len(self.dataTemps),2))
-        delCNormalized = np.zeros((len(self.dataTemps),3))
+        delCNormalized = np.zeros((len(self.dataTemps),4))
         for i in range(len(self.dataTemps)):
             if denoiseEmission:
                 t = np.asarray(self.dataEmissions[self.dataTemps[i]]['x'])
@@ -1050,39 +1052,49 @@ class impdData:
                 csC = CubicSpline(t, C)
                 csCerr = CubicSpline(t, Cerr)
                 deltaC = csC(t2) - csC(t1)
-                delCNormalized[i] = np.array([self.dataTemps[i], deltaC, deltaC / csC(t[-1])])
-                tauEmissions[i] = np.array([self.dataTemps[i], (t2 - t1) / np.log(t2 / t1)])
+                tau = (t2 - t1) / np.log(t2 / t1)
+                delCNormalized[i] = np.array([self.dataTemps[i], tau, deltaC, deltaC / csC(t[-1])])
             else:
                 nearestIndex1 = self.find_nearest(t, t1)
                 nearestIndex2 = self.find_nearest(t, t2)
                 deltaC = C[nearestIndex2] - C[nearestIndex1]
-                delCNormalized[i] = np.array([self.dataTemps[i], deltaC, deltaC / C[-1]])
-                tauEmissions[i] = np.array([self.dataTemps[i],
-                                            (t[nearestIndex2] - t[nearestIndex1]) / np.log(
-                                                t[nearestIndex2] / t[nearestIndex1])])
+                tau = (t[nearestIndex2] - t[nearestIndex1]) / np.log(t[nearestIndex2] / t[nearestIndex1])
+                delCNormalized[i] = np.array([self.dataTemps[i], tau, deltaC, deltaC / C[-1]])
 
-        # if plot:
-        #     fig, ax1 = plt.subplots()
-        #     temps = np.array(self.dataTemps)
-        #     ax1.plot(temps-273, delCNormalized,'.')
-        #     ax1.set_xlabel("Temperature (C)")
-        #     ax1.set_ylabel("Normalized Delta C")
-        #     ax1.set_title("Normalized Delta C vs Temperature")
-        #     ax1.tick_params(axis="x", labelcolor="blue")
-        #
-        #     ax2 = ax1.twiny()
-        #     ax2.plot(temps, delCNormalized, ".")
-        #     ax2.set_xlabel("Temperature (K)")
-        #     ax2.tick_params(axis="x", labelcolor="red")
-        #
-        #     plt.show()
-        return tauEmissions, delCNormalized
+        delCNormalized = delCNormalized[delCNormalized[:, 0].argsort()]
 
-    def test(self, index = -1, t1=0.003, t2=0.203, emissionIndex=0, plot=False):
-        self.selectedEmissions(emissionIndex=-1)
-        self.filteringEmissions(self.dataEmissions[self.dataTemps[index]])
-        # self.calculateDelCNormalized(t1, t2, emissionIndex, plot)
-        return 0
+        if plot:
+            fig, ax = plt.subplots()
+            ax.plot(delCNormalized[:,0], delCNormalized[:,3],'.-')
+            ax.set_xlabel("Temperature (K)")
+            ax.set_ylabel("Normalized Delta C")
+            ax.set_title("Normalized Delta C vs Temperature")
+            plt.show()
+
+        return delCNormalized
+
+    def test(self, t1=None, t2=None, plot=False):
+        if t1 is None:
+            t1 = np.arange(1,3,1) * 0.010
+        if t2 is None:
+            t2 = np.arange(1,3,1) * 0.010
+
+        C = np.zeros((len(t1)*(len(t2)-1)//2,4))
+        idx=0
+        for i in range(len(t1)):
+            for j in range(len(t2)):
+                if t2[j] > t1[i]:
+                    temp = self.calculateDelCNormalized(t1=t1[i], t2=t2[j], emissionIndex=-1, denoiseEmission=False,
+                                                        smoothCapacitance=False, plot=False)
+                    csC = CubicSpline(temp[:,0], temp[:,3])
+                    bounds = [(np.min(temp[:,0]), np.max(temp[:,0]))]
+                    result = differential_evolution(csC, bounds, integrality=[True])
+                    maxC = -result.fun
+                    maxT = result.x[0]
+                    C[idx] = np.array([t1[i],t2[j], maxT, maxC])
+                    idx += 1
+
+        return C
 
 
 
