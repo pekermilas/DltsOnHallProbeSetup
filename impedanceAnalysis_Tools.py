@@ -60,65 +60,163 @@ class impdData:
         # self.subType = None
         # self.dataParams = None
 
-    def readData(self):
-        print("Fix other data file import cases and exception for not choosing file! ")
+    def readData(self, append=False):
+
         if self.fileName is None:
             self.fileName = askopenfilenames(title="Select a file",
-                filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+                filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")])
 
         if isinstance(self.fileName, str):
-            self.fileName = [self.fileName]
+            self.fileName = list(self.fileName)
 
-        # Skip files whose name (excluding path) contains no numeric digits.
-        filtered = []
-        for f in self.fileName:
-            basename = f.replace('\\', '/').rsplit('/', 1)[-1]
-            if any(c.isdigit() for c in basename):
-                filtered.append(f)
-            else:
-                print(f"Skipping '{basename}': no number found in filename.")
-        self.fileName = filtered
+        # data is a structure of nested dictionaries.
+        # First layer of the dictionary has data temperatures as keys.
+        # Second layer of the dictionary has data source names (tickStampImps, ImpedanceRe, ImpedanceIm, etc.) as keys.
+        # tickStampImps : Impedance time stamps in units of hardware clock ticks
+        # tickStampDemods : Demodulator time stamps in units of hardware clock ticks
+        # timeStampImps : Impedance time stamps in units of seconds
+        # timeStampDemods : Demodulator time stamps in units of seconds
+        # ImpedanceRe : Real part of the impedance in units of Ohms
+        # ImpedanceIm : Imaginary part of the impedance or Capacitance in units of Farads
+        # AuxInput1 : Demodulation signal or Excitation in units of Volts
+        # AbsZ : Absolute value of Impedance in units of Ohms
 
-        if not self.fileName:
-            print("No valid data files selected (none contained a number in the filename).")
-            return -1
+        if self.fileName[0][-3:]=='txt':
+            # Skip files whose name (excluding path) contains no numeric digits.
+            filtered = []
+            for f in self.fileName:
+                basename = f.replace('\\', '/').rsplit('/', 1)[-1]
+                if any(c.isdigit() for c in basename):
+                    filtered.append(f)
+                else:
+                    print(f"Skipping '{basename}': no number found in filename.")
+            self.fileName = filtered
 
-        if self.rootFolder is None:
-            idx = self.fileName[0][::-1].find('/')
-            self.rootFolder = self.fileName[0][:-idx]
-        
-        strippedFName = []
-        for i in range(len(self.fileName)):
-            temp = self.fileName[i].replace(self.rootFolder,"")
-            strippedFName.append(temp)
-        
-        if self.dataTemps is None:
-            self.dataTemps = []
+            if not self.fileName:
+                print("No valid data files selected (none contained a number in the filename).")
+                return -1
+
+            if self.rootFolder is None:
+                idx = self.fileName[0][::-1].find('/')
+                self.rootFolder = self.fileName[0][:-idx]
+
+            strippedFName = []
             for i in range(len(self.fileName)):
-                idx = strippedFName[i].find('.')
-                t0 = '+' if strippedFName[i][0]=='p' else '-'
-                t = strippedFName[i][1:idx].replace("p",".")
-                t = t0 + t
+                temp = self.fileName[i].replace(self.rootFolder,"")
+                strippedFName.append(temp)
+
+            if self.dataTemps is None:
+                self.dataTemps = []
+                for i in range(len(self.fileName)):
+                    idx = strippedFName[i].find('.')
+                    t0 = '+' if strippedFName[i][0]=='p' else '-'
+                    t = strippedFName[i][1:idx].replace("p",".")
+                    t = t0 + t
+                    if t.strip():
+                        self.dataTemps.append(int(float(t))+273)
+                    else:
+                        print(f"Warning: Could not extract temperature from filename: {self.fileName[i]}")
+
+            try:
+                data = dict()
+                for i in range(len(self.fileName)):
+                    with open(self.fileName[i], 'r', encoding='utf-8') as file:
+                        data[self.dataTemps[i]] = json.load(file)
+                self.dataValues = data
+                with open(self.rootFolder+'runParams.txt', 'r', encoding='utf-8') as file:
+                    param = json.load(file)
+                self.dataParams = param
+                return 0
+
+            except FileNotFoundError:
+                print("Error: Params file does not exist.")
+                self.fileName = None
+                return -1
+
+        if self.fileName[0][-3:] == 'csv':
+            emmHeader = []
+            emmSignal = []
+            excHeader = []
+            excSignal = []
+            impHeader = []
+            impSignal = []
+
+            for i in range(len(self.fileName)):
+                if '_imps_0' in self.fileName[i]:
+                    if '_header_' in self.fileName[i]:
+                        emmHeader.append(self.fileName[i])
+                    else:
+                        emmSignal.append(self.fileName[i])
+                if '_auxin0_' in self.fileName[i]:
+                    if '_header_' in self.fileName[i]:
+                        excHeader.append(self.fileName[i])
+                    else:
+                        excSignal.append(self.fileName[i])
+                if '_r_avg_' in self.fileName[i]:
+                    if '_header_' in self.fileName[i]:
+                        impHeader.append(self.fileName[i])
+                    else:
+                        impSignal.append(self.fileName[i])
+
+            if len(emmHeader) == 0:
+                emmHeader.append(askopenfilenames(title="Select emission header")[0])
+            if len(emmSignal) == 0:
+                emmSignal.append(askopenfilenames(title="Select emission data")[0])
+            if len(excHeader) == 0:
+                excHeader.append(askopenfilenames(title="Select excitation header")[0])
+            if len(excSignal) == 0:
+                excSignal.append(askopenfilenames(title="Select excitation data")[0])
+
+            if len(emmHeader) == 0 or len(emmSignal) == 0 or len(excHeader) == 0 or len(excSignal) == 0:
+                print("No valid data files selected (none contained a number in the filename).")
+                return -1
+
+            if self.rootFolder is None:
+                idx = self.fileName[0][::-1].find('/')
+                self.rootFolder = self.fileName[0][:-idx]
+
+            strippedEmmHeader = emmHeader[0].replace(self.rootFolder,"")
+            strippedEmmSignal = emmSignal[0].replace(self.rootFolder,"")
+            strippedExcHeader = excHeader[0].replace(self.rootFolder,"")
+            strippedExcSignal = excSignal[0].replace(self.rootFolder,"")
+
+            # with open(emmHeader[0], 'r', encoding='utf-8') as file:
+            #     test = pd.read_csv(file, sep=';')
+            # print(test)
+
+            header = pd.read_csv(emmHeader[0], sep=';')
+            headerKeys = list(header)
+            dataNames = header[headerKeys[16]]
+            dataLengths = header[headerKeys[22]]
+            dataReps = header[headerKeys[28]]
+
+            tempT = []
+            for i in range(len(dataNames)):
+                stopIdx = header[dataNames[i]].find('C_')
+                if header[dataNames[i]][0]=='p':
+                    t0 = '+'
+                    t = header[dataNames[i]][1:stopIdx]
+                    t = t0 + t
+                else:
+                    if header[dataNames[i]][0]=='n':
+                        t0 = '-'
+                        t = header[dataNames[i]][1:stopIdx]
+                        t = t0 + t
+                    else:
+                        t = header[dataNames[i]][:stopIdx]
                 if t.strip():
-                    self.dataTemps.append(int(float(t))+273)
+                    # self.dataTemps.append()
+                    tempT.append(int(float(t))+273)
                 else:
                     print(f"Warning: Could not extract temperature from filename: {self.fileName[i]}")
 
-        try:
-            data = dict()
-            for i in range(len(self.fileName)):
-                with open(self.fileName[i], 'r', encoding='utf-8') as file:
-                    data[self.dataTemps[i]] = json.load(file)
-            self.dataValues = data
-            with open(self.rootFolder+'runParams.txt', 'r', encoding='utf-8') as file:
-                param = json.load(file)
-            self.dataParams = param
-            return 0
-        
-        except FileNotFoundError:
-            print("Error: Params file does not exist.")
-            self.fileName = None
-            return -1
+            print(tempT)
+            signal = pd.read_csv(emmSignal[0], sep=';')
+            return header, signal
+            # print(emmHeader)
+            # print(emmSignal)
+            # print(excHeader)
+            # print(excSignal)
 
         # except json.JSONDecodeError:
         #     data = pd.read_csv(self.fileName, header=None, skiprows=1, sep=';')
