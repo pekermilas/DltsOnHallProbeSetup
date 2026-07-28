@@ -1073,7 +1073,7 @@ class impdData:
 
         return delCNormalized
 
-    def test(self, t1=None, t2=None, plot=False):
+    def test(self, t1=None, t2=None, plot=True):
         if t1 is None:
             t1 = np.arange(1,3,1) * 0.010
         if t2 is None:
@@ -1088,417 +1088,39 @@ class impdData:
                                                         smoothCapacitance=False, plot=False)
                     csC = CubicSpline(temp[:,0], temp[:,3])
                     bounds = [(np.min(temp[:,0]), np.max(temp[:,0]))]
-                    result = differential_evolution(csC, bounds, integrality=[True])
+                    # result = differential_evolution(csC, bounds, integrality=[True])
+                    result = differential_evolution(csC, bounds)
                     maxC = -result.fun
                     maxT = result.x[0]
                     C[idx] = np.array([t1[i],t2[j], maxT, maxC])
                     idx += 1
 
+        if plot:
+            fig, ax = plt.subplots()
+            levels = np.arange(np.min(C[:, 2]), np.max(C[:, 2]), (np.max(C[:, 2])-np.min(C[:, 2]))/40)
+            cntr = ax.tricontourf(C[:, 0], C[:, 1], C[:, 2], levels=levels, cmap='inferno')
+            ax.tricontour(C[:, 0], C[:, 1], C[:, 2], levels=levels,
+                          colors=['0.25', '0.5', '0.5', '0.5', '0.5'],
+                          linewidths=[1.0, 0.5, 0.5, 0.5, 0.5])
+            ax.set_xlabel(r"$t_{1} (s)$", fontsize=10)
+            ax.set_ylabel(r"$t_{2} (s)$", fontsize=10)
+            # ax.set_title(f'i = {idx}  /  T = {T} K    (left/right to navigate)', fontsize=11)++++++++++
+            cbar = fig.colorbar(cntr, ax=ax)
+            cbar.set_label("Maximum T (K) Value Scale")
+            plt.show()
+
+            fig, ax = plt.subplots()
+            levels = np.arange(np.min(C[:, 3]), np.max(C[:, 3]), (np.max(C[:, 3]) - np.min(C[:, 3])) / 40)
+            cntr = ax.tricontourf(C[:, 0], C[:, 1], C[:, 3], levels=levels, cmap='viridis')
+            ax.tricontour(C[:, 0], C[:, 1], C[:, 3], levels=levels,
+                          colors=['0.25', '0.5', '0.5', '0.5', '0.5'],
+                          linewidths=[1.0, 0.5, 0.5, 0.5, 0.5])
+            ax.set_xlabel(r"$t_{1} (s)$", fontsize=10)
+            ax.set_ylabel(r"$t_{2} (s)$", fontsize=10)
+            # ax.set_title(f'i = {idx}  /  T = {T} K    (left/right to navigate)', fontsize=11)
+            cbar = fig.colorbar(cntr, ax=ax)
+            cbar.set_label("Maximum Delta C Value Scale")
+            plt.show()
+
         return C
 
-
-
-
-
-    # def calculateDeltaCapacitanceT1T2(self, t1, t2, plot=False):
-    #     emiss, _ = self.sampleEmissions()
-    #     allPairs = np.array(list(itertools.product(t1,t2)))
-    #     delTs = allPairs[allPairs[:,0] < allPairs[:,1]]
-    #
-    #     delC = np.zeros((len(self.dataTemps),len(delTs)+1))
-    #     errC = np.zeros((len(self.dataTemps),len(delTs)+1))
-    #     for i in range(len(self.dataTemps)):
-    #         t = self.dataTemps[i]
-    #         groups = emiss.get(t, {})
-    #         if len(groups) == 0:
-    #             raise ValueError(f"No selected data groups found for temperature {t} K.")
-    #
-    #         # Prefer the longest group for downstream delta-C calculations.
-    #         best_key = max(groups, key=lambda k: groups[k].shape[0])
-    #         data_xy = groups[best_key]
-    #         x = data_xy[:, 0]
-    #         y = data_xy[:, 1]
-    #         err = np.full_like(y, np.std(y) if y.size > 0 else 0.0, dtype=float)
-    #         yCS = CubicSpline(x, y, bc_type='natural')
-    #         errCS = CubicSpline(x, err, bc_type='natural')
-    #
-    #         delC[i,0] = t
-    #         errC[i,0] = t
-    #         for j in range(len(delTs)):
-    #             p0 = yCS(delTs[j,0])
-    #             e0 = np.abs(errCS(delTs[j,0]))
-    #             p1 = yCS(delTs[j,1])
-    #             e1 = np.abs(errCS(delTs[j,1]))
-    #
-    #             delC[i, j + 1] = p1-p0
-    #             errC[i, j + 1] = np.sqrt(e1*e1+e0*e0)
-    #     for i in range(1,len(delTs)+1):
-    #         errC[errC[:,i]==np.max(errC[:,i]),i]=0
-    #
-    #     # ADD ERRORS!!!
-    #
-    #     if plot:
-    #         fig, ax = plt.subplots(figsize=(12, 10), ncols=2, nrows=len(delTs)//2, sharex=True, sharey=True)
-    #         for i in range(len(delTs)//2):
-    #             lbl0 = 't2=' + str(int(delTs[2*i,1]*1000)) + 'ms - t1=' + \
-    #                 str(int(delTs[2*i,0]*1000)) + 'ms'
-    #             lbl1 = 't2=' + str(int(delTs[2*i+1,1]*1000)) + 'ms - t1=' + \
-    #                 str(int(delTs[2*i+1,0]*1000)) + 'ms'
-    #
-    #             c0 = 1 # This needs to be corrected for C(steady-state) value
-    #             e0 = 1  # This needs to be corrected for C(steady-state) value
-    #             ax[i,0].plot(delC[:,0], delC[:,2*i+1]/c0,'-',color='blue',linewidth=1)
-    #             ax[i,0].errorbar(delC[:,0], delC[:,2*i+1]/c0,
-    #                              yerr=errC[:,2*i+1]/e0, label=lbl0, fmt='o', color='r',
-    #                              markersize=3, ecolor='cyan', elinewidth=1)
-    #             ax[i,0].legend(fontsize=12)
-    #             ax[i,0].tick_params(axis='x', labelsize=18)
-    #             ax[i,0].tick_params(axis='y', labelsize=18)
-    #             ax[i,0].set_ylim([-0.01*np.min(delC[:,2*i+1]/c0),
-    #                               2.0*np.max(delC[:,2*i+1]/c0)])
-    #             # ax[i,0].set_ylim([0.0,1.05])
-    #             # ax[i,0].set_yticks([0.5])
-    #             ax[i,0].set_xticks([50-23, 100-23, 150-23, 200-23],
-    #                                labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
-    #
-    #             c1 = 1 # This needs to be corrected for C(steady-state) value
-    #             e1 = 1  # This needs to be corrected for C(steady-state) value
-    #             ax[i,1].plot(delC[:,0], delC[:,2*i+2]/c1,'-',color='blue',linewidth=1)
-    #             ax[i,1].errorbar(delC[:,0], delC[:,2*i+2]/c1,
-    #                              yerr=errC[:,2*i+2]/e1, label=lbl1, fmt='o', color='r',
-    #                              markersize=3, ecolor='cyan', elinewidth=1)
-    #             ax[i,1].legend(fontsize=12)
-    #             ax[i,1].tick_params(axis='x', labelsize=18)
-    #             ax[i,1].tick_params(axis='y', labelsize=18)
-    #             ax[i,1].set_ylim([-0.01*np.min(delC[:,2*i+2]/c1),
-    #                               2.0*np.max(delC[:,2*i+2]/c1)])
-    #             # ax[i,1].set_ylim([0.0,1.05])
-    #             # ax[i,1].set_yticks([0.5])
-    #             ax[i,1].set_xticks([50-23, 100-23, 150-23, 200-23],
-    #                                labels=[str(50+200), str(100+200), str(150+200), str(200+200)])
-    #
-    #         fig.supxlabel(r'Temperature ($^\circ$K)', fontsize=18)
-    #         fig.supylabel(r'$\delta C$/C', fontsize=18)
-    #         fig.subplots_adjust(top=0.975, bottom=0.090,
-    #                             left=0.070, right=0.990,
-    #                             wspace=0.000, hspace=0.0)
-    #
-    #         plt.show()
-    #
-    #     return delC, errC, delTs
-    #
-    # # This fit function uses PDF estimate of the data and fit via mixture models.
-    # @staticmethod
-    # def fitDeltaCapacitanceVsTemperatureFitToMixtures(xx, yy, err, nComponents=2,
-    #                                                   nDrawnPoints=10000, mixtureType='lognormal',
-    #                                                   plot=True):
-    #     x = np.array(xx, dtype=float)
-    #     y = np.array(yy, dtype=float)
-    #     err = np.array(err, dtype=float)
-    #
-    #     mixtureType = mixtureType.strip().lower()
-    #     if mixtureType not in ('gaussian', 'lognormal'):
-    #         raise ValueError("mixtureType must be 'gaussian' or 'lognormal', got: " + str(mixtureType))
-    #
-    #     # Reflect the y graph around x = x[-1] (horizontal mirror of the curve)
-    #     # so that y at mirrored x[0] position equals y[0]
-    #     xMirror = 2.0 * x[-1] - x[-2::-1]  # mirror x about x[-1], excluding pivot
-    #     yMirror = y[-2::-1]                   # reverse y values (y at x[0] maps to far end)
-    #     errMirror = err[-2::-1]               # mirror errors (symmetric)
-    #     xOrig = np.array(x, copy=True)        # save original x range for reflecting back
-    #
-    #     # Use only reflected y for calculation (do not merge with original)
-    #     # Normalize reflected y to create a PDF (area under curve = 1)
-    #     spl = make_smoothing_spline(xMirror, yMirror)
-    #     area, _ = quad(lambda val: float(spl(val)), xMirror[0], xMirror[-1])
-    #     yNorm = yMirror / area
-    #
-    #     # Build normalized spline for sampling
-    #     splNorm = make_smoothing_spline(xMirror, yNorm)
-    #
-    #     # Draw points from the PDF using inverse CDF sampling
-    #     xFine = np.linspace(xMirror[0], xMirror[-1], nDrawnPoints)
-    #     pdfFine = splNorm(xFine)
-    #     pdfFine = np.maximum(pdfFine, 0)
-    #     cdf = np.cumsum(pdfFine)
-    #     cdf = cdf / cdf[-1]
-    #     u = np.random.uniform(0, 1, nDrawnPoints)
-    #     samples = np.interp(u, cdf, xFine)
-    #
-    #     # Fit mixture model to the drawn samples (in reflected space)
-    #     torch.manual_seed(0)
-    #     data_tensor = torch.tensor(samples.reshape(-1, 1), dtype=torch.float32)
-    #
-    #     sample_mean = float(np.mean(samples))
-    #     sample_var = float(np.var(samples))
-    #     dists = []
-    #     for k in range(nComponents):
-    #         if mixtureType == 'lognormal':
-    #             log_samples = np.log(np.maximum(samples, 1e-12))
-    #             log_mean = float(np.mean(log_samples))
-    #             log_var = float(np.var(log_samples))
-    #             d = LogNormal(
-    #                 means=torch.tensor([log_mean + (k - nComponents / 2.0) * 0.5], dtype=torch.float32),
-    #                 covs=torch.tensor([[log_var]], dtype=torch.float32),
-    #             )
-    #         else:  # gaussian
-    #             d = Normal(
-    #                 means=torch.tensor([sample_mean + (k - nComponents / 2.0) * 0.5 * np.sqrt(sample_var)], dtype=torch.float32),
-    #                 covs=torch.tensor([[sample_var]], dtype=torch.float32),
-    #             )
-    #         dists.append(d)
-    #     model = GeneralMixtureModel(dists)
-    #     model.fit(data_tensor)
-    #
-    #     # Extract fit parameters
-    #     gmm_means = [model.distributions[j].means.detach().numpy().flatten()[0] for j in range(nComponents)]
-    #     gmm_covs = [model.distributions[j].covs.detach().numpy().flatten()[0] for j in range(nComponents)]
-    #     gmm_weights = model.priors.detach().numpy().flatten()
-    #
-    #     # Build mixture PDF on reflected x range
-    #     xPlot = np.linspace(xMirror[0], xMirror[-1], 1000)
-    #     mixPdf = np.zeros_like(xPlot)
-    #     for j in range(nComponents):
-    #         mu = gmm_means[j]
-    #         sigma2 = gmm_covs[j]
-    #         sigma = np.sqrt(sigma2)
-    #         if mixtureType == 'lognormal':
-    #             mixPdf += gmm_weights[j] * (1.0 / (xPlot * sigma * np.sqrt(2 * np.pi))) * \
-    #                 np.exp(-0.5 * (np.log(xPlot) - mu)**2 / sigma2)
-    #         else:  # gaussian
-    #             mixPdf += gmm_weights[j] * (1.0 / (sigma * np.sqrt(2 * np.pi))) * \
-    #                 np.exp(-0.5 * (xPlot - mu)**2 / sigma2)
-    #     mixPdf = np.nan_to_num(mixPdf, nan=0.0, posinf=0.0, neginf=0.0)
-    #
-    #     # Reflect back: map mirrored x back to original x range
-    #     xOrigMax = xOrig[-1]
-    #     xReflectedBack = 2.0 * xOrigMax - xMirror
-    #     yReflectedBack = yMirror
-    #
-    #     # Reflect samples back
-    #     samplesBack = 2.0 * xOrigMax - samples
-    #
-    #     # Reflect fit curve back
-    #     xPlotBack = 2.0 * xOrigMax - xPlot
-    #     mixPdfBack = mixPdf
-    #     sortIdx = np.argsort(xPlotBack)
-    #     xPlotBack = xPlotBack[sortIdx]
-    #     mixPdfBack = mixPdfBack[sortIdx]
-    #
-    #     # Plot reflected-back y, histogram of reflected-back samples, and mixture fit overlaid
-    #     if plot:
-    #         fitLabel = mixtureType.capitalize() + ' mixture fit (reflected back)'
-    #         fig, ax = plt.subplots(figsize=(10, 6))
-    #         ax.plot(xReflectedBack, yReflectedBack, 'ro-', markersize=4, label='Reflected-back y')
-    #         ax2 = ax.twinx()
-    #         ax2.hist(samplesBack, bins=50, density=True, alpha=0.4, color='gray', label='Drawn samples (reflected back)')
-    #         ax2.plot(xPlotBack, mixPdfBack, 'b-', linewidth=2, label=fitLabel)
-    #         ax.set_xlabel('Temperature', fontsize=14)
-    #         ax.set_ylabel('Delta Capacitance', fontsize=14)
-    #         ax2.set_ylabel('Probability Density', fontsize=14)
-    #         lines1, labels1 = ax.get_legend_handles_labels()
-    #         lines2, labels2 = ax2.get_legend_handles_labels()
-    #         ax.legend(lines1 + lines2, labels1 + labels2, fontsize=12)
-    #         ax.set_title('Reflected-back y and ' + str(nComponents) + '-component ' + mixtureType.capitalize() + ' mixture fit', fontsize=14)
-    #         plt.tight_layout()
-    #         plt.show()
-    #
-    #     def spline_fit_func(temp):
-    #         return spl(2.0 * xOrigMax - temp)
-    #
-    #     def mixture_fit_func(temp):
-    #         tPlot = 2.0 * xOrigMax - np.array(temp, dtype=float)
-    #         mixPdf = np.zeros_like(tPlot, dtype=float)
-    #         for j in range(nComponents):
-    #             mu = gmm_means[j]
-    #             sigma2 = gmm_covs[j]
-    #             sigma = np.sqrt(sigma2)
-    #             if mixtureType == 'lognormal':
-    #                 valid = tPlot > 0
-    #                 if np.any(valid):
-    #                     mixPdf[valid] += gmm_weights[j] * (1.0 / (tPlot[valid] * sigma * np.sqrt(2 * np.pi))) * \
-    #                         np.exp(-0.5 * (np.log(tPlot[valid]) - mu)**2 / sigma2)
-    #             else:  # gaussian
-    #                 mixPdf += gmm_weights[j] * (1.0 / (sigma * np.sqrt(2 * np.pi))) * \
-    #                     np.exp(-0.5 * (tPlot - mu)**2 / sigma2)
-    #         mixPdf = np.nan_to_num(mixPdf, nan=0.0, posinf=0.0, neginf=0.0)
-    #         return mixPdf * area
-    #
-    #     return model, spline_fit_func, mixture_fit_func, samples, samplesBack, gmm_means, gmm_covs, gmm_weights
-    #
-    # # This fit function uses non-linear least squares to fit a mixture model to the data.
-    # @staticmethod
-    # def fitDeltaCapacitanceVsTemperatureFitToFunctions(xx, yy, err, nComponents=[2,3],
-    #                                                    mixtureType='lognormal', plot=True):
-    #     x = np.array(xx, dtype=float)
-    #     y = np.array(yy, dtype=float)
-    #     err = np.array(err, dtype=float)
-    #
-    #     mixtureType = mixtureType.strip().lower()
-    #     # Validate mixtureType
-    #     if mixtureType not in ('gaussian', 'lognormal'):
-    #         print(f"Warning: mixtureType must be 'gaussian' or 'lognormal'. Defaulting to 'lognormal'.")
-    #         mixtureType = 'lognormal'
-    #
-    #     # Reflect the data across the vertical line x = x[-1] (horizontal reflection)
-    #     xMirror = 2.0 * x[-1] - x[-2::-1]  # mirror x about x[-1], excluding pivot
-    #     yMirror = y[-2::-1]                   # reverse y values to match mirrored x
-    #     errMirror = err[-2::-1]               # mirror errors
-    #
-    #     # Use only reflected data
-    #     xFull = xMirror
-    #     yFull = yMirror
-    #     errFull = errMirror
-    #
-    #     # Fit a smoothing cubic spline to the reflected data
-    #     spl = make_smoothing_spline(xFull, yFull)
-    #
-    #     # Plotting preparation
-    #     xPlot = np.linspace(xFull[0], xFull[-1], 1000)
-    #     yPlot_spline = spl(xPlot)
-    #
-    #     # lmfit iterative fitting over nComponents to find the best redchi
-    #     if mixtureType == 'gaussian':
-    #         CompModel = GaussianModel
-    #     else:
-    #         CompModel = LognormalModel
-    #
-    #     best_result = None
-    #     best_redchi = np.inf
-    #     best_n = 0
-    #
-    #     for n in range(nComponents[0], nComponents[1] + 1):
-    #         model = None
-    #         for i in range(1, n + 1):
-    #             prefix = f'c{i}_'
-    #             if model is None:
-    #                 model = CompModel(prefix=prefix)
-    #             else:
-    #                 model += CompModel(prefix=prefix)
-    #
-    #         params = model.make_params()
-    #
-    #         # Initial guesses based on dividing the x range
-    #         x_range = xFull[-1] - xFull[0]
-    #         for i in range(1, n + 1):
-    #             prefix = f'c{i}_'
-    #             x_target = xFull[0] + (i - 0.5) * (x_range / n)
-    #             idx = np.abs(xFull - x_target).argmin()
-    #
-    #             if mixtureType == 'lognormal':
-    #                 params[prefix + 'center'].set(value=np.log(max(xFull[idx], 1e-3)),
-    #                                               min=np.log(max(1e-3, np.min(xFull) / 10.0)),
-    #                                               max=np.log(np.max(xFull) * 10.0))
-    #                 params[prefix + 'amplitude'].set(value=max(yFull[idx] * 10, 1e-3),
-    #                                                  min=0,
-    #                                                  max=max(yFull) * x_range * 100.0)
-    #                 params[prefix + 'sigma'].set(value=0.1, min=0.01, max=5.0)
-    #             else:  # gaussian
-    #                 params[prefix + 'center'].set(value=xFull[idx],
-    #                                               min=xFull[0] - x_range,
-    #                                               max=xFull[-1] + x_range)
-    #                 params[prefix + 'amplitude'].set(value=max(yFull[idx] * 10, 1e-3),
-    #                                                  min=0,
-    #                                                  max=max(yFull) * x_range * 100.0)
-    #                 params[prefix + 'sigma'].set(value=x_range / (n * 5.0), min=0.01, max=x_range)
-    #
-    #         # Perform the fit
-    #         weights = 1.0 / np.where(errFull > 0, errFull, np.mean(errFull[errFull > 0]) if np.any(errFull > 0) else 1.0)
-    #         try:
-    #             result_tmp = model.fit(yFull, params, x=xFull, weights=weights)
-    #             if np.abs(1-result_tmp.redchi) < np.abs(1.-best_redchi):
-    #                 best_redchi = result_tmp.redchi
-    #                 best_result = result_tmp
-    #                 best_n = n
-    #         except Exception as e:
-    #             print(f"Fit failed for n={n}: {e}")
-    #
-    #     if best_result is None:
-    #         print("Warning: All fits failed in fitDeltaCapacitanceVsTemperatureFitToFunctions.")
-    #         return None, spl, lambda temp: np.zeros_like(temp)
-    #
-    #     result = best_result
-    #     nComponentsBest = best_n
-    #     yPlot_lmfit = result.eval(x=xPlot)
-    #
-    #     # Reflect back: map mirrored data and fits back to original x range
-    #     xOrigMax = x[-1]
-    #     xBack = 2.0 * xOrigMax - xFull
-    #     yBack = yFull
-    #     errBack = errFull
-    #
-    #     xPlotBack = 2.0 * xOrigMax - xPlot
-    #     yPlot_spline_back = yPlot_spline
-    #     yPlot_lmfit_back = yPlot_lmfit
-    #
-    #     # Sort for proper line plotting in original space
-    #     sortIdxBack = np.argsort(xBack)
-    #     xBack = xBack[sortIdxBack]
-    #     yBack = yBack[sortIdxBack]
-    #     errBack = errBack[sortIdxBack]
-    #
-    #     sortIdxPlot = np.argsort(xPlotBack)
-    #     xPlotBack = xPlotBack[sortIdxPlot]
-    #     yPlot_spline_back = yPlot_spline_back[sortIdxPlot]
-    #     yPlot_lmfit_back = yPlot_lmfit_back[sortIdxPlot]
-    #
-    #     # Plot the back-reflected data, spline fit, and lmfit result overlayed
-    #     if plot:
-    #         fig, ax = plt.subplots(figsize=(10, 6))
-    #         ax.errorbar(xBack, yBack, yerr=errBack, fmt='ro', markersize=4,
-    #                     ecolor='gray', elinewidth=1, capsize=2, label='Back-Reflected Data')
-    #         ax.plot(xPlotBack, yPlot_spline_back, 'b-', linewidth=2, label='Smoothing Spline Fit (Back-Reflected)')
-    #         ax.plot(xPlotBack, yPlot_lmfit_back, 'g--', linewidth=2, label=f'{nComponentsBest}-Comp {mixtureType.capitalize()} Fit (Best, lmfit, Back-Reflected)')
-    #
-    #         ax.set_xlabel('Temperature', fontsize=14)
-    #         ax.set_ylabel('Delta Capacitance', fontsize=14)
-    #         ax.legend(fontsize=12)
-    #         ax.set_title(f'Comparison of Back-Reflected Fits ({mixtureType.capitalize()})', fontsize=14)
-    #         plt.tight_layout()
-    #         plt.show()
-    #
-    #     # Define the fit functions that work on the original temperature range (back-reflected)
-    #     def spline_fit_func(temp):
-    #         return spl(2.0 * xOrigMax - temp)
-    #
-    #     def lmfit_fit_func(temp):
-    #         return result.eval(x=2.0 * xOrigMax - temp)
-    #
-    #     return result, spline_fit_func, lmfit_fit_func
-    #
-    # def findDeltaCapacitanceMaxima(self,delCx, delCy, delCErr, nComponents=[2,3],
-    #                                mixtureType='lognormal', plot=True, fitMethod='lmfit'):
-    #     result = []
-    #     csModel = []
-    #     lmModel = []
-    #     for i in range(delCy.shape[1]):
-    #         xx = np.array(delCx, copy=True)
-    #         yy = np.array(delCy[:, i], copy=True)
-    #         err = np.array(delCErr[:, i], copy=True)
-    #         if fitMethod == 'lmfit':
-    #             temp = self.fitDeltaCapacitanceVsTemperatureFitToFunctions(xx, yy, err,
-    #                                                                       nComponents, mixtureType,
-    #                                                                       plot=plot)
-    #         if fitMethod == 'mixtures':
-    #             temp = self.fitDeltaCapacitanceVsTemperatureFitToMixtures(xx, yy, err,
-    #                                                                       nComponents[0], 10000,
-    #                                                                       mixtureType, plot=plot)
-    #         result.append(temp[0])
-    #         csModel.append(temp[1])
-    #         lmModel.append(temp[2])
-    #         if result[-1] is not None:
-    #             if hasattr(result[-1], 'redchi'):
-    #                 print(result[-1].redchi)
-    #             else:
-    #                 print("Fit completed (mixture model method).")
-    #         else:
-    #             print("Fit failed for this curve.")
-    #     return result, csModel, lmModel
-
-
-            
-            
-            
-            
-            
-            
