@@ -190,27 +190,27 @@ class impdData:
             dataLengths = header[headerKeys[22]]
             dataReps = header[headerKeys[28]]
 
-            tempT = []
-            for i in range(len(dataNames)):
-                stopIdx = header[dataNames[i]].find('C_')
-                if header[dataNames[i]][0]=='p':
-                    t0 = '+'
-                    t = header[dataNames[i]][1:stopIdx]
-                    t = t0 + t
-                else:
-                    if header[dataNames[i]][0]=='n':
-                        t0 = '-'
-                        t = header[dataNames[i]][1:stopIdx]
-                        t = t0 + t
-                    else:
-                        t = header[dataNames[i]][:stopIdx]
-                if t.strip():
-                    # self.dataTemps.append()
-                    tempT.append(int(float(t))+273)
-                else:
-                    print(f"Warning: Could not extract temperature from filename: {self.fileName[i]}")
-
-            print(tempT)
+            # tempT = []
+            # for i in range(len(dataNames)):
+            #     stopIdx = header[dataNames[i]].find('C_')
+            #     if header[dataNames[i]][0]=='p':
+            #         t0 = '+'
+            #         t = header[dataNames[i]][1:stopIdx]
+            #         t = t0 + t
+            #     else:
+            #         if header[dataNames[i]][0]=='n':
+            #             t0 = '-'
+            #             t = header[dataNames[i]][1:stopIdx]
+            #             t = t0 + t
+            #         else:
+            #             t = header[dataNames[i]][:stopIdx]
+            #     if t.strip():
+            #         # self.dataTemps.append()
+            #         tempT.append(int(float(t))+273)
+            #     else:
+            #         print(f"Warning: Could not extract temperature from filename: {self.fileName[i]}")
+            #
+            # print(tempT)
             signal = pd.read_csv(emmSignal[0], sep=';')
             return header, signal
             # print(emmHeader)
