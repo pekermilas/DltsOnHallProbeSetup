@@ -1098,15 +1098,21 @@ class impdData:
         if plot:
             fig, ax = plt.subplots()
             levels = np.arange(np.min(C[:, 2]), np.max(C[:, 2]), (np.max(C[:, 2])-np.min(C[:, 2]))/40)
-            cntr = ax.tricontourf(C[:, 0], C[:, 1], C[:, 2], levels=levels, cmap='inferno')
+            cntr = ax.tricontourf(C[:, 0], C[:, 1], C[:, 2], levels=levels, cmap='viridis')
             ax.tricontour(C[:, 0], C[:, 1], C[:, 2], levels=levels,
                           colors=['0.25', '0.5', '0.5', '0.5', '0.5'],
-                          linewidths=[1.0, 0.5, 0.5, 0.5, 0.5])
+                          # linewidths=[1.0, 0.5, 0.5, 0.5, 0.5])
+                          linewidths=[0.2, 0.1, 0.1, 0.1, 0.1])
+            ax.scatter(C[C[:, 1] == 2*C[:, 0], 0], C[C[:, 1] == 2*C[:, 0], 1], marker='*', color='red', label='2x')
+            ax.scatter(C[C[:, 1] == 5*C[:, 0], 0], C[C[:, 1] == 5*C[:, 0], 1], marker='x', color='black', label='5x')
+            ax.scatter(C[C[:, 1] == 10*C[:, 0], 0], C[C[:, 1] == 10*C[:, 0], 1], marker='+', color='blue', label='10x')
+            ax.scatter(C[C[:, 1] == 20*C[:, 0], 0], C[C[:, 1] == 20*C[:, 0], 1], marker='D', color='magenta', label='20x')
             ax.set_xlabel(r"$t_{1} (s)$", fontsize=10)
             ax.set_ylabel(r"$t_{2} (s)$", fontsize=10)
             # ax.set_title(f'i = {idx}  /  T = {T} K    (left/right to navigate)', fontsize=11)++++++++++
             cbar = fig.colorbar(cntr, ax=ax)
             cbar.set_label("Maximum T (K) Value Scale")
+            plt.legend()
             plt.show()
 
             fig, ax = plt.subplots()
@@ -1114,10 +1120,15 @@ class impdData:
             cntr = ax.tricontourf(C[:, 0], C[:, 1], C[:, 3], levels=levels, cmap='viridis')
             ax.tricontour(C[:, 0], C[:, 1], C[:, 3], levels=levels,
                           colors=['0.25', '0.5', '0.5', '0.5', '0.5'],
-                          linewidths=[1.0, 0.5, 0.5, 0.5, 0.5])
+                          # linewidths=[1.0, 0.5, 0.5, 0.5, 0.5])
+                          linewidths=[0.2, 0.1, 0.1, 0.1, 0.1])
             ax.set_xlabel(r"$t_{1} (s)$", fontsize=10)
             ax.set_ylabel(r"$t_{2} (s)$", fontsize=10)
             # ax.set_title(f'i = {idx}  /  T = {T} K    (left/right to navigate)', fontsize=11)
+            ax.scatter(C[C[:, 1] == 2*C[:, 0], 0], C[C[:, 1] == 2*C[:, 0], 1], marker='*', color='red', label='2x')
+            ax.scatter(C[C[:, 1] == 5*C[:, 0], 0], C[C[:, 1] == 5*C[:, 0], 1], marker='x', color='black', label='5x')
+            ax.scatter(C[C[:, 1] == 10*C[:, 0], 0], C[C[:, 1] == 10*C[:, 0], 1], marker='+', color='blue',label='10x')
+            ax.scatter(C[C[:, 1] == 20*C[:, 0], 0], C[C[:, 1] == 20*C[:, 0], 1], marker='D', color='magenta', label='20x')
             cbar = fig.colorbar(cntr, ax=ax)
             cbar.set_label("Maximum Delta C Value Scale")
             plt.show()
