@@ -153,8 +153,10 @@ class impdData:
             self.fileName = askopenfilenames(title="Select a file",
                 filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")])
 
-        if isinstance(self.fileName, str):
-            self.fileName = [self.fileName]
+        self.fileName = self._normalize_file_selection(self.fileName)
+        if not self.fileName:
+            print("No files selected.")
+            return -1
 
         # data is a structure of nested dictionaries.
         # First layer of the dictionary has data temperatures as keys.
@@ -168,48 +170,47 @@ class impdData:
         # AuxInput1 : Demodulation signal or Excitation in units of Volts
         # AbsZ : Absolute value of Impedance in units of Ohms
 
-        if self.fileName[0][-3:]=='txt':
+        file_ext = os.path.splitext(self.fileName[0])[1].lower()
+
+        if file_ext == '.txt':
             # Skip files whose name (excluding path) contains no numeric digits.
             filtered = []
             for f in self.fileName:
-                basename = f.replace('\\', '/').rsplit('/', 1)[-1]
+                basename = os.path.basename(f)
                 if any(c.isdigit() for c in basename):
                     filtered.append(f)
                 else:
                     print(f"Skipping '{basename}': no number found in filename.")
-            self.fileName = filtered
 
-            if not self.fileName:
+            if not filtered:
                 print("No valid data files selected (none contained a number in the filename).")
                 return -1
+
+            self.fileName = filtered
 
             if self.rootFolder is None:
                 self.rootFolder = os.path.dirname(self.fileName[0]) + os.sep
 
-            strippedFName = []
-            for i in range(len(self.fileName)):
-                temp = self.fileName[i].replace(self.rootFolder,"")
-                strippedFName.append(temp)
-
-            if self.dataTemps is None:
-                self.dataTemps = []
-                for i in range(len(self.fileName)):
-                    idx = strippedFName[i].find('.')
-                    t0 = '+' if strippedFName[i][0]=='p' else '-'
-                    t = strippedFName[i][1:idx].replace("p",".")
-                    t = t0 + t
-                    if t.strip():
-                        self.dataTemps.append(int(float(t))+273)
-                    else:
-                        print(f"Warning: Could not extract temperature from filename: {self.fileName[i]}")
-
             try:
                 data = dict()
-                for i in range(len(self.fileName)):
-                    with open(self.fileName[i], 'r', encoding='utf-8') as file:
-                        data[self.dataTemps[i]] = json.load(file)
+                data_temps = []
+                for file_path in self.fileName:
+                    temp = self._extract_txt_temperature(file_path)
+                    if temp is None:
+                        print(f"Warning: Could not extract temperature from filename: {file_path}")
+                        continue
+                    with open(file_path, 'r', encoding='utf-8') as file:
+                        data[temp] = json.load(file)
+                    data_temps.append(temp)
+
+                if not data:
+                    print("No valid TXT data could be parsed.")
+                    return -1
+
+                self.dataTemps = data_temps
                 self.dataValues = data
-                with open(self.rootFolder+'runParams.txt', 'r', encoding='utf-8') as file:
+                params_path = os.path.join(self.rootFolder, 'runParams.txt')
+                with open(params_path, 'r', encoding='utf-8') as file:
                     param = json.load(file)
                 self.dataParams = param
                 return 0
@@ -219,7 +220,7 @@ class impdData:
                 self.fileName = None
                 return -1
 
-        if self.fileName[0][-3:] == 'csv':
+        if file_ext == '.csv':
             emmHeader = []
             emmSignal = []
             excHeader = []
@@ -260,68 +261,54 @@ class impdData:
             if self.rootFolder is None:
                 self.rootFolder = os.path.dirname(self.fileName[0]) + os.sep
 
-            strippedEmmHeader = emmHeader[0].replace(self.rootFolder,"")
-            strippedEmmSignal = emmSignal[0].replace(self.rootFolder,"")
-            strippedExcHeader = excHeader[0].replace(self.rootFolder,"")
-            strippedExcSignal = excSignal[0].replace(self.rootFolder,"")
-
             header = pd.read_csv(emmHeader[0], sep=';')
             headerKeys = list(header)
             dataNames = header[headerKeys[16]].to_list()
-            dataLengths = header[headerKeys[22]].to_numpy()
-            dataReps = header[headerKeys[28]].to_numpy()
 
-            if self.dataTemps is None:
-                self.dataTemps = []
+            temp_pairs = []
             for i in range(len(dataNames)):
-                stopIdx = dataNames[i].find('C_')
-                if dataNames[i][0]=='p':
-                    t0 = '+'
-                    t = dataNames[i][1:stopIdx]
-                    t = t0 + t
-                else:
-                    if dataNames[i][0]=='n':
-                        t0 = '-'
-                        t = dataNames[i][1:stopIdx]
-                        t = t0 + t
-                    else:
-                        t = dataNames[i][:stopIdx]
-                if t.strip():
-                    self.dataTemps.append(int(float(t))+273)
-                else:
-                    print(f"Warning: Could not extract temperature from filename: {self.fileName[i]}")
+                temp = self._extract_csv_temperature(dataNames[i])
+                if temp is None:
+                    print(f"Warning: Could not extract temperature from filename: {dataNames[i]}")
+                    continue
+                temp_pairs.append((i, temp))
+
+            if not temp_pairs:
+                print("No valid CSV temperatures found.")
+                return -1
+
             try:
                 data = dict()
                 signalEmm = pd.read_csv(emmSignal[0], sep=';')
                 chunk = signalEmm['chunk'].to_numpy()
                 clockTicks = signalEmm['timestamp'].to_numpy()
                 impedance = signalEmm['value'].to_numpy()
-                for i in range(len(self.dataTemps)):
-                    data[self.dataTemps[i]] = dict()
-                    data[self.dataTemps[i]]['tickStampImps'] = clockTicks[chunk==i]
-                    data[self.dataTemps[i]]['timeStampImps'] = clockTicks[chunk==i]/(60*10**6)
-                    data[self.dataTemps[i]]['ImpedanceIm'] = impedance[chunk==i]
+                for src_idx, temp in temp_pairs:
+                    data[temp] = dict()
+                    data[temp]['tickStampImps'] = clockTicks[chunk == src_idx]
+                    data[temp]['timeStampImps'] = clockTicks[chunk == src_idx]/(60*10**6)
+                    data[temp]['ImpedanceIm'] = impedance[chunk == src_idx]
 
                 signalExc = pd.read_csv(excSignal[0], sep=';')
                 chunk = signalExc['chunk'].to_numpy()
                 clockTicks = signalExc['timestamp'].to_numpy()
                 auxInput1 = signalExc['value'].to_numpy()
-                for i in range(len(self.dataTemps)):
-                    data[self.dataTemps[i]]['tickStampDemods'] = clockTicks[chunk==i]
-                    data[self.dataTemps[i]]['timeStampDemods'] = clockTicks[chunk==i]/(60*10**6)
-                    data[self.dataTemps[i]]['AuxInput1'] = auxInput1[chunk==i]
+                for src_idx, temp in temp_pairs:
+                    data[temp]['tickStampDemods'] = clockTicks[chunk == src_idx]
+                    data[temp]['timeStampDemods'] = clockTicks[chunk == src_idx]/(60*10**6)
+                    data[temp]['AuxInput1'] = auxInput1[chunk == src_idx]
 
                 if not (len(impHeader) == 0 or len(impSignal) == 0):
                     signalImp = pd.read_csv(impSignal[0], sep=';')
                     chunk = signalImp['chunk'].to_numpy()
-                    clockTicks = signalImp['timestamp'].to_numpy()
                     impedanceAbs = signalImp['value'].to_numpy()
-                    for i in range(len(self.dataTemps)):
-                        data[self.dataTemps[i]]['AbsZ'] = impedanceAbs[chunk == i]
-                        # ZSqr = np.asarray(data[self.dataTemps[i]]['AbsZ'])**2
-                        # CSqr = np.asarray(data[self.dataTemps[i]]['ImpedanceIm'])**2
-                        data[self.dataTemps[i]]['ImpedanceRe'] = np.zeros_like(data[self.dataTemps[i]]['AbsZ'])
+                    for src_idx, temp in temp_pairs:
+                        data[temp]['AbsZ'] = impedanceAbs[chunk == src_idx]
+                        # ZSqr = np.asarray(data[temp]['AbsZ'])**2
+                        # CSqr = np.asarray(data[temp]['ImpedanceIm'])**2
+                        data[temp]['ImpedanceRe'] = np.zeros_like(data[temp]['AbsZ'])
 
+                self.dataTemps = [t for _, t in temp_pairs]
                 self.dataValues = data
                 return 0
 
@@ -329,6 +316,9 @@ class impdData:
                 print("Error: Params file does not exist.")
                 self.fileName = None
                 return -1
+
+        print("Unsupported file type. Please select .txt or .csv files.")
+        return -1
 
     def appendData(self, fName=None):
         # Use a LOCAL variable for the files to append.
