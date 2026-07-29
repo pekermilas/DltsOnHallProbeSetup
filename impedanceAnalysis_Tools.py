@@ -1071,11 +1071,15 @@ class impdData:
         return 0
 
     def selectedEmissions(self, emissionIndex=0, trimHead = 10, trimTail = 10, plot=False):
-        if self.dataEmissionClusterParams is None or self.dataEmissionLevelParams is None:
+        if self.dataEmissionClusterParams is None:
+        # if self.dataEmissionClusterParams is None or self.dataEmissionLevelParams is None:
             self.findClusters(dataType='emission', method='synced', recalculate=True, align=True)
 
         T = self.dataTemps[0]
-        maxIndex = self.dataEmissionClusterParams["clusterSizesFreqs"][T]['low'][0][1]-1
+        if self.dataEmissionClusterParams["clusterSizesFreqs"][T]['low'][0][1]-1 > 0:
+            maxIndex = self.dataEmissionClusterParams["clusterSizesFreqs"][T]['low'][0][1]-1
+        if self.dataEmissionClusterParams["clusterSizesFreqs"][T]['low'][0][1]-1 == 0:
+            maxIndex = 1
         minIndex = -1
         if emissionIndex > maxIndex:
             print(f"Warning: emissionIndex {emissionIndex} exceeds max index {maxIndex}. Using max index instead.")
@@ -1137,15 +1141,31 @@ class impdData:
         y = np.asarray(signal["y"])
         x = np.asarray(signal["x"])
 
-        maxIndex = y.shape[1]-1
+        try:
+            maxIndex = y.shape[1] - 1
+        except IndexError:
+            maxIndex = 1
+        except :
+            print("No data found.")
+            return -1
+
         if index == -1:
             yRaw = np.array(yMean, copy=True)
         if index > -1 and index < maxIndex:
-            yRaw = np.array(y[:,index], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:,index], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
         if index > maxIndex:
-            yRaw = np.array(y[:, maxIndex], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:, maxIndex], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
         if index < -1:
-            yRaw = np.array(y[:, 0], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:, 0], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
 
         # 1. Decompose the signal into Wavelet coefficients
         # Returns: [cA_n, cD_n, cD_n-1, ..., cD1]
@@ -1192,15 +1212,31 @@ class impdData:
         y = np.asarray(signal["y"])
         x = np.asarray(signal["x"])
 
-        maxIndex = y.shape[1]-1
+        try:
+            maxIndex = y.shape[1] - 1
+        except IndexError:
+            maxIndex = 1
+        except :
+            print("No data found.")
+            return -1
+
         if index == -1:
             yRaw = np.array(yMean, copy=True)
         if index > -1 and index < maxIndex:
-            yRaw = np.array(y[:,index], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:,index], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
         if index > maxIndex:
-            yRaw = np.array(y[:, maxIndex], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:, maxIndex], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
         if index < -1:
-            yRaw = np.array(y[:, 0], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:, 0], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
 
         # 1. Frame the 1D signal into a 2D matrix (Sliding Window)
         if window_size is None:
@@ -1236,15 +1272,31 @@ class impdData:
         y = np.asarray(signal["y"])
         x = np.asarray(signal["x"])
 
-        maxIndex = y.shape[1]-1
+        try:
+            maxIndex = y.shape[1] - 1
+        except IndexError:
+            maxIndex = 1
+        except :
+            print("No data found.")
+            return -1
+
         if index == -1:
             yRaw = np.array(yMean, copy=True)
         if index > -1 and index < maxIndex:
-            yRaw = np.array(y[:,index], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:,index], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
         if index > maxIndex:
-            yRaw = np.array(y[:, maxIndex], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:, maxIndex], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
         if index < -1:
-            yRaw = np.array(y[:, 0], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:, 0], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
 
         # 2. Apply the Savitzky-Golay filter
         if window_size is None:
@@ -1262,15 +1314,31 @@ class impdData:
         y = np.asarray(signal["y"])
         x = np.asarray(signal["x"])
 
-        maxIndex = y.shape[1]-1
+        try:
+            maxIndex = y.shape[1] - 1
+        except IndexError:
+            maxIndex = 1
+        except :
+            print("No data found.")
+            return -1
+
         if index == -1:
             yRaw = np.array(yMean, copy=True)
         if index > -1 and index < maxIndex:
-            yRaw = np.array(y[:,index], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:,index], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
         if index > maxIndex:
-            yRaw = np.array(y[:, maxIndex], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:, maxIndex], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
         if index < -1:
-            yRaw = np.array(y[:, 0], copy=True)
+            if maxIndex > 1:
+                yRaw = np.array(y[:, 0], copy=True)
+            if maxIndex == 1:
+                yRaw = np.array(y, copy=True)
 
         if fraction is None:
             fraction = 0.1
@@ -1279,13 +1347,14 @@ class impdData:
 
         return x, yDenoised, yRaw
 
-    def filterEmissions(self, method='pca', filterIndex=-1, recalculate=False, interactivePlot=True):
+    def filterEmissions(self, method='pca', emissionIndex=-1, recalculate=False,
+                        trimHead=10, trimTail=10, interactivePlot=True):
         method_key = str(method).strip().lower()
         if method_key not in ('pca', 'wavelet', 'sgolay', 'lowess'):
             raise ValueError("method must be one of: 'pca', 'wavelet', 'sgolay', 'lowess'")
 
         if self.dataEmissions is None:
-            self.selectedEmissions(emissionIndex=-1, trimHead=10, trimTail=10, plot=False)
+            self.selectedEmissions(emissionIndex=emissionIndex, trimHead=trimHead, trimTail=trimTail, plot=False)
 
         if self.dataEmissions is None or len(self.dataEmissions) == 0:
             raise ValueError("No emission data found. Run selectedEmissions() first.")
@@ -1301,13 +1370,13 @@ class impdData:
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
                 if method_key == 'pca':
-                    x, yDenoised, yRaw = self.pcaDenoise(self.dataEmissions[T], index=filterIndex, window_size=None)
+                    x, yDenoised, yRaw = self.pcaDenoise(self.dataEmissions[T], index=emissionIndex, window_size=100)
                 if method_key == 'wavelet':
-                    x, yDenoised, yRaw = self.waveletDenoise(self.dataEmissions[T], index=filterIndex, wavelet="db4", level=4, mode="soft")
+                    x, yDenoised, yRaw = self.waveletDenoise(self.dataEmissions[T], index=emissionIndex, wavelet="db4", level=4, mode="soft")
                 if method_key == 'sgolay':
-                    x, yDenoised, yRaw = self.savitzkyGolayDenoise(self.dataEmissions[T], index=filterIndex, window_size=None, order=2)
+                    x, yDenoised, yRaw = self.savitzkyGolayDenoise(self.dataEmissions[T], index=emissionIndex, window_size=None, order=2)
                 if method_key == 'lowess':
-                    x, yDenoised, yRaw = self.lowessDenoise(self.dataEmissions[T], index=filterIndex, fraction=None)
+                    x, yDenoised, yRaw = self.lowessDenoise(self.dataEmissions[T], index=emissionIndex, fraction=None)
                 self.dataEmissions[T]['yFiltered'] = yDenoised
                 self.dataEmissions[T]['yRaw'] = yRaw
 
@@ -1320,7 +1389,7 @@ class impdData:
                 if method_key == 'lowess':
                     self.dataEmissions[T]['filterMethod'] = 'lowess'
 
-                self.dataEmissions[T]['filterIndex'] = filterIndex
+                self.dataEmissions[T]['filterIndex'] = emissionIndex
 
         if interactivePlot:
             fig, ax = plt.subplots(figsize=(10, 6))
