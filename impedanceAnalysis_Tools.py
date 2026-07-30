@@ -382,6 +382,12 @@ class impdData:
             except FileNotFoundError:
                 print("Warning: runParams.txt not found alongside the appended files.")
 
+            # Append the new files to self.fileName for tracking
+            if self.fileName is None:
+                self.fileName = append_files
+            else:
+                self.fileName = list(self.fileName) + append_files
+
             return 0
 
         # Append CSV data files.
@@ -482,33 +488,75 @@ class impdData:
 
             self.dataValues = self._append_records(self.dataValues, new_data)
             self.dataTemps = self._append_unique_temps(self.dataTemps, new_temps)
+
+            # Append the new files to self.fileName for tracking
+            if self.fileName is None:
+                self.fileName = append_files
+            else:
+                self.fileName = list(self.fileName) + append_files
+
             return 0
 
         print("Unsupported file type. Please select .txt or .csv files.")
         return -1
 
-    def wellBehaveFrequencies(self, fUpper, fLower):
-        if self.dataType is None:
-            print("Data doesn't exist!!!")
-            return -1
+    @staticmethod
+    def _gap_remove(signal=None):
+        if not signal is None:
+            # Make sure data is a dict of arrays
+            if not isinstance(signal['tickStampImps'], np.ndarray):
+                for i in range(len(list(signal))):
+                    signal[list(signal)[i]] = np.asarray(signal[list(signal)[i]])
+
+            deltas = np.abs(np.diff(signal['tickStampImps']))
+            maxgap = [np.max(deltas), np.argmax(deltas)]
+            mingap = [np.min(deltas), np.argmin(deltas)]
+            if maxgap[0] > 100*mingap[0]:
+                # Handle the gap between signal['tickStampImps'][maxgap[1]] and signal['tickStampImps'][maxgap[1]+1]
+                if signal['tickStampImps'][maxgap[1]] > signal['tickStampImps'][maxgap[1]+1]:
+                    offset = signal['tickStampImps'][maxgap[1]] + mingap[0]
+                    signal['tickStampImps'][maxgap[1]+1:] = signal['tickStampImps'][maxgap[1]+1:] + offset
+                    signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
+                if signal['tickStampImps'][maxgap[1]+1] > signal['tickStampImps'][maxgap[1]]:
+                    offset = signal['tickStampImps'][maxgap[1]+1] - mingap[0]
+                    signal['tickStampImps'][:maxgap[1]+1] = signal['tickStampImps'][:maxgap[1]+1] + offset
+                    signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
+            return signal
         else:
-            if self.dataType=="sweep":
-                x = np.ascontiguousarray(self.dataValues['frequency'], dtype=np.float64)
-                y = np.ascontiguousarray(np.rad2deg(self.dataValues['phasez']), dtype=np.float64)
-                
-                # Smooth the data for analysis
-                xn = np.linspace(np.min(x), np.max(x), 1000)
-                yn = make_smoothing_spline(x,y,lam=10)(xn)
-                
-                # fmin = np.min(xn[(yn<fUpper) & (yn>fLower)])
-                # fmax = np.max(xn[(yn<fUpper) & (yn>fLower)])
-                fRelevant = xn[(yn<fUpper) & (yn>fLower)]
-                
-                # This frequency will replace 501k frequency!!!
-                return np.median(fRelevant)
-            else:
-                print("Data is not a sweep!!!")
-                return 1
+            print("No signal provided for gap removal.")
+            return -1
+
+    @staticmethod
+    def _zero_time_remove(signal=None):
+        if not signal is None:
+            # Make sure data is a dict of arrays
+            if not isinstance(signal['tickStampImps'], np.ndarray):
+                for i in range(len(list(signal))):
+                    signal[list(signal)[i]] = np.asarray(signal[list(signal)[i]])
+            # Find the indices of 0 time stamp elements
+            idxremove = np.where(signal['tickStampImps']==0)[0]
+            # Update the data by removing the 0 time stamp elements
+            for i in range(len(list(signal))):
+                signal[list(signal)[i]] = np.delete(signal[list(signal)[i]], idxremove)
+            return signal
+        else:
+            print("No signal provided for zero time removal.")
+            return -1
+
+    def cleanup_data(self):
+        """
+        Remove gaps and no time records from the data by tracing the time/tick stamps
+
+        Returns:
+        - Zero times and gap removed signal
+        """
+        for i in range(len(self.dataTemps)):
+            # First, remove the data with 0 time tick records
+            # self.dataValues[self.dataTemps[i]] = self._zero_time_remove(self.dataValues[self.dataTemps[i]])
+            # Then, remove the data with gaps longer than gapLength
+            self.dataValues[self.dataTemps[i]] = self._gap_remove(self.dataValues[self.dataTemps[i]])
+
+        return 0
 
     def findDataLevelsScikit(self, dataType = 'emission', model='gmm',
                              interactivePlot=False):
@@ -754,13 +802,13 @@ class impdData:
         return m, c, l
 
     @staticmethod
-    def find_nearest(array, value):
+    def _find_nearest(array, value):
         array = np.asarray(array)
         idx = (np.abs(array - value)).argmin()
         return idx
 
     @staticmethod
-    def find_signal_blocks(arr, val):
+    def _find_signal_blocks(arr, val):
         def get_blocks_for_target(target):
             modified = list(arr)
             n = len(modified)
@@ -801,14 +849,14 @@ class impdData:
         return get_blocks_for_target(val)
 
     @staticmethod
-    def find_cluster_stats(dataLabels,classLabels):
+    def _find_cluster_stats(dataLabels,classLabels):
         l = classLabels
         blocks = dict()
         clusterSizesFreqs = dict()
         for i in range(len(dataLabels)):
             blocks[dataLabels[i]] = dict()
-            high = impdData.find_signal_blocks(l[i], 0)
-            low = impdData.find_signal_blocks(l[i], 1)
+            high = impdData._find_signal_blocks(l[i], 0)
+            low = impdData._find_signal_blocks(l[i], 1)
 
             blocks[dataLabels[i]]["high"] = dict()
             blocks[dataLabels[i]]["low"] = dict()
@@ -878,7 +926,7 @@ class impdData:
                     recalculate=True,
                     interactivePlot=False,
                 )
-                blocks, clusterSizesFreqs = self.find_cluster_stats(self.dataTemps, l)
+                blocks, clusterSizesFreqs = self._find_cluster_stats(self.dataTemps, l)
                 self.dataExcitationClusterParams["clusterBlocks"] = blocks
                 self.dataExcitationClusterParams["clusterSizesFreqs"] = clusterSizesFreqs
                 if align:
@@ -892,7 +940,7 @@ class impdData:
                         recalculate=True,
                         interactivePlot=False,
                     )
-                    blocks, clusterSizesFreqs = self.find_cluster_stats(self.dataTemps, l)
+                    blocks, clusterSizesFreqs = self._find_cluster_stats(self.dataTemps, l)
                     self.dataEmissionClusterParams["clusterBlocks"] = blocks
                     self.dataEmissionClusterParams["clusterSizesFreqs"] = clusterSizesFreqs
                     if align:
@@ -903,7 +951,7 @@ class impdData:
                         algorithm="hybrid",
                         recalculate=True,
                         interactivePlot=False)
-                    blocks, clusterSizesFreqs = self.find_cluster_stats(self.dataTemps, l)
+                    blocks, clusterSizesFreqs = self._find_cluster_stats(self.dataTemps, l)
                     self.dataEmissionClusterParams["clusterBlocks"] = blocks
                     self.dataEmissionClusterParams["clusterSizesFreqs"] = clusterSizesFreqs
                     if align:
@@ -1072,7 +1120,7 @@ class impdData:
 
     def selectedEmissions(self, emissionIndex=0, trimHead = 10, trimTail = 10, plot=False):
         if self.dataEmissionClusterParams is None:
-        # if self.dataEmissionClusterParams is None or self.dataEmissionLevelParams is None:
+            self.cleanup_data()
             self.findClusters(dataType='emission', method='synced', recalculate=True, align=True)
 
         T = self.dataTemps[0]
@@ -1127,7 +1175,7 @@ class impdData:
         return 0
 
     @staticmethod
-    def waveletDenoise(signal, index=-1, wavelet="db4", level=1, mode="soft"):
+    def _wavelet_denoise(signal, index=-1, wavelet="db4", level=1, mode="soft"):
         """
         Denoises a 1D signal using Discrete Wavelet Transform (DWT).
 
@@ -1198,7 +1246,7 @@ class impdData:
         return x, yDenoised, yRaw
 
     @staticmethod
-    def pcaDenoise(signal, index=-1, window_size=None):
+    def _pca_denoise(signal, index=-1, window_size=None):
         """
         Denoises a 1D signal using Principal Component Analysis (PCA).
 
@@ -1264,7 +1312,7 @@ class impdData:
         return x, yDenoised, yRaw
 
     @staticmethod
-    def savitzkyGolayDenoise(signal, index=-1, window_size=None, order=2):
+    def _savitzkyGolay_enoise(signal, index=-1, window_size=None, order=2):
         """
         Denoises a 1D signal using a Savitzky-Golay filter.
         """
@@ -1306,7 +1354,7 @@ class impdData:
         return x, yDenoised, yRaw
 
     @staticmethod
-    def lowessDenoise(signal, index=-1, fraction=None):
+    def _lowess_denoise(signal, index=-1, fraction=None):
         """
         Denoises a 1D signal using a Locally Weighted Scatterplot Smoothing (LOWESS) interpolation.
         """
@@ -1370,13 +1418,13 @@ class impdData:
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
                 if method_key == 'pca':
-                    x, yDenoised, yRaw = self.pcaDenoise(self.dataEmissions[T], index=emissionIndex, window_size=100)
+                    x, yDenoised, yRaw = self._pca_denoise(self.dataEmissions[T], index=emissionIndex, window_size=100)
                 if method_key == 'wavelet':
-                    x, yDenoised, yRaw = self.waveletDenoise(self.dataEmissions[T], index=emissionIndex, wavelet="db4", level=4, mode="soft")
+                    x, yDenoised, yRaw = self._wavelet_denoise(self.dataEmissions[T], index=emissionIndex, wavelet="db4", level=4, mode="soft")
                 if method_key == 'sgolay':
-                    x, yDenoised, yRaw = self.savitzkyGolayDenoise(self.dataEmissions[T], index=emissionIndex, window_size=None, order=2)
+                    x, yDenoised, yRaw = self._savitzkyGolay_denoise(self.dataEmissions[T], index=emissionIndex, window_size=None, order=2)
                 if method_key == 'lowess':
-                    x, yDenoised, yRaw = self.lowessDenoise(self.dataEmissions[T], index=emissionIndex, fraction=None)
+                    x, yDenoised, yRaw = self._lowess_denoise(self.dataEmissions[T], index=emissionIndex, fraction=None)
                 self.dataEmissions[T]['yFiltered'] = yDenoised
                 self.dataEmissions[T]['yRaw'] = yRaw
 
@@ -1435,17 +1483,17 @@ class impdData:
         return 0
 
     def calculateDelCNormalized(self, t1=0.003, t2=0.203,
-                                emissionIndex=-1, denoiseEmission=False, smoothCapacitance=True,
+                                emissionIndex=0, denoiseEmission=False, smoothCapacitance=True,
                                 plot=False):
 
         # Denoising the Emission is for better estimating the many sample averaged data
         # Smoothing the Capacitance is for estimating the real value of C right at t1 and/or t2
 
         if self.dataEmissions is None:
-            self.selectedEmissions(emissionIndex=-1, trimHead=10, trimTail=10, plot=False)
+            self.selectedEmissions(emissionIndex=0, trimHead=10, trimTail=10, plot=False)
 
         # if denoiseEmission and 'filterMethod' not in self.dataEmissions[self.dataTemps[0]]:
-        self.filterEmissions(method='pca', filterIndex=emissionIndex, recalculate=False, interactivePlot=False)
+        self.filterEmissions(method='pca', emissionIndex=emissionIndex, recalculate=True, interactivePlot=False)
 
         # If emission index is -1 and denoiseEmission is False, use ymean and yerr
         # If emission index is -1 and denoiseEmission is True, use yFiltered and yerr
@@ -1476,8 +1524,8 @@ class impdData:
                 tau = (t2 - t1) / np.log(t2 / t1)
                 delCNormalized[i] = np.array([self.dataTemps[i], tau, deltaC, deltaC / csC(t[-1])])
             else:
-                nearestIndex1 = self.find_nearest(t, t1)
-                nearestIndex2 = self.find_nearest(t, t2)
+                nearestIndex1 = self._find_nearest(t, t1)
+                nearestIndex2 = self._find_nearest(t, t2)
                 deltaC = C[nearestIndex2] - C[nearestIndex1]
                 tau = (t[nearestIndex2] - t[nearestIndex1]) / np.log(t[nearestIndex2] / t[nearestIndex1])
                 delCNormalized[i] = np.array([self.dataTemps[i], tau, deltaC, deltaC / C[-1]])
@@ -1505,7 +1553,7 @@ class impdData:
         for i in range(len(t1)):
             for j in range(len(t2)):
                 if t2[j] > t1[i]:
-                    temp = self.calculateDelCNormalized(t1=t1[i], t2=t2[j], emissionIndex=-1, denoiseEmission=False,
+                    temp = self.calculateDelCNormalized(t1=t1[i], t2=t2[j], emissionIndex=0, denoiseEmission=False,
                                                         smoothCapacitance=False, plot=False)
                     csC = CubicSpline(temp[:,0], temp[:,3])
                     bounds = [(np.min(temp[:,0]), np.max(temp[:,0]))]
