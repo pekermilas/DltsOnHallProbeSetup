@@ -516,11 +516,13 @@ class impdData:
                 if signal['tickStampImps'][maxgap[1]] > signal['tickStampImps'][maxgap[1]+1]:
                     offset = signal['tickStampImps'][maxgap[1]] + mingap[0]
                     signal['tickStampImps'][maxgap[1]+1:] = signal['tickStampImps'][maxgap[1]+1:] + offset
-                    signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
                 if signal['tickStampImps'][maxgap[1]+1] > signal['tickStampImps'][maxgap[1]]:
                     offset = signal['tickStampImps'][maxgap[1]+1] - mingap[0]
                     signal['tickStampImps'][:maxgap[1]+1] = signal['tickStampImps'][:maxgap[1]+1] + offset
-                    signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
+                signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
+                signal['tickStampDemods'] = np.array(signal['tickStampImps'], copy=True)
+                signal['timeStampDemods'] = np.array(signal['timeStampImps'], copy=True)
+
             return signal
         else:
             print("No signal provided for gap removal.")
@@ -535,9 +537,39 @@ class impdData:
                     signal[list(signal)[i]] = np.asarray(signal[list(signal)[i]])
             # Find the indices of 0 time stamp elements
             idxremove = np.where(signal['tickStampImps']==0)[0]
-            # Update the data by removing the 0 time stamp elements
-            for i in range(len(list(signal))):
-                signal[list(signal)[i]] = np.delete(signal[list(signal)[i]], idxremove)
+            if len(idxremove) > 0:
+                # Update the data by removing the 0 time stamp elements
+                for i in range(len(list(signal))):
+                    signal[list(signal)[i]] = np.delete(signal[list(signal)[i]], idxremove)
+
+                signal['tickStampDemods'] = np.array(signal['tickStampImps'], copy=True)
+                signal['timeStampDemods'] = np.array(signal['timeStampImps'], copy=True)
+            return signal
+        else:
+            print("No signal provided for zero time removal.")
+            return -1
+
+    @staticmethod
+    def _zero_time_fill(signal=None):
+        if not signal is None:
+            # Make sure data is a dict of arrays
+            if not isinstance(signal['tickStampImps'], np.ndarray):
+                for i in range(len(list(signal))):
+                    signal[list(signal)[i]] = np.asarray(signal[list(signal)[i]])
+
+            # Find the indices of 0 time stamp elements
+            idxtimeless = np.where(signal['tickStampImps']==0)[0]
+            if len(idxtimeless) > 0:
+                # Update the data by adding time stamps to elements
+                deltas = np.diff(signal['tickStampImps'][:idxtimeless[0]])
+                offset = signal['tickStampImps'][idxtimeless[0]-1]
+                delt = int(np.mean(deltas))
+                for i in range(len(idxtimeless)):
+                    idx = idxtimeless[i]
+                    signal['tickStampImps'][idx] = offset + delt*(i+1)
+                signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
+                signal['tickStampDemods'] = np.array(signal['tickStampImps'], copy=True)
+                signal['timeStampDemods'] = np.array(signal['timeStampImps'], copy=True)
             return signal
         else:
             print("No signal provided for zero time removal.")
@@ -551,8 +583,9 @@ class impdData:
         - Zero times and gap removed signal
         """
         for i in range(len(self.dataTemps)):
-            # First, remove the data with 0 time tick records
+            # First, remove or fill 0 time tick records
             # self.dataValues[self.dataTemps[i]] = self._zero_time_remove(self.dataValues[self.dataTemps[i]])
+            self.dataValues[self.dataTemps[i]] = self._zero_time_fill(self.dataValues[self.dataTemps[i]])
             # Then, remove the data with gaps longer than gapLength
             self.dataValues[self.dataTemps[i]] = self._gap_remove(self.dataValues[self.dataTemps[i]])
 
