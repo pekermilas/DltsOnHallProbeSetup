@@ -8,3 +8,6 @@ __pycache__/runDlts_Tools.cpython-313.pyc
 *.pyc
 *.iml
 *.pyc
+*.xml
+*.xml
+.idea/pyLspTools.xml
