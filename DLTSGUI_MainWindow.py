@@ -1,0 +1,61 @@
+import threading
+import tkinter as tk
+import time
+import os
+import json
+import copy
+
+from tkinter import *
+from tkinter import ttk
+from PIL import Image, ImageTk
+from datetime import datetime
+
+import matplotlib
+matplotlib.use('TkAgg')
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+import matplotlib.pyplot as plt
+
+import numpy as np
+from pathlib import Path
+
+import dltsConfig as dltsc
+import zurichInstruments_Control as ziC
+import instecTempStage_Control as tsC
+import impedanceAnalysis_Tools as iaT
+import runDlts_Tools as rdT
+
+import runParamsTab as rpT
+import liveDataTab as ldT
+import postprocessingTab as ppT
+
+
+dltsc.maxTextLineCount = 5
+dltsc.root = tk.Tk()
+dltsc.root.title('DLTS Control GUI')
+try:
+    dltsc.root.geometry('1020x820')
+    dltsc.root.minsize(860, 700)
+except:
+    pass
+
+s = ttk.Style()
+s.configure('TNotebook.Tab', font=('Arial', 11), padding=6)
+
+dltsc.tabControl = ttk.Notebook(dltsc.root, padding=0)
+
+
+dltsc.runParamsTab = ttk.Frame(dltsc.tabControl)
+rpT.construct_runParamsTab()
+
+dltsc.livePlotTab = ttk.Frame(dltsc.tabControl)
+# ldT.construct_livePlotTab()
+#
+dltsc.postprocessingTab = ttk.Frame(dltsc.tabControl)
+# ppT.construct_postprocessingTab()
+
+# def on_closing():
+#     dltsc.tempDev.disconnTController()
+#
+# dltsc.root.protocol("WM_DELETE_WINDOW", on_closing)
+
+dltsc.root.mainloop()
