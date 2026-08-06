@@ -38,18 +38,18 @@ def construct_runParamsTab():
 
     # Construct Impedance Analyzer Parameters Frame
     # -------------------------------------------------------------------------
-    impParamsLabel = tk.Label(dltsc.runParamsTab, text="Impedance Analyzer Parameters",
-                              font=("Segoe UI", 14), fg='blue')
-    impParamsLabel.grid(row=0, column=0, padx=70, pady=2)
+    runParamsLabel = tk.Label(dltsc.runParamsTab, text="Run Parameters",
+                              font=("Segoe UI", 14), fg='black')
+    runParamsLabel.grid(row=0, column=0, padx=70, pady=2)
 
-    impParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="blue",
-                              highlightthickness=1, highlightcolor='blue',
+    runParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="gray",
+                              highlightthickness=1, highlightcolor='gray',
                               width=300, height=300)
-    impParamsFrame.grid(row=1, column=0, padx=70, pady=2)
-    impParamsFrame.config()
 
+    runParamsFrame.grid(row=1, column=0, padx=10, pady=2)
+    runParamsFrame.config()
 
-    # Construct GUI Fields for Setting Impedance Analyzer Parameters
+    # Construct Impedance Analyzer Parameters
     # -------------------------------------------------------------------------
     z_param_list = [
         ('Oscillation Amplitude', '0.300'),
@@ -147,31 +147,122 @@ def construct_runParamsTab():
     device_param_vars = {}
     # lay out parameters starting at row 2 below impedance inputs
     for idx, (pname, pdef) in enumerate(z_param_list):
-        r = (idx // 2) + 2
-        c = (idx % 2) * 2
-        lbl = ttk.Label(impParamsFrame, text=pname)
+        # r = (idx // 2) + 2
+        # c = (idx % 2) * 2
+        r = idx
+        c = 0
+        lbl = ttk.Label(runParamsFrame, text=pname, foreground='blue')
         lbl.grid(row=r, column=c, sticky='w', padx=4, pady=2)
         var = tk.StringVar(value=pdef)
         # if parameter has a set of known options, use a Combobox dropdown
         if pname in param_options:
-            cb = ttk.Combobox(impParamsFrame, textvariable=var, values=param_options[pname], width=16, state='readonly')
+            cb = ttk.Combobox(runParamsFrame, textvariable=var, values=param_options[pname], width=16, state='readonly')
             cb.set(pdef)
             cb.grid(row=r, column=c + 1, sticky='ew', padx=4, pady=2)
         else:
-            ent = ttk.Entry(impParamsFrame, textvariable=var, width=16)
+            ent = ttk.Entry(runParamsFrame, textvariable=var, width=16)
             ent.grid(row=r, column=c + 1, sticky='ew', padx=4, pady=2)
         dltsc.z_params_vars[pname] = var
 
     # Device / control buttons at the bottom of the impedance panel
-    cframe = ttk.Frame(impParamsFrame)
-    button_row = ((len(z_param_list) - 1) // 2) + 3
+    cframe = ttk.Frame(runParamsFrame)
+    # button_row = ((len(z_param_list) - 1) // 2) + 3
+    button_row = len(z_param_list)
     cframe.grid(row=button_row, column=0, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn = ttk.Button(cframe, text='Connect Devices', command=connect_devices)
+    connect_btn = ttk.Button(cframe, text='Connect Device', command=connect_devices)
     connect_btn.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
     apply_btn = ttk.Button(cframe, text='Apply + Push Params', command=apply_and_push_params)
     apply_btn.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
+
+
+    # Construct Temperature Controller Frame
+    # -------------------------------------------------------------------------
+    lblt1 = ttk.Label(runParamsFrame, text='Initial Temperature (C)', foreground='red')
+    lblt1.grid(row=0, column=2, sticky='w', padx=4, pady=2)
+    tinit_e = ttk.Entry(runParamsFrame, width=8)
+    tinit_e.insert(0, '25')
+    tinit_e.grid(row=0, column=3, sticky='ew', padx=4, pady=2)
+
+    lblt2 = ttk.Label(runParamsFrame, text='Final Temperature (C)', foreground='red')
+    lblt2.grid(row=1, column=2, sticky='w', padx=4, pady=2)
+    tfin_e = ttk.Entry(runParamsFrame, width=8)
+    tfin_e.insert(0, '25')
+    tfin_e.grid(row=1, column=3, sticky='ew', padx=4, pady=2)
+
+    lblt3 = ttk.Label(runParamsFrame, text='Number of Temperatures', foreground='red')
+    lblt3.grid(row=2, column=2, sticky='w', padx=4, pady=2)
+    ntemp_e = ttk.Entry(runParamsFrame, width=8)
+    ntemp_e.insert(0, '1')
+    ntemp_e.grid(row=2, column=3, sticky='ew', padx=4, pady=2)
+
+    lblt4 = ttk.Label(runParamsFrame, text='Temperature Ramp (C/min)', foreground='red')
+    lblt4.grid(row=3, column=2, sticky='w', padx=4, pady=2)
+    tramp_e = ttk.Entry(runParamsFrame, width=8)
+    tramp_e.insert(0, '5')
+    tramp_e.grid(row=3, column=3, sticky='ew', padx=4, pady=2)
+
+    lblt5 = ttk.Label(runParamsFrame, text='Stability Delay (s)', foreground='red')
+    lblt5.grid(row=4, column=2, sticky='w', padx=4, pady=2)
+    tdelay_e = ttk.Entry(runParamsFrame, width=8)
+    tdelay_e.insert(0, '0')
+    tdelay_e.grid(row=4, column=3, sticky='ew', padx=4, pady=2)
+
+    # Device / control buttons at the bottom of the temperature panel
+    tframe = ttk.Frame(runParamsFrame)
+    tframe.grid(row=5, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+
+    connect_btn = ttk.Button(tframe, text='Connect Device', command=connect_devices)
+    connect_btn.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
+
+    apply_btn = ttk.Button(tframe, text='Apply + Push Params', command=apply_and_push_params)
+    apply_btn.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
+
+    # spacer = ttk.Label(root, text="")
+    # spacer.grid(row=1, column=0)
+
+
+
+    # # Construct Additional Controls Frame
+    # # -------------------------------------------------------------------------
+    # additParamsLabel = tk.Label(dltsc.runParamsTab, text="Additional Controls",
+    #                           font=("Segoe UI", 14), fg='green')
+    # additParamsLabel.grid(row=4, column=0, padx=10, pady=2)
+    #
+    # additParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="green",
+    #                           highlightthickness=1, highlightcolor='green',
+    #                           width=300, height=100)
+    # additParamsFrame.grid(row=5, column=0, padx=10, pady=2)
+    # additParamsFrame.config()
+    #
+    # # Construct Additional Control Parameters
+    # # -------------------------------------------------------------------------
+    # # Impedance inputs
+    # ttk.Label(additParamsFrame, text='Number of Points (power of 2)').grid(row=0, column=0, sticky='w')
+    # npts_e = ttk.Entry(additParamsFrame, width=10)
+    # npts_e.insert(0, '13')
+    # npts_e.grid(row=0, column=1, sticky='ew')
+    #
+    # ttk.Label(additParamsFrame, text='Number of Reps').grid(row=1, column=0, sticky='w')
+    # nreps_e = ttk.Entry(additParamsFrame, width=10)
+    # nreps_e.insert(0, '1')
+    # nreps_e.grid(row=1, column=1, sticky='ew')
+    #
+    # # Upper-right container: output/data panel
+    # upper_right = ttk.Frame(dltsc.runParamsTab)
+    # upper_right.grid(row=0, column=1, sticky='new', padx=(6, 2), pady=(2, 6))
+    # try:
+    #     upper_right.grid_columnconfigure(0, weight=1)
+    # except Exception:
+    #     pass
+
+
+
+
+
+
+
 
     # dltsc.sourcePrefixSelection = tk.ttk.Combobox(impParamsFrame, width="15", font=("Segoe UI", 10))
     # dltsc.sourcePrefixSelection["values"] = ["base","(milli)m","(micro)\u03bc","(nano)n","(pico)p"]

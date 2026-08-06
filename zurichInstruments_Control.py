@@ -324,8 +324,11 @@ class ziDevice:
             daq_module.triggernode('/dev32271/demods/0/sample.TrigOut1')
             daq_module.clearhistory(1)
             daq_module.bandwidth(0)
+            
+            daq_module.grid.mode(4)
             daq_module.grid.cols(numPoints)
             daq_module.grid.repetitions(numReps)
+            
             daq_module.endless(0)
             self.device.imps[0].enable(True)
             daq_module.subscribe('/dev32271/demods/0/sample.AuxIn0.avg')
@@ -336,7 +339,9 @@ class ziDevice:
             time.sleep(1)
             
             daq_module.execute()
-            time.sleep(10)
+            while daq_module.progress() < 1.0:
+                pass
+            time.sleep(1)
             
             allData = daq_module.read()
             time.sleep(5)
