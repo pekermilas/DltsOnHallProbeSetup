@@ -24,54 +24,74 @@ import impedanceAnalysis_Tools as iaT
 
 impdDev = ziC.ziDevice()
 impdDev.connectDevice()
-
+impdDev.loadParams()
 numPoints=1024
-numReps=50
+numReps=100
 
 daq_module = impdDev.session.modules.daq
 
-daq_module.type(6)
-daq_module.triggernode('/dev32271/demods/0/sample.TrigOut1')
-daq_module.clearhistory(1)
-daq_module.bandwidth(0)
-daq_module.grid.cols(numPoints)
-daq_module.grid.repetitions(numReps)
-daq_module.endless(0)
+def runThis(daq_module,numReps,numPoints):
 
-impdDev.device.imps[0].enable(True)
+    daq_module.type(6)
+    daq_module.triggernode('/dev32271/demods/0/sample.TrigOut1')
+    daq_module.clearhistory(1)
+    daq_module.bandwidth(0)
+    
+    daq_module.grid.mode(4)
+    daq_module.grid.cols(numPoints)
+    daq_module.grid.repetitions(numReps)
+    
+    daq_module.endless(0)
+    
+    impdDev.device.imps[0].enable(True)
+    
+    daq_module.subscribe('/dev32271/demods/0/sample.AuxIn0.avg')
+    daq_module.subscribe('/dev32271/demods/0/sample.R.avg')
+    daq_module.subscribe('/dev32271/imps/0/sample.Param0.avg')
+    daq_module.subscribe('/dev32271/imps/0/sample.Param1.avg')
+    daq_module.forcetrigger()
+    time.sleep(1)
+    
+    daq_module.execute()
+    while daq_module.progress() < 1.0:
+        print(daq_module.progress(), daq_module.raw_module.progress())
+        # daq_module.historylength()
+        # daq_module.buffercount()
+        # daq_module.count()
+        # time.sleep(1)
+        pass
+    # time.sleep(10)
+    
+    allData = daq_module.read()
+    time.sleep(5)
+    
+    daq_module.unsubscribe('*')
+    
+    data = dict()
+    data['tickStampImps'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
+    data['tickStampDemods'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
+    data['timeStampImps'] = np.array(data['tickStampImps'], copy=True)
+    data['timeStampDemods'] = np.array(data['tickStampDemods'], copy=True)
+    data['ImpedanceRe'] = np.array(list(allData['/dev32271/imps/0/sample.param0.avg'][0])[-4][0], copy=True)
+    data['ImpedanceIm'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-4][0], copy=True)
+    data['AuxInput1'] = np.array(list(allData['/dev32271/demods/0/sample.auxin0.avg'][0])[-4][0], copy=True)
+    data['AbsZ'] = np.sqrt(data['ImpedanceRe']**2 + data['ImpedanceIm']**2)
+    
+    fig, ax = plt.subplots(ncols=2, nrows=2)
+    ax[0,0].plot(data['timeStampDemods'],data['AuxInput1'],'.-') # Input
+    ax[0,1].plot(data['timeStampImps'],data['ImpedanceRe'],'.-') # Impedance (Re)
+    ax[1,0].plot(data['timeStampImps'],data['ImpedanceIm'],'.-') # Impedance (Im)
+    ax[1,1].plot(data['timeStampImps'],data['AbsZ'],'.-') # Impedance (Im)
+    
+    plt.show()
+    return 0
 
-daq_module.subscribe('/dev32271/demods/0/sample.AuxIn0.avg')
-daq_module.subscribe('/dev32271/demods/0/sample.R.avg')
-daq_module.subscribe('/dev32271/imps/0/sample.Param0.avg')
-daq_module.subscribe('/dev32271/imps/0/sample.Param1.avg')
-daq_module.forcetrigger()
-time.sleep(1)
+start_time = time.perf_counter()
+runThis(daq_module,numReps,numPoints)
+end_time = time.perf_counter()
 
-daq_module.execute()
-time.sleep(10)
-
-allData = daq_module.read()
-time.sleep(5)
-
-daq_module.unsubscribe('*')
-
-data = dict()
-data['tickStampImps'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
-data['tickStampDemods'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-3])
-data['timeStampImps'] = np.array(data['tickStampImps'], copy=True)
-data['timeStampDemods'] = np.array(data['tickStampDemods'], copy=True)
-data['ImpedanceRe'] = np.array(list(allData['/dev32271/imps/0/sample.param0.avg'][0])[-4][0], copy=True)
-data['ImpedanceIm'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-4][0], copy=True)
-data['AuxInput1'] = np.array(list(allData['/dev32271/demods/0/sample.auxin0.avg'][0])[-4][0], copy=True)
-data['AbsZ'] = np.sqrt(data['ImpedanceRe']**2 + data['ImpedanceIm']**2)
-
-fig, ax = plt.subplots(ncols=2, nrows=2)
-ax[0,0].plot(data['timeStampDemods'],data['AuxInput1']) # Input
-ax[0,1].plot(data['timeStampImps'],data['ImpedanceRe']) # Impedance (Re)
-ax[1,0].plot(data['timeStampImps'],data['ImpedanceIm']) # Impedance (Im)
-ax[1,1].plot(data['timeStampImps'],data['AbsZ']) # Impedance (Im)
-
-plt.show()
+execution_time = end_time - start_time
+print(f"Code executed in {execution_time:.6f} seconds")
 
 impdDev.session.disconnect_device(impdDev.devSerial)
 
