@@ -22,6 +22,8 @@ def connect_devices():
     return 0
 def apply_and_push_params():
     return 0
+def browse_root_folder():
+    return 0
 
 def construct_runParamsTab():
     root = dltsc.root
@@ -44,7 +46,7 @@ def construct_runParamsTab():
 
     runParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="gray",
                               highlightthickness=1, highlightcolor='gray',
-                              width=300, height=300)
+                              width=860, height=700)
 
     runParamsFrame.grid(row=1, column=0, padx=10, pady=2)
     runParamsFrame.config()
@@ -166,15 +168,14 @@ def construct_runParamsTab():
 
     # Device / control buttons at the bottom of the impedance panel
     cframe = ttk.Frame(runParamsFrame)
-    # button_row = ((len(z_param_list) - 1) // 2) + 3
     button_row = len(z_param_list)
     cframe.grid(row=button_row, column=0, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn = ttk.Button(cframe, text='Connect Device', command=connect_devices)
-    connect_btn.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
+    connect_btn1 = ttk.Button(cframe, text='Connect Device', command=connect_devices)
+    connect_btn1.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
-    apply_btn = ttk.Button(cframe, text='Apply + Push Params', command=apply_and_push_params)
-    apply_btn.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
+    apply_btn1 = ttk.Button(cframe, text='Apply + Push Params', command=apply_and_push_params)
+    apply_btn1.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
 
 
     # Construct Temperature Controller Frame
@@ -213,16 +214,58 @@ def construct_runParamsTab():
     tframe = ttk.Frame(runParamsFrame)
     tframe.grid(row=5, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn = ttk.Button(tframe, text='Connect Device', command=connect_devices)
-    connect_btn.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
+    connect_btn2 = ttk.Button(tframe, text='Connect Device', command=connect_devices)
+    connect_btn2.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
-    apply_btn = ttk.Button(tframe, text='Apply + Push Params', command=apply_and_push_params)
-    apply_btn.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
+    apply_btn2 = ttk.Button(tframe, text='Apply + Push Params', command=apply_and_push_params)
+    apply_btn2.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
 
-    # spacer = ttk.Label(root, text="")
-    # spacer.grid(row=1, column=0)
+    spacer1 = ttk.Label(runParamsFrame, text="")
+    spacer1.grid(row=6, column=2)
+    spacer2 = ttk.Label(runParamsFrame, text="")
+    spacer2.grid(row=6, column=3)
 
+    lblti1 = ttk.Label(runParamsFrame, text='Number of Points (power of 2)', foreground='green')
+    lblti1.grid(row=7, column=2, sticky='w')
+    npts_e = ttk.Entry(runParamsFrame, width=8)
+    npts_e.insert(0, '13')
+    npts_e.grid(row=7, column=3, sticky='ew')
 
+    lblti2 = ttk.Label(runParamsFrame, text='Number of Reps', foreground='green')
+    lblti2.grid(row=8, column=2, sticky='w')
+    nreps_e = ttk.Entry(runParamsFrame, width=8)
+    nreps_e.insert(0, '1')
+    nreps_e.grid(row=8, column=3, sticky='ew')
+
+    # Device / control buttons at the bottom of the temperature panel
+    aframe = ttk.Frame(runParamsFrame)
+    aframe.grid(row=9, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+
+    apply_btn3 = ttk.Button(aframe, text='Apply + Push Params', command=apply_and_push_params)
+    apply_btn3.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
+
+    spacer3 = ttk.Label(runParamsFrame, text="")
+    spacer3.grid(row=10, column=2)
+    spacer4 = ttk.Label(runParamsFrame, text="")
+    spacer4.grid(row=10, column=3)
+
+    lblti3 = ttk.Label(runParamsFrame, text='Data Root Folder', foreground='purple')
+    lblti3.grid(row=11, column=2, sticky='w')
+    rootfolder_e = ttk.Entry(runParamsFrame, width=8)
+    # default to current user's Desktop/DATA/DLTS to avoid hard-coded other-user paths
+    default_root = os.path.join(str(Path.home()), 'Desktop', 'DATA', 'DLTS')
+    rootfolder_e.insert(0, os.path.expanduser(default_root))
+    rootfolder_e.grid(row=11, column=3, columnspan=1, sticky='ew')
+
+    # Device / control buttons at the bottom of the temperature panel
+    fframe = ttk.Frame(runParamsFrame)
+    fframe.grid(row=12, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+
+    apply_btn3 = ttk.Button(fframe, text='Browse...', command=browse_root_folder)
+    apply_btn3.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
+
+    # # Browse button to select root folder via file explorer
+    # ttk.Button(runParamsFrame, text='Browse...', command=browse_root_folder).grid(row=12, column=2, padx=2)
 
     # # Construct Additional Controls Frame
     # # -------------------------------------------------------------------------
