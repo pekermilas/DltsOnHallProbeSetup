@@ -61,12 +61,17 @@ class ziDevice:
         device_props = discovery.get(device_id)
         
         # Session definition and settings!!! 
-        self.session = zt.session.Session(server_host=device_props['serveraddress'], 
-                                          server_port=device_props['serverport'], 
-                                          allow_version_mismatch=True)
+        try:
+            self.session = zt.session.Session(server_host=device_props['serveraddress'],
+                                              server_port=device_props['serverport'],
+                                              allow_version_mismatch=True)
 
-        # Device definition and settings!!! 
-        self.device = self.session.connect_device(self.devSerial)
+            # Device definition and settings!!!
+            self.device = self.session.connect_device(self.devSerial)
+        except Exception as e:
+            print(f"Error connecting to device: {e}")
+            self.session = None
+            self.device = None
         return 0
 
     def assignParam(self, pName='Oscillation Frequency'):

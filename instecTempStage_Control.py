@@ -68,10 +68,17 @@ class mK2000B:
                 self.state = True
             except IndexError:
                 print('Could not find Temperature Controller!' )
+                self.state = False
+                self.dev = None
+                self.rm = None
+            except Exception as e:
+                print(f"Error connecting to device: {e}")
+                self.state = False
+                self.dev = None
+                self.rm = None
         else:
             print('Temperature controller is already connected!')
         # maxTimeDelay=2.0
-    
         return 0
 
     def disconnTController(self):

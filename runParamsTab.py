@@ -10,18 +10,35 @@ from PIL import Image, ImageTk
 from datetime import datetime
 from pathlib import Path
 
+from bokeh.colors.groups import purple
+from param.ipython import blue
+
 import dltsConfig as dltsc
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
 import impedanceAnalysis_Tools as iaT
 import runDlts_Tools as rdT
 
-def getSourPrefix():
+def connect_devices(devType='impedance'):
+    if devType=='impedance':
+        dltsc.impDev = ziC.ziDevice()
+        dltsc.impDev.connectDevice()
+
+    if devType=='temperature':
+        dltsc.tempDev = tsC.mK2000B()
+        dltsc.tempDev.connectTempController()
+
     return 0
-def connect_devices():
-    return 0
-def apply_and_push_params():
-    return 0
+
+def apply_and_push_params(devType='impedance'):
+    if devType=='impedance':
+        return 0
+    if devType=='temperature':
+        return 0
+    if devType=='output':
+        return 0
+
+
 def browse_root_folder():
     return 0
 
@@ -33,10 +50,14 @@ def construct_runParamsTab():
     tabControl.add(runParamsTab, text='Run Parameters')
     tabControl.pack(expand=1, fill="both")
 
-    dltsc.tempDev = tsC.mK2000B()
-    # button is to be added dltsc.tempDev.connectTempController()
-    dltsc.impDev = ziC.ziDevice()
-    # button is to be added dltsc.impDev.connectDevice()
+    style = ttk.Style()
+    # 2. Configure a custom style name (e.g., "Red.TLabel")
+    # The name must end with the widget's default class name ".TLabel"
+    colors = ["blue", "red", "green", "purple"]
+    for c in colors:
+        style.configure(c + '.TLabel', foreground=c)
+        style.configure(c + '.TButton', foreground=c)
+
 
     # Construct Impedance Analyzer Parameters Frame
     # -------------------------------------------------------------------------
@@ -148,12 +169,19 @@ def construct_runParamsTab():
     # Legacy dynamic device-param editor is not rendered; keep dict for push/load helpers.
     device_param_vars = {}
     # lay out parameters starting at row 2 below impedance inputs
+
+    zprms = dict()
+    for i in range(len(z_param_list)):
+        variable_name = f"prms_{i}"
+        zprms[variable_name] = None
+
     for idx, (pname, pdef) in enumerate(z_param_list):
         # r = (idx // 2) + 2
         # c = (idx % 2) * 2
         r = idx
         c = 0
-        lbl = ttk.Label(runParamsFrame, text=pname, foreground='blue')
+        # lbl = ttk.Label(runParamsFrame, text=pname, foreground='blue')
+        lbl = ttk.Label(runParamsFrame, text=pname, style='blue.TLabel')
         lbl.grid(row=r, column=c, sticky='w', padx=4, pady=2)
         var = tk.StringVar(value=pdef)
         # if parameter has a set of known options, use a Combobox dropdown
@@ -171,40 +199,40 @@ def construct_runParamsTab():
     button_row = len(z_param_list)
     cframe.grid(row=button_row, column=0, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn1 = ttk.Button(cframe, text='Connect Device', command=connect_devices)
+    connect_btn1 = ttk.Button(cframe, text='Connect Device', style='blue.TButton', command=lambda: connect_devices(devType='impedance'))
     connect_btn1.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
-    apply_btn1 = ttk.Button(cframe, text='Apply + Push Params', command=apply_and_push_params)
+    apply_btn1 = ttk.Button(cframe, text='Apply + Push Params', style='blue.TButton', command=lambda: apply_and_push_params(devType='impedance'))
     apply_btn1.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
 
 
     # Construct Temperature Controller Frame
     # -------------------------------------------------------------------------
-    lblt1 = ttk.Label(runParamsFrame, text='Initial Temperature (C)', foreground='red')
+    lblt1 = ttk.Label(runParamsFrame, text='Initial Temperature (C)', style='red.TLabel')
     lblt1.grid(row=0, column=2, sticky='w', padx=4, pady=2)
     tinit_e = ttk.Entry(runParamsFrame, width=8)
     tinit_e.insert(0, '25')
     tinit_e.grid(row=0, column=3, sticky='ew', padx=4, pady=2)
 
-    lblt2 = ttk.Label(runParamsFrame, text='Final Temperature (C)', foreground='red')
+    lblt2 = ttk.Label(runParamsFrame, text='Final Temperature (C)', style='red.TLabel')
     lblt2.grid(row=1, column=2, sticky='w', padx=4, pady=2)
     tfin_e = ttk.Entry(runParamsFrame, width=8)
     tfin_e.insert(0, '25')
     tfin_e.grid(row=1, column=3, sticky='ew', padx=4, pady=2)
 
-    lblt3 = ttk.Label(runParamsFrame, text='Number of Temperatures', foreground='red')
+    lblt3 = ttk.Label(runParamsFrame, text='Number of Temperatures', style='red.TLabel')
     lblt3.grid(row=2, column=2, sticky='w', padx=4, pady=2)
     ntemp_e = ttk.Entry(runParamsFrame, width=8)
     ntemp_e.insert(0, '1')
     ntemp_e.grid(row=2, column=3, sticky='ew', padx=4, pady=2)
 
-    lblt4 = ttk.Label(runParamsFrame, text='Temperature Ramp (C/min)', foreground='red')
+    lblt4 = ttk.Label(runParamsFrame, text='Temperature Ramp (C/min)', style='red.TLabel')
     lblt4.grid(row=3, column=2, sticky='w', padx=4, pady=2)
     tramp_e = ttk.Entry(runParamsFrame, width=8)
     tramp_e.insert(0, '5')
     tramp_e.grid(row=3, column=3, sticky='ew', padx=4, pady=2)
 
-    lblt5 = ttk.Label(runParamsFrame, text='Stability Delay (s)', foreground='red')
+    lblt5 = ttk.Label(runParamsFrame, text='Stability Delay (s)', style='red.TLabel')
     lblt5.grid(row=4, column=2, sticky='w', padx=4, pady=2)
     tdelay_e = ttk.Entry(runParamsFrame, width=8)
     tdelay_e.insert(0, '0')
@@ -214,10 +242,10 @@ def construct_runParamsTab():
     tframe = ttk.Frame(runParamsFrame)
     tframe.grid(row=5, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn2 = ttk.Button(tframe, text='Connect Device', command=connect_devices)
+    connect_btn2 = ttk.Button(tframe, text='Connect Device', style='red.TButton', command=lambda: connect_devices(devType='temperature'))
     connect_btn2.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
-    apply_btn2 = ttk.Button(tframe, text='Apply + Push Params', command=apply_and_push_params)
+    apply_btn2 = ttk.Button(tframe, text='Apply + Push Params', style='red.TButton', command=lambda: apply_and_push_params(devType='temperature'))
     apply_btn2.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
 
     spacer1 = ttk.Label(runParamsFrame, text="")
@@ -225,13 +253,13 @@ def construct_runParamsTab():
     spacer2 = ttk.Label(runParamsFrame, text="")
     spacer2.grid(row=6, column=3)
 
-    lblti1 = ttk.Label(runParamsFrame, text='Number of Points (power of 2)', foreground='green')
+    lblti1 = ttk.Label(runParamsFrame, text='Number of Points (power of 2)', style='green.TLabel')
     lblti1.grid(row=7, column=2, sticky='w')
     npts_e = ttk.Entry(runParamsFrame, width=8)
     npts_e.insert(0, '13')
     npts_e.grid(row=7, column=3, sticky='ew')
 
-    lblti2 = ttk.Label(runParamsFrame, text='Number of Reps', foreground='green')
+    lblti2 = ttk.Label(runParamsFrame, text='Number of Reps', style='green.TLabel')
     lblti2.grid(row=8, column=2, sticky='w')
     nreps_e = ttk.Entry(runParamsFrame, width=8)
     nreps_e.insert(0, '1')
@@ -241,7 +269,7 @@ def construct_runParamsTab():
     aframe = ttk.Frame(runParamsFrame)
     aframe.grid(row=9, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
-    apply_btn3 = ttk.Button(aframe, text='Apply + Push Params', command=apply_and_push_params)
+    apply_btn3 = ttk.Button(aframe, text='Apply + Push Params', style='green.TButton', command=lambda: apply_and_push_params(devType='temperature'))
     apply_btn3.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
     spacer3 = ttk.Label(runParamsFrame, text="")
@@ -249,298 +277,27 @@ def construct_runParamsTab():
     spacer4 = ttk.Label(runParamsFrame, text="")
     spacer4.grid(row=10, column=3)
 
-    lblti3 = ttk.Label(runParamsFrame, text='Data Root Folder', foreground='purple')
+    lblti3 = ttk.Label(runParamsFrame, text='Data File Format', style='purple.TLabel')
     lblti3.grid(row=11, column=2, sticky='w')
-    rootfolder_e = ttk.Entry(runParamsFrame, width=8)
-    # default to current user's Desktop/DATA/DLTS to avoid hard-coded other-user paths
-    default_root = os.path.join(str(Path.home()), 'Desktop', 'DATA', 'DLTS')
-    rootfolder_e.insert(0, os.path.expanduser(default_root))
-    rootfolder_e.grid(row=11, column=3, columnspan=1, sticky='ew')
+    cb = ttk.Combobox(runParamsFrame, width=16, state='readonly')
+    cb["values"] = ["JSON", "HDF5"]
+    cb.current(0)
+    cb.grid(row=11, column=3, sticky='ew', padx=4, pady=0)
+
+    lblti4 = ttk.Label(runParamsFrame, text='Data Root Folder', style='purple.TLabel')
+    lblti4.grid(row=12, column=2, sticky='w')
+    browse_btn = ttk.Button(runParamsFrame, text='Browse...', style='purple.TButton', command=browse_root_folder)
+    browse_btn.grid(row=12, column=3, padx=4, pady=0, sticky='ew')
 
     # Device / control buttons at the bottom of the temperature panel
-    fframe = ttk.Frame(runParamsFrame)
-    fframe.grid(row=12, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+    oframe = ttk.Frame(runParamsFrame)
+    oframe.grid(row=13, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
-    apply_btn3 = ttk.Button(fframe, text='Browse...', command=browse_root_folder)
-    apply_btn3.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
-
-    # # Browse button to select root folder via file explorer
-    # ttk.Button(runParamsFrame, text='Browse...', command=browse_root_folder).grid(row=12, column=2, padx=2)
-
-    # # Construct Additional Controls Frame
-    # # -------------------------------------------------------------------------
-    # additParamsLabel = tk.Label(dltsc.runParamsTab, text="Additional Controls",
-    #                           font=("Segoe UI", 14), fg='green')
-    # additParamsLabel.grid(row=4, column=0, padx=10, pady=2)
-    #
-    # additParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="green",
-    #                           highlightthickness=1, highlightcolor='green',
-    #                           width=300, height=100)
-    # additParamsFrame.grid(row=5, column=0, padx=10, pady=2)
-    # additParamsFrame.config()
-    #
-    # # Construct Additional Control Parameters
-    # # -------------------------------------------------------------------------
-    # # Impedance inputs
-    # ttk.Label(additParamsFrame, text='Number of Points (power of 2)').grid(row=0, column=0, sticky='w')
-    # npts_e = ttk.Entry(additParamsFrame, width=10)
-    # npts_e.insert(0, '13')
-    # npts_e.grid(row=0, column=1, sticky='ew')
-    #
-    # ttk.Label(additParamsFrame, text='Number of Reps').grid(row=1, column=0, sticky='w')
-    # nreps_e = ttk.Entry(additParamsFrame, width=10)
-    # nreps_e.insert(0, '1')
-    # nreps_e.grid(row=1, column=1, sticky='ew')
-    #
-    # # Upper-right container: output/data panel
-    # upper_right = ttk.Frame(dltsc.runParamsTab)
-    # upper_right.grid(row=0, column=1, sticky='new', padx=(6, 2), pady=(2, 6))
-    # try:
-    #     upper_right.grid_columnconfigure(0, weight=1)
-    # except Exception:
-    #     pass
+    apply_btn4 = ttk.Button(oframe, text='Apply + Push Params', style='purple.TButton', command=lambda: apply_and_push_params(devType='output'))
+    apply_btn4.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
 
 
 
-
-
-
-
-    # dltsc.sourcePrefixSelection = tk.ttk.Combobox(impParamsFrame, width="15", font=("Segoe UI", 10))
-    # dltsc.sourcePrefixSelection["values"] = ["base","(milli)m","(micro)\u03bc","(nano)n","(pico)p"]
-    # dltsc.sourcePrefixSelection.current(0)
-    # dltsc.sourcePrefixSelection.grid(row=1, column=1, padx=10, pady=10)
-    # sourcePrefixSelectionButton = tk.Button(impParamsFrame, text='Source Prefix',
-    #                                    font=("Segoe UI", 10), bd=1, command=getSourPrefix)
-    # sourcePrefixSelectionButton.grid(row=0, column=1, padx=10, pady=10)
-
-
-
-
-
-
-
-    # dltsc.tControllerOnOff = False
-    # hpc.switchBoxOnOff = False
-    # hpc.sourcemeterOnOff = False
-    # hpc.magArduControllerOnOff = False
-    # hpc.magGRBLControllerOnOff = False
-    #
-    # hpc.switchBox = None
-    # hpc.tController = None
-    # hpc.sourcemeter = None
-    # hpc.magnetArduino = None
-    # hpc.magnetGRBL = None
-    #
-    # hpc.hdwrConns = 0
-    # hpc.sfwrConns = 0
-    # hpc.runState = 0
-    #
-    # hpc.senseRange = 0
-    #
-
-    # # Set experiment type
-    # # -------------------------------------------------------------------------
-    # hpc.expTypeSelection = tk.ttk.Combobox(expParamsFrame, width="15", font=("Segoe UI", 10))
-    # hpc.expTypeSelection["values"] = ["Sample Test", "Resistivity", "Hall Probe", "Resistivity Hall"]
-    # hpc.expTypeSelection.current(0)
-    # hpc.expTypeSelection.grid(row=1, column=0, padx=10, pady=10)
-    # expTypeSelectionButton = tk.Button(expParamsFrame, text='Experiment Type',
-    #                                    font=("Segoe UI", 10), bd=1, command=getExpType)
-    # expTypeSelectionButton.grid(row=0, column=0, padx=10, pady=10)
-    #
-    # # Set source prefix
-    # # -------------------------------------------------------------------------
-    # hpc.sourcePrefixSelection = tk.ttk.Combobox(expParamsFrame, width="15", font=("Segoe UI", 10))
-    # hpc.sourcePrefixSelection["values"] = ["base", "(milli)m", "(micro)\u03bc", "(nano)n", "(pico)p"]
-    # hpc.sourcePrefixSelection.current(0)
-    # hpc.sourcePrefixSelection.grid(row=1, column=1, padx=10, pady=10)
-    # sourcePrefixSelectionButton = tk.Button(expParamsFrame, text='Source Prefix',
-    #                                         font=("Segoe UI", 10), bd=1, command=getSourPrefix)
-    # sourcePrefixSelectionButton.grid(row=0, column=1, padx=10, pady=10)
-    #
-    # # Source constants
-    # # -------------------------------------------------------------------------
-    # sourceInitButton = tk.Button(expParamsFrame, text='Initial Source', bd=1,
-    #                              font=("Segoe UI", 10), command=getInitSource)
-    # sourceInitButton.grid(row=0, column=2, padx=4, pady=10)
-    # hpc.sourceInitEntry = tk.Entry(expParamsFrame, width=15)
-    # hpc.sourceInitEntry.grid(row=1, column=2, padx=4, pady=10)
-    #
-    # sourceFinalButton = tk.Button(expParamsFrame, text='Final Source', bd=1,
-    #                               font=("Segoe UI", 10), command=getFinalSource)
-    # sourceFinalButton.grid(row=0, column=3, padx=4, pady=10)
-    # hpc.sourceFinalEntry = tk.Entry(expParamsFrame, width=15)
-    # hpc.sourceFinalEntry.grid(row=1, column=3, padx=4, pady=10)
-    #
-    # sourceNumButton = tk.Button(expParamsFrame, text='Number of Sources', bd=1,
-    #                             font=("Segoe UI", 10), command=getNumSource)
-    # sourceNumButton.grid(row=0, column=4, padx=4, pady=10)
-    # hpc.sourceNumEntry = tk.Entry(expParamsFrame, width=20)
-    # hpc.sourceNumEntry.grid(row=1, column=4, padx=4, pady=10)
-    #
-    # # Magnet constants
-    # # -------------------------------------------------------------------------
-    # hpc.magPosSelection = tk.ttk.Combobox(expParamsFrame, width="15", font=("Segoe UI", 10))
-    # hpc.magPosSelection["values"] = ["Back(0)", "Front(1)"]
-    # hpc.magPosSelection.current(0)
-    # hpc.magPosSelection.grid(row=3, column=0, padx=10, pady=10)
-    # magPosSelectionButton = tk.Button(expParamsFrame, text='Initial\nMagnet Position',
-    #                                   font=("Segoe UI", 10), bd=1, command=getMagPos)
-    # magPosSelectionButton.grid(row=2, column=0, padx=10, pady=10)
-    #
-    # hpc.magPolSelection = tk.ttk.Combobox(expParamsFrame, width="15", font=("Segoe UI", 10))
-    # hpc.magPolSelection["values"] = ["N-Up(0)", "S-Up(1)"]
-    # hpc.magPolSelection.current(0)
-    # hpc.magPolSelection.grid(row=3, column=1, padx=10, pady=10)
-    # magPolSelectionButton = tk.Button(expParamsFrame, text='Initial\nMagnet Polarity',
-    #                                   font=("Segoe UI", 10), bd=1, command=getMagPol)
-    # magPolSelectionButton.grid(row=2, column=1, padx=10, pady=10)
-    #
-    # # Tempreature constants
-    # # -------------------------------------------------------------------------
-    # temprInitButton = tk.Button(expParamsFrame, text='Initial\nTemperature', bd=1,
-    #                             font=("Segoe UI", 10), command=getInitTempr)
-    # temprInitButton.grid(row=2, column=2, padx=4, pady=10)
-    # hpc.temprInitEntry = tk.Entry(expParamsFrame, width=15)
-    # hpc.temprInitEntry.grid(row=3, column=2, padx=4, pady=10)
-    #
-    # temprFinalButton = tk.Button(expParamsFrame, text='Final\nTemperature', bd=1,
-    #                              font=("Segoe UI", 10), command=getFinalTempr)
-    # temprFinalButton.grid(row=2, column=3, padx=4, pady=10)
-    # hpc.temprFinalEntry = tk.Entry(expParamsFrame, width=15)
-    # hpc.temprFinalEntry.grid(row=3, column=3, padx=4, pady=10)
-    #
-    # temprNumButton = tk.Button(expParamsFrame, text='Number of\nTemperatures', bd=1,
-    #                            font=("Segoe UI", 10), command=getNumTempr)
-    # temprNumButton.grid(row=2, column=4, padx=4, pady=10)
-    # hpc.temprNumEntry = tk.Entry(expParamsFrame, width=20)
-    # hpc.temprNumEntry.grid(row=3, column=4, padx=4, pady=10)
-    #
-    # temprDelayTimeButton = tk.Button(expParamsFrame, text='Temperature\nDelay(s)', bd=1,
-    #                                  font=("Segoe UI", 10), command=getDelayTempr)
-    # temprDelayTimeButton.grid(row=4, column=1, padx=4, pady=10)
-    # hpc.temprDelayTimeEntry = tk.Entry(expParamsFrame, width=15)
-    # hpc.temprDelayTimeEntry.grid(row=5, column=1, padx=4, pady=10)
-    #
-    # # Set sense Voltage range
-    # # -------------------------------------------------------------------------
-    # hpc.senseRangeSelection = tk.ttk.Combobox(expParamsFrame, width="15", font=("Segoe UI", 10))
-    # hpc.senseRangeSelection["values"] = ["AUTO", "20mV", "200mV", "2V", "20V", "200V", "1nA", \
-    #                                      "10nA", "100nA", "1\u03bcA", "10\u03bcA", \
-    #                                      "100\u03bcA", "1mA", "10mA", "100mA", "1A", "FULL AUTO"]
-    # hpc.senseRangeSelection.current(0)
-    # hpc.senseRangeSelection.grid(row=5, column=2, padx=10, pady=10)
-    # senseRangeSelectionButton = tk.Button(expParamsFrame, text='Sense Range',
-    #                                       font=("Segoe UI", 10), bd=1, command=getSenseRange)
-    # senseRangeSelectionButton.grid(row=4, column=2, padx=10, pady=10)
-    #
-    # # Set data folder
-    # # -------------------------------------------------------------------------
-    # setDataFolderButton = tk.Button(expParamsFrame, text='Set data folder!', bd=1,
-    #                                 font=("Segoe UI", 12), command=setDataFolder)
-    # setDataFolderButton.grid(row=4, column=3, padx=4, pady=10)
-    # # setDataFolderButton.config(height = 3, width = 15)
-    #
-    # # Construct Hardware Connections Frame
-    # # -------------------------------------------------------------------------
-    # hdwConnsLabel = tk.Label(hpc.expTab, text="Hardware Connections",
-    #                          font=("Segoe UI", 14), fg='red')
-    # hdwConnsLabel.grid(row=2, column=0, padx=70, pady=2)
-    #
-    # hdwConnsFrame = tk.Frame(hpc.expTab, highlightbackground="red",
-    #                          highlightthickness=1, highlightcolor='red',
-    #                          width=300, height=300)
-    # hdwConnsFrame.grid(row=3, column=0, padx=70, pady=2)
-    # hdwConnsFrame.config()
-    #
-    # # Set communication ports
-    # # -------------------------------------------------------------------------
-    # hpc.port_list = ["COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-    #                  "COM9", "COM10", "COM11", "COM12"]
-    # hpc.tControllerPortSelection = tk.ttk.Combobox(hdwConnsFrame, values=hpc.port_list,
-    #                                                width="15", font=("Segoe UI", 10))
-    # hpc.tControllerPortSelection.current(6)
-    # hpc.tControllerPortSelection.grid(row=1, column=0, padx=10, pady=10)
-    # tControllerPortSelectionButton = tk.Button(hdwConnsFrame, text='Temperature\nController Port',
-    #                                            font=("Segoe UI", 10), bd=1,
-    #                                            command=lambda: getComPort('tController'))
-    # tControllerPortSelectionButton.grid(row=0, column=0, padx=10, pady=10)
-    #
-    # hpc.arduinoSwitchBoxPortSelection = tk.ttk.Combobox(hdwConnsFrame, values=hpc.port_list,
-    #                                                     width="15", font=("Segoe UI", 10))
-    # hpc.arduinoSwitchBoxPortSelection.current(5)
-    # hpc.arduinoSwitchBoxPortSelection.grid(row=1, column=1, padx=10, pady=10)
-    # arduinoSwitchBoxPortSelectionButton = tk.Button(hdwConnsFrame, text='Switchbox\nPort',
-    #                                                 font=("Segoe UI", 10), bd=1,
-    #                                                 command=lambda: getComPort('arduinoSwitchBox'))
-    # arduinoSwitchBoxPortSelectionButton.grid(row=0, column=1, padx=10, pady=10)
-    #
-    # hpc.arduinoMagnetPortSelection = tk.ttk.Combobox(hdwConnsFrame, values=hpc.port_list,
-    #                                                  width="15", font=("Segoe UI", 10))
-    # hpc.arduinoMagnetPortSelection.current(2)
-    # hpc.arduinoMagnetPortSelection.grid(row=1, column=2, padx=10, pady=10)
-    # arduinoMagnetPortSelectionButton = tk.Button(hdwConnsFrame, text='Arduino\nMagnet Port',
-    #                                              font=("Segoe UI", 10), bd=1,
-    #                                              command=lambda: getComPort('arduinoMagnet'))
-    # arduinoMagnetPortSelectionButton.grid(row=0, column=2, padx=10, pady=10)
-    #
-    # hpc.GRBLMagnetPortSelection = tk.ttk.Combobox(hdwConnsFrame, values=hpc.port_list,
-    #                                               width="15", font=("Segoe UI", 10))
-    # hpc.GRBLMagnetPortSelection.current(3)
-    # hpc.GRBLMagnetPortSelection.grid(row=1, column=3, padx=10, pady=10)
-    # GRBLMagnetPortSelectionButton = tk.Button(hdwConnsFrame, text='GRBL\nMagnet Port',
-    #                                           font=("Segoe UI", 10), bd=1,
-    #                                           command=lambda: getComPort('GRBLMagnet'))
-    # GRBLMagnetPortSelectionButton.grid(row=0, column=3, padx=10, pady=10)
-    #
-    # # # Connect hardware button
-    # # # -------------------------------------------------------------------------
-    # # connHrdwButton = tk.Button(hdwConnsFrame, text='Connect to all Hardwares', bd=1,
-    # #                            font=("Segoe UI", 10), command=connHardware)
-    # # connHrdwButton.grid(row=2, column=4, padx=4, pady=10)
-    # # # setDataFolderButton.config(height = 3, width = 15)
-    #
-    # # Runtime Frame
-    # # -------------------------------------------------------------------------
-    # runTimeLabel = tk.Label(hpc.expTab, text="Run Experiment",
-    #                         font=("Segoe UI", 14), fg='green')
-    # runTimeLabel.grid(row=4, column=0, padx=70, pady=3)
-    #
-    # runTimeFrame = tk.Frame(hpc.expTab, highlightbackground="green",
-    #                         highlightthickness=1, highlightcolor='green',
-    #                         width=600, height=300)
-    # runTimeFrame.grid(row=5, column=0, padx=70, pady=2)
-    # runTimeFrame.config()
-    #
-    # # Connect Hardware button
-    # # -------------------------------------------------------------------------
-    # resizeOnImage = hpc.on.resize((150, 60))
-    # resizeOffImage = hpc.off.resize((150, 60))
-    # hpc.on = ImageTk.PhotoImage(resizeOnImage)
-    # hpc.off = ImageTk.PhotoImage(resizeOffImage)
-    # hwConnLabel = tk.Label(runTimeFrame, text="Check Hardware",
-    #                        font=("Segoe UI", 14), fg='red')
-    # hwConnLabel.grid(row=0, column=0, padx=20, pady=2)
-    # hpc.hwConnButton = tk.Button(runTimeFrame, image=hpc.off, bd=0, command=chkHardware)
-    # hpc.hwConnButton.grid(row=1, column=0, ipadx=10, ipady=20)
-    #
-    # # Run button
-    # # -------------------------------------------------------------------------
-    # swConnLabel = tk.Label(runTimeFrame, text="Check Parameters",
-    #                        font=("Segoe UI", 14), fg='blue')
-    # swConnLabel.grid(row=0, column=1, padx=20, pady=2)
-    # hpc.swConnButton = tk.Button(runTimeFrame, image=hpc.off, bd=0, command=chkSoftware)
-    # hpc.swConnButton.grid(row=1, column=1, ipadx=10, ipady=20)
-    #
-    # # # Run button
-    # # # -------------------------------------------------------------------------
-    # # expRunLabel = tk.Label(runTimeFrame, text = "Run",
-    # #                           font=("Segoe UI", 14), fg='green')
-    # # expRunLabel.grid(row=0, column=2, padx=20, pady=2)
-    # # hpc.expRunButton = tk.Button(runTimeFrame, text='Start', font=("Segoe UI", 12),
-    # #                              bd=1, width=20, height=2, command=runSwitch)
-    # # hpc.expRunButton.grid(row=1, column=2, padx=5, pady=2)
 
     return 0
