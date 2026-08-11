@@ -170,10 +170,10 @@ def construct_runParamsTab():
     device_param_vars = {}
     # lay out parameters starting at row 2 below impedance inputs
 
-    zprms = dict()
+    dltsc.z_param_inputField = dict()
     for i in range(len(z_param_list)):
-        variable_name = f"prms_{i}"
-        zprms[variable_name] = None
+        variable_name = list(z_param_list)[i]
+        dltsc.z_param_inputField[variable_name] = None
 
     for idx, (pname, pdef) in enumerate(z_param_list):
         # r = (idx // 2) + 2
@@ -186,12 +186,14 @@ def construct_runParamsTab():
         var = tk.StringVar(value=pdef)
         # if parameter has a set of known options, use a Combobox dropdown
         if pname in param_options:
-            cb = ttk.Combobox(runParamsFrame, textvariable=var, values=param_options[pname], width=16, state='readonly')
-            cb.set(pdef)
-            cb.grid(row=r, column=c + 1, sticky='ew', padx=4, pady=2)
+            dltsc.z_param_inputField[pname] = ttk.Combobox(runParamsFrame, textvariable=var,
+                                                           values=param_options[pname], width=16,
+                                                           state='readonly')
+            dltsc.z_param_inputField[pname].set(pdef)
+            dltsc.z_param_inputField[pname].grid(row=r, column=c + 1, sticky='ew', padx=4, pady=2)
         else:
-            ent = ttk.Entry(runParamsFrame, textvariable=var, width=16)
-            ent.grid(row=r, column=c + 1, sticky='ew', padx=4, pady=2)
+            dltsc.z_param_inputField[pname] = ttk.Entry(runParamsFrame, textvariable=var, width=16)
+            dltsc.z_param_inputField[pname].grid(row=r, column=c + 1, sticky='ew', padx=4, pady=2)
         dltsc.z_params_vars[pname] = var
 
     # Device / control buttons at the bottom of the impedance panel
@@ -208,35 +210,21 @@ def construct_runParamsTab():
 
     # Construct Temperature Controller Frame
     # -------------------------------------------------------------------------
-    lblt1 = ttk.Label(runParamsFrame, text='Initial Temperature (C)', style='red.TLabel')
-    lblt1.grid(row=0, column=2, sticky='w', padx=4, pady=2)
-    tinit_e = ttk.Entry(runParamsFrame, width=8)
-    tinit_e.insert(0, '25')
-    tinit_e.grid(row=0, column=3, sticky='ew', padx=4, pady=2)
+    dltsc.t_param_inputField = dict()
+    t_param_list = ['Initial Temperature (C)', 'Final Temperature (C)',
+                    'Number of Temperatures', 'Temperature Ramp (C/min)',
+                    'Stability Delay (s)']
+    for i in range(len(t_param_list)):
+        variable_name = list(t_param_list)[i]
+        dltsc.t_param_inputField[variable_name] = None
 
-    lblt2 = ttk.Label(runParamsFrame, text='Final Temperature (C)', style='red.TLabel')
-    lblt2.grid(row=1, column=2, sticky='w', padx=4, pady=2)
-    tfin_e = ttk.Entry(runParamsFrame, width=8)
-    tfin_e.insert(0, '25')
-    tfin_e.grid(row=1, column=3, sticky='ew', padx=4, pady=2)
-
-    lblt3 = ttk.Label(runParamsFrame, text='Number of Temperatures', style='red.TLabel')
-    lblt3.grid(row=2, column=2, sticky='w', padx=4, pady=2)
-    ntemp_e = ttk.Entry(runParamsFrame, width=8)
-    ntemp_e.insert(0, '1')
-    ntemp_e.grid(row=2, column=3, sticky='ew', padx=4, pady=2)
-
-    lblt4 = ttk.Label(runParamsFrame, text='Temperature Ramp (C/min)', style='red.TLabel')
-    lblt4.grid(row=3, column=2, sticky='w', padx=4, pady=2)
-    tramp_e = ttk.Entry(runParamsFrame, width=8)
-    tramp_e.insert(0, '5')
-    tramp_e.grid(row=3, column=3, sticky='ew', padx=4, pady=2)
-
-    lblt5 = ttk.Label(runParamsFrame, text='Stability Delay (s)', style='red.TLabel')
-    lblt5.grid(row=4, column=2, sticky='w', padx=4, pady=2)
-    tdelay_e = ttk.Entry(runParamsFrame, width=8)
-    tdelay_e.insert(0, '0')
-    tdelay_e.grid(row=4, column=3, sticky='ew', padx=4, pady=2)
+    for i in range(len(t_param_list)):
+        pname = list(t_param_list)[i]
+        lbl = ttk.Label(runParamsFrame, text=pname, style='red.TLabel')
+        lbl.grid(row=i, column=2, sticky='w', padx=4, pady=2)
+        dltsc.t_param_inputField[pname] = ttk.Entry(runParamsFrame, width=8)
+        dltsc.t_param_inputField[pname].insert(0, '25')
+        dltsc.t_param_inputField[pname].grid(row=i, column=3, sticky='ew', padx=4, pady=2)
 
     # Device / control buttons at the bottom of the temperature panel
     tframe = ttk.Frame(runParamsFrame)
@@ -252,42 +240,33 @@ def construct_runParamsTab():
     spacer1.grid(row=6, column=2)
     spacer2 = ttk.Label(runParamsFrame, text="")
     spacer2.grid(row=6, column=3)
+    # -----------------------------------------------------------------------------------------------------------
+    dltsc.d_param_inputField = dict()
+    d_param_list = ['Number of Points (power of 2)', 'Number of Reps',
+                    'Data File Format', 'Data Root Folder']
+    for i in range(len(d_param_list)):
+        variable_name = list(d_param_list)[i]
+        dltsc.d_param_inputField[variable_name] = None
 
-    lblti1 = ttk.Label(runParamsFrame, text='Number of Points (power of 2)', style='green.TLabel')
-    lblti1.grid(row=7, column=2, sticky='w')
-    npts_e = ttk.Entry(runParamsFrame, width=8)
-    npts_e.insert(0, '13')
-    npts_e.grid(row=7, column=3, sticky='ew')
+    idx_offset = len(t_param_list)+2
+    for i in range(len(d_param_list)):
+        pname = list(d_param_list)[i]
+        lbl = ttk.Label(runParamsFrame, text=pname, style='green.TLabel')
+        lbl.grid(row=i+idx_offset, column=2, sticky='w', padx=4, pady=2)
+        if pname == 'Data File Format':
+            dltsc.d_param_inputField[pname] = ttk.Combobox(runParamsFrame, width=16,
+                                                           values=["JSON", "HDF5"], state='readonly')
+            dltsc.d_param_inputField[pname].set("JSON")
+            dltsc.d_param_inputField[pname].grid(row=i+idx_offset, column=3, sticky='ew', padx=4, pady=0)
 
-    lblti2 = ttk.Label(runParamsFrame, text='Number of Reps', style='green.TLabel')
-    lblti2.grid(row=8, column=2, sticky='w')
-    nreps_e = ttk.Entry(runParamsFrame, width=8)
-    nreps_e.insert(0, '1')
-    nreps_e.grid(row=8, column=3, sticky='ew')
-
-    # Device / control buttons at the bottom of the temperature panel
-    aframe = ttk.Frame(runParamsFrame)
-    aframe.grid(row=9, column=2, columnspan=4, sticky='ew', pady=(8, 2))
-
-    apply_btn3 = ttk.Button(aframe, text='Apply + Push Params', style='green.TButton', command=lambda: apply_and_push_params(devType='temperature'))
-    apply_btn3.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
-
-    spacer3 = ttk.Label(runParamsFrame, text="")
-    spacer3.grid(row=10, column=2)
-    spacer4 = ttk.Label(runParamsFrame, text="")
-    spacer4.grid(row=10, column=3)
-
-    lblti3 = ttk.Label(runParamsFrame, text='Data File Format', style='purple.TLabel')
-    lblti3.grid(row=11, column=2, sticky='w')
-    cb = ttk.Combobox(runParamsFrame, width=16, state='readonly')
-    cb["values"] = ["JSON", "HDF5"]
-    cb.current(0)
-    cb.grid(row=11, column=3, sticky='ew', padx=4, pady=0)
-
-    lblti4 = ttk.Label(runParamsFrame, text='Data Root Folder', style='purple.TLabel')
-    lblti4.grid(row=12, column=2, sticky='w')
-    browse_btn = ttk.Button(runParamsFrame, text='Browse...', style='purple.TButton', command=browse_root_folder)
-    browse_btn.grid(row=12, column=3, padx=4, pady=0, sticky='ew')
+        elif pname == 'Data Root Folder':
+            dltsc.d_param_inputField[pname] = ttk.Button(runParamsFrame, text='Browse...',
+                                                         style='green.TButton', command=browse_root_folder)
+            dltsc.d_param_inputField[pname].grid(row=i+idx_offset, column=3, sticky='ew', padx=4, pady=2)
+        else:
+            dltsc.d_param_inputField[pname] = ttk.Entry(runParamsFrame, width=8)
+            dltsc.d_param_inputField[pname].insert(0, '25')
+            dltsc.d_param_inputField[pname].grid(row=i+idx_offset, column=3, sticky='ew', padx=4, pady=2)
 
     # Device / control buttons at the bottom of the temperature panel
     oframe = ttk.Frame(runParamsFrame)

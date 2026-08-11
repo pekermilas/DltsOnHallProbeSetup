@@ -20,3 +20,5 @@ def init():
     ##---------------------TEST-------------------------
     global sourcePrefixSelection
     global z_params_vars
+    global z_param_inputField
+    global t_param_inputField
