@@ -21,25 +21,40 @@ import runDlts_Tools as rdT
 
 def connect_devices(devType='impedance'):
     if devType=='impedance':
+        dltsc.impDev = None
         dltsc.impDev = ziC.ziDevice()
         dltsc.impDev.connectDevice()
 
     if devType=='temperature':
+        dltsc.tempDev = None
         dltsc.tempDev = tsC.mK2000B()
         dltsc.tempDev.connectTempController()
 
-    return 0
+    return  0
 
 def apply_and_push_params(devType='impedance'):
     if devType=='impedance':
-        return 0
+        if dltsc.impDev.device is not None:
+            dltsc.impDev.applyParams()
+            for pName in list(self.params):
+                dltsc.impDev.setParam(pName)
+
     if devType=='temperature':
-        return 0
+        if dltsc.tempDev.dev is not None:
+            dltsc.tempDev.applyParams()
     if devType=='output':
         return 0
 
 
 def browse_root_folder():
+    """Open a folder selection dialog and set the Root Folder entry."""
+    dltsc.d_param_inputField['Data Root Folder'] = None
+    dltsc.d_param_inputField['Data Root Folder'] = filedialog.askdirectory()
+
+    if dltsc.d_param_inputField['Data Root Folder'] is None:
+        print('Folder selection canceled.')
+    else:
+        print(f'Selected folder: {dltsc.d_param_inputField["Data Root Folder"]}')
     return 0
 
 def construct_runParamsTab():

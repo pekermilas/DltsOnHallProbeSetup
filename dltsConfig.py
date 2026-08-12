@@ -22,3 +22,4 @@ def init():
     global z_params_vars
     global z_param_inputField
     global t_param_inputField
+    global root_data_folder

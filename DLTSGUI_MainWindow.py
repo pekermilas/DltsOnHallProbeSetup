@@ -53,9 +53,10 @@ dltsc.livePlotTab = ttk.Frame(dltsc.tabControl)
 dltsc.postprocessingTab = ttk.Frame(dltsc.tabControl)
 # ppT.construct_postprocessingTab()
 
-# def on_closing():
+def on_closing():
 #     dltsc.tempDev.disconnTController()
-#
-# dltsc.root.protocol("WM_DELETE_WINDOW", on_closing)
+    if tk.messagebox.askokcancel("Quit", "Do you want to quit?"):
+        dltsc.root.destroy()  # Manually close the window
 
+dltsc.root.protocol("WM_DELETE_WINDOW", on_closing)
 dltsc.root.mainloop()
