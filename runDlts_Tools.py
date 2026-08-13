@@ -43,6 +43,13 @@ class dltsRun:
         self.excludedRuns = []
 
     def initSetup(self):
+        # THIS MECHANISM NEEDS TO CHANGE FOR THE GUI AND FOR THE CHANGES IN
+        # TEMP DEVICE OBJECT PROPERTIES!!!!!!!!!!!!!!!!!!!
+        # IN ADDITION, PARAMETER PULL MECHANISM HAS TO FOLLOW THE METHODS IN
+        # GUI, INSTEAD OF PREVIOSLY USED METHODS IN THE DEVICE OBJECTS.
+        # THIS IS BECAUSE THE GUI WILL USE A DIFFERENT PARAMETER PULL METHOD THAN
+        # WHAT WE HAD BEFORE IN NON-GUI VERSIONS
+
         # Connect to devices
         tempDev = tsC.mK2000B()
         tempDev.connectTempController()

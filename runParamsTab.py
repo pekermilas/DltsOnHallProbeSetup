@@ -35,13 +35,15 @@ def connect_devices(devType='impedance'):
 def apply_and_push_params(devType='impedance'):
     if devType=='impedance':
         if dltsc.impDev.device is not None:
-            dltsc.impDev.applyParams()
-            for pName in list(self.params):
+            for pName in list(dltsc.impDev.params):
                 dltsc.impDev.setParam(pName)
-
+        else:
+            print('No Impedance device connected.')
     if devType=='temperature':
         if dltsc.tempDev.dev is not None:
             dltsc.tempDev.applyParams()
+        else:
+            print('No Temperature device connected.')
     if devType=='output':
         return 0
 

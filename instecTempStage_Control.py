@@ -38,8 +38,14 @@ class mK2000B:
         self.Tinitial = 25
         self.Tfinal = 25
         self.numTemps = 1
+        self.tRamp = 5
+        self.tStableDelay = 0
         self.tempGrid = 25
-    
+        pList = ['Initial Temperature (C)', 'Final Temperature (C)',
+                 'Number of Temperatures', 'Temperature Ramp (C/min)',
+                 'Stability Delay (s)', 'Temperature Grid (C)']
+        self.params = dict.fromkeys(pList, None)
+
     def read(self):
         return self.dev.read()
     
@@ -125,6 +131,8 @@ class mK2000B:
 
     def goToTemp(self, Tf=25, ramp=5, delayTime = 0):
         if not self.dev is None:
+            ramp = self.tRamp
+            delayTime = self.tStableDelay
             if self.state:
                 device = self.dev
                 device.write(str.encode('TEMPerature:RAMP '+str(Tf)+','+str(ramp)+'\n'))
@@ -196,6 +204,39 @@ class mK2000B:
         else:
            print("Nothing to do!")
         
+        return 0
+
+    def setParam(self, pName='Initial Temperature (C)'):
+        if pName in list(self.params):
+            if pName == 'Initial Temperature (C)':
+                pEntry = input("Initial Temperature (C): ")
+                self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 25
+            elif pName == 'Final Temperature (C)':
+                pEntry = input("Final Temperature (C): ")
+                self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 25
+            elif pName == 'Number of Temperatures':
+                pEntry = input("Number of Temperatures: ")
+                self.params[pName] = int(pEntry) if not len(pEntry) == 0 else 1
+            elif pName == 'Temperature Ramp (C/min)':
+                pEntry = input("Temperature Ramp (C/min): ")
+                self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 5
+            elif pName == 'Stability Delay (s)':
+                pEntry = input("Stability Delay (s): ")
+                self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 0
+            elif pName == 'Temperature Grid (C)':
+                Tinit = self.params['Initial Temperature (C)']
+                Tfin = self.params['Final Temperature (C)']
+                numT = self.params['Number of Temperatures']
+                pEntry = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
+                self.params[pName] = pEntry if not len(pEntry) == 0 else Tinit
+        else:
+            print("Unknown Parameter!!!")
+
+        return 0
+
+    def loadParams(self):
+        for pName in list(self.params):
+            self.setParam(pName)
         return 0
 
     def measureProxyTemp(self, Tf):
