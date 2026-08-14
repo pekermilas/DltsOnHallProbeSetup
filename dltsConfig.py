@@ -21,5 +21,8 @@ def init():
     global sourcePrefixSelection
     global z_params_vars
     global z_param_inputField
+    global t_params_vars
     global t_param_inputField
+    global d_params_vars
+    global d_param_inputField
     global root_data_folder

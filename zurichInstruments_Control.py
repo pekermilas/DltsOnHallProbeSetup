@@ -74,87 +74,93 @@ class ziDevice:
             self.device = None
         return 0
 
-    def assignParam(self, pName='Oscillation Frequency'):
-        if pName in list(self.params):
-            if pName == 'Oscillation Amplitude':
-                pEntry = input("Please enter Oscillation Amplitude (V): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.300
-            if pName == 'Oscillation Frequency':
-                pEntry = input("Please enter Oscillation Frequency (Hz): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 501000
-            if pName == 'Oscillation ON/OFF':
-                pEntry = input("Please enter Oscillation ON/OFF (0:OFF, 1:ON): ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
-            if pName == 'Max bandwidth':
-                pEntry = input("Please enter Maximum Bandwidth (Hz): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 10000
-            if pName == 'Input Control':
-                pEntry = input("Please enter Input Control (0:Manual, 1:Auto, 2:Current Zone): ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 0
-            if pName == 'Current Range':
-                pEntry = input("Please enter Input Current Range (A): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.010
-            if pName == 'Voltage Range':
-                pEntry = input("Please enter Input Voltage Range (V): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 3
-            if pName == 'Omega Suppression':
-                pEntry = input("Please enter Omega Suppression (dB): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 80
-            if pName == 'Filter Harmonic':
-                pEntry = input("Please enter Filter Harmonic: ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
-            if pName == 'Filter Bandwidth':
-                pEntry = input("Please enter Filter Order Bandwidth: ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 2
-            if pName == 'Data Transfer Rate':
-                pEntry = input("Please enter Data Transfer Rate (Sa/s): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 60000
-            if pName == 'Equivalent Circuit Mode':
-                pEntry = input("Please enter Equivalent Circuit Mode (0: 4-Terminal, 1: 2-Terminal): ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 0
-            if pName == 'Threshold Input Signal':
-                options = ['59: TU Output Value, 58: Aux Output Overload, 56: Aux Input Overload', 
-                           '55: Output Overload, 54: Input(I) Overload, 53: Input(V) Overload', 
-                           '52: Trigger Out, 51: Trigger In, 50: DIO, 3: Demod Theta, 2: Demod R', 
-                           '1: Demod Y, 0: Demod X']
-                pEntry = input("Please enter Threshold Input Signal (\n" +"\n".join(options) + "): ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 59
-            if pName == 'State Enable Time':
-                pEntry = input("Please enter State Enable Time (s): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.006
-            if pName == 'State Disable Time':
-                pEntry = input("Please enter State Disable Time (s): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.003
-            if pName == 'Logic Unit Not':
-                pEntry = input("Please enter Logic Unit Not (0: Off, 1: On): ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
-            if pName == 'Aux Output Signal':
-                options = ['0: Demod X, 1: Demod Y,2: Demod R, 3: Demod Theta',
-                           '11: TU Filtered Value, 12: Manual, 13: TU Output Value']
-                pEntry = input("Please enter Aux Output Signal (\n" +"\n".join(options) + "): ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 13
-            if pName == 'Aux Output Scale':
-                pEntry = input("Please enter Aux Output Scale (V): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else -1
-            if pName == 'Aux Output Offset':
-                pEntry = input("Please enter Aux Output Offset (V): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else -0.5
-            if pName == 'Aux Output Lower Limit':
-                pEntry = input("Please enter Aux Output Lower Limit (V): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else -10
-            if pName == 'Aux Output Upper Limit':
-                pEntry = input("Please enter Aux Output Upper Limit (V): ")
-                self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0
-            if pName == 'Signal Output Add':
-                pEntry = input("Please enter Signal Output Add (0: False, 1: True): ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
-            if pName == 'Trigger Source Signal':
-                options = ['0: Off, 1: Osc Phi Demod 2, 36: Threshold 1, 37: Threshold 2',
-                           '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
-                pEntry = input("Please enter Trigger Source Signal (\n" +"\n".join(options) + "): ")
-                self.params[pName] = int(pEntry) if not len(pEntry)==0 else 36
+    def assignParam(self, pName='Oscillation Frequency', valueDict=None):
+        if valueDict is None:
+            if pName in list(self.params):
+                if pName == 'Oscillation Amplitude':
+                    pEntry = input("Please enter Oscillation Amplitude (V): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.300
+                if pName == 'Oscillation Frequency':
+                    pEntry = input("Please enter Oscillation Frequency (Hz): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 501000
+                if pName == 'Oscillation ON/OFF':
+                    pEntry = input("Please enter Oscillation ON/OFF (0:OFF, 1:ON): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
+                if pName == 'Max bandwidth':
+                    pEntry = input("Please enter Maximum Bandwidth (Hz): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 10000
+                if pName == 'Input Control':
+                    pEntry = input("Please enter Input Control (0:Manual, 1:Auto, 2:Current Zone): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 0
+                if pName == 'Current Range':
+                    pEntry = input("Please enter Input Current Range (A): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.010
+                if pName == 'Voltage Range':
+                    pEntry = input("Please enter Input Voltage Range (V): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 3
+                if pName == 'Omega Suppression':
+                    pEntry = input("Please enter Omega Suppression (dB): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 80
+                if pName == 'Filter Harmonic':
+                    pEntry = input("Please enter Filter Harmonic: ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
+                if pName == 'Filter Bandwidth':
+                    pEntry = input("Please enter Filter Order Bandwidth: ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 2
+                if pName == 'Data Transfer Rate':
+                    pEntry = input("Please enter Data Transfer Rate (Sa/s): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 60000
+                if pName == 'Equivalent Circuit Mode':
+                    pEntry = input("Please enter Equivalent Circuit Mode (0: 4-Terminal, 1: 2-Terminal): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 0
+                if pName == 'Threshold Input Signal':
+                    options = ['59: TU Output Value, 58: Aux Output Overload, 56: Aux Input Overload',
+                               '55: Output Overload, 54: Input(I) Overload, 53: Input(V) Overload',
+                               '52: Trigger Out, 51: Trigger In, 50: DIO, 3: Demod Theta, 2: Demod R',
+                               '1: Demod Y, 0: Demod X']
+                    pEntry = input("Please enter Threshold Input Signal (\n" +"\n".join(options) + "): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 59
+                if pName == 'State Enable Time':
+                    pEntry = input("Please enter State Enable Time (s): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.006
+                if pName == 'State Disable Time':
+                    pEntry = input("Please enter State Disable Time (s): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0.003
+                if pName == 'Logic Unit Not':
+                    pEntry = input("Please enter Logic Unit Not (0: Off, 1: On): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
+                if pName == 'Aux Output Signal':
+                    options = ['0: Demod X, 1: Demod Y,2: Demod R, 3: Demod Theta',
+                               '11: TU Filtered Value, 12: Manual, 13: TU Output Value']
+                    pEntry = input("Please enter Aux Output Signal (\n" +"\n".join(options) + "): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 13
+                if pName == 'Aux Output Scale':
+                    pEntry = input("Please enter Aux Output Scale (V): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else -1
+                if pName == 'Aux Output Offset':
+                    pEntry = input("Please enter Aux Output Offset (V): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else -0.5
+                if pName == 'Aux Output Lower Limit':
+                    pEntry = input("Please enter Aux Output Lower Limit (V): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else -10
+                if pName == 'Aux Output Upper Limit':
+                    pEntry = input("Please enter Aux Output Upper Limit (V): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry)==0 else 0
+                if pName == 'Signal Output Add':
+                    pEntry = input("Please enter Signal Output Add (0: False, 1: True): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 1
+                if pName == 'Trigger Source Signal':
+                    options = ['0: Off, 1: Osc Phi Demod 2, 36: Threshold 1, 37: Threshold 2',
+                               '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
+                    pEntry = input("Please enter Trigger Source Signal (\n" +"\n".join(options) + "): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 36
+            else:
+                print(f"Unknown Parameter {pName}!!!")
         else:
-            print("Unknown Parameter!!!")
+            if pName in list(self.params):
+                self.params[pName] = valueDict.get(pName)
+            else:
+                print(f"Parameter {pName} not found!")
         return 0
     
     def setParam(self, pName='Oscillation Frequency'):

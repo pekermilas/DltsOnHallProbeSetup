@@ -1,6 +1,7 @@
 import tkinter as tk
 import os
 import sys
+import time
 
 from tkinter import *
 from tkinter import ttk
@@ -24,11 +25,17 @@ def connect_devices(devType='impedance'):
         dltsc.impDev = None
         dltsc.impDev = ziC.ziDevice()
         dltsc.impDev.connectDevice()
+        time.sleep(1)
+        for pName in list(dltsc.impDev.params):
+            dltsc.impDev.assignParam(pName, dltsc.z_params_vars)
 
     if devType=='temperature':
         dltsc.tempDev = None
         dltsc.tempDev = tsC.mK2000B()
         dltsc.tempDev.connectTempController()
+        time.sleep(1)
+        for pName in list(dltsc.tempDev.params):
+            dltsc.tempDev.assignParam(pName, dltsc.t_params_vars)
 
     return  0
 
@@ -37,13 +44,17 @@ def apply_and_push_params(devType='impedance'):
         if dltsc.impDev.device is not None:
             for pName in list(dltsc.impDev.params):
                 dltsc.impDev.setParam(pName)
+            print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in range(len(list(dltsc.z_params_vars)))])
         else:
             print('No Impedance device connected.')
+            print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in range(len(list(dltsc.z_params_vars)))])
     if devType=='temperature':
         if dltsc.tempDev.dev is not None:
-            dltsc.tempDev.applyParams()
+            # dltsc.tempDev.applyParams()
+            print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in range(len(list(dltsc.t_params_vars)))])
         else:
             print('No Temperature device connected.')
+            print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in range(len(list(dltsc.t_params_vars)))])
     if devType=='output':
         return 0
 
@@ -207,10 +218,12 @@ def construct_runParamsTab():
                                                            values=param_options[pname], width=16,
                                                            state='readonly')
             dltsc.z_param_inputField[pname].set(pdef)
+            # dltsc.z_param_inputField[pname].current(0)
             dltsc.z_param_inputField[pname].grid(row=r, column=c + 1, sticky='ew', padx=4, pady=2)
         else:
             dltsc.z_param_inputField[pname] = ttk.Entry(runParamsFrame, textvariable=var, width=16)
             dltsc.z_param_inputField[pname].grid(row=r, column=c + 1, sticky='ew', padx=4, pady=2)
+
         dltsc.z_params_vars[pname] = var
 
     # Device / control buttons at the bottom of the impedance panel
@@ -218,7 +231,7 @@ def construct_runParamsTab():
     button_row = len(z_param_list)
     cframe.grid(row=button_row, column=0, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn1 = ttk.Button(cframe, text='Connect Device', style='blue.TButton', command=lambda: connect_devices(devType='impedance'))
+    connect_btn1 = ttk.Button(cframe, text='Connect + Get Params', style='blue.TButton', command=lambda: connect_devices(devType='impedance'))
     connect_btn1.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
     apply_btn1 = ttk.Button(cframe, text='Apply + Push Params', style='blue.TButton', command=lambda: apply_and_push_params(devType='impedance'))
@@ -228,26 +241,28 @@ def construct_runParamsTab():
     # Construct Temperature Controller Frame
     # -------------------------------------------------------------------------
     dltsc.t_param_inputField = dict()
-    t_param_list = ['Initial Temperature (C)', 'Final Temperature (C)',
-                    'Number of Temperatures', 'Temperature Ramp (C/min)',
-                    'Stability Delay (s)']
+    dltsc.t_params_vars = dict()
+    t_param_list = [('Initial Temperature (C)', '25'), ('Final Temperature (C)', '25'),
+                    ('Number of Temperatures', '1'), ('Temperature Ramp (C/min)', '5'),
+                    ('Stability Delay (s)', '0')]
     for i in range(len(t_param_list)):
         variable_name = list(t_param_list)[i]
         dltsc.t_param_inputField[variable_name] = None
 
-    for i in range(len(t_param_list)):
-        pname = list(t_param_list)[i]
+    # for i in range(len(t_param_list)):
+    for idx, (pname, pdef) in enumerate(t_param_list):
+        var = tk.StringVar(value=pdef)
         lbl = ttk.Label(runParamsFrame, text=pname, style='red.TLabel')
-        lbl.grid(row=i, column=2, sticky='w', padx=4, pady=2)
-        dltsc.t_param_inputField[pname] = ttk.Entry(runParamsFrame, width=8)
-        dltsc.t_param_inputField[pname].insert(0, '25')
-        dltsc.t_param_inputField[pname].grid(row=i, column=3, sticky='ew', padx=4, pady=2)
+        lbl.grid(row=idx, column=2, sticky='w', padx=4, pady=2)
+        dltsc.t_param_inputField[pname] = ttk.Entry(runParamsFrame, width=8, textvariable=var)
+        dltsc.t_param_inputField[pname].grid(row=idx, column=3, sticky='ew', padx=4, pady=2)
+        dltsc.t_params_vars[pname] = var
 
     # Device / control buttons at the bottom of the temperature panel
     tframe = ttk.Frame(runParamsFrame)
     tframe.grid(row=5, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn2 = ttk.Button(tframe, text='Connect Device', style='red.TButton', command=lambda: connect_devices(devType='temperature'))
+    connect_btn2 = ttk.Button(tframe, text='Connect + Get Params', style='red.TButton', command=lambda: connect_devices(devType='temperature'))
     connect_btn2.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
     apply_btn2 = ttk.Button(tframe, text='Apply + Push Params', style='red.TButton', command=lambda: apply_and_push_params(devType='temperature'))

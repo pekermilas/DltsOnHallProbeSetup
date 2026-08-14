@@ -60,7 +60,11 @@ class mK2000B:
     def query(self, queryStr = None):
         if not self.dev is None:
             return self.dev.query(queryStr)
-        
+
+    @staticmethod
+    def _resolve_param_value(value):
+        return value.get() if hasattr(value, 'get') else value
+
     def connectTempController(self):
         if not self.state:
             try:
@@ -206,37 +210,73 @@ class mK2000B:
         
         return 0
 
-    def setParam(self, pName='Initial Temperature (C)'):
-        if pName in list(self.params):
-            if pName == 'Initial Temperature (C)':
-                pEntry = input("Initial Temperature (C): ")
-                self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 25
-            elif pName == 'Final Temperature (C)':
-                pEntry = input("Final Temperature (C): ")
-                self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 25
-            elif pName == 'Number of Temperatures':
-                pEntry = input("Number of Temperatures: ")
-                self.params[pName] = int(pEntry) if not len(pEntry) == 0 else 1
-            elif pName == 'Temperature Ramp (C/min)':
-                pEntry = input("Temperature Ramp (C/min): ")
-                self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 5
-            elif pName == 'Stability Delay (s)':
-                pEntry = input("Stability Delay (s): ")
-                self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 0
-            elif pName == 'Temperature Grid (C)':
-                Tinit = self.params['Initial Temperature (C)']
-                Tfin = self.params['Final Temperature (C)']
-                numT = self.params['Number of Temperatures']
-                pEntry = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
-                self.params[pName] = pEntry if not len(pEntry) == 0 else Tinit
+    def assignParam(self, pName='Initial Temperature (C)', valueDict=None):
+        if valueDict is None:
+            if pName in list(self.params):
+                if pName == 'Initial Temperature (C)':
+                    pEntry = input("Initial Temperature (C): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 25
+                elif pName == 'Final Temperature (C)':
+                    pEntry = input("Final Temperature (C): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 25
+                elif pName == 'Number of Temperatures':
+                    pEntry = input("Number of Temperatures: ")
+                    self.params[pName] = int(pEntry) if not len(pEntry) == 0 else 1
+                elif pName == 'Temperature Ramp (C/min)':
+                    pEntry = input("Temperature Ramp (C/min): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 5
+                elif pName == 'Stability Delay (s)':
+                    pEntry = input("Stability Delay (s): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 0
+                elif pName == 'Temperature Grid (C)':
+                    Tinit = self.params.get('Initial Temperature (C)')
+                    Tfin = self.params.get('Final Temperature (C)')
+                    numT = self.params.get('Number of Temperatures')
+                    pEntry = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
+                    self.params[pName] = pEntry if not len(pEntry) == 0 else Tinit
+            else:
+                print(f"Unknown Parameter {pName}!!!")
         else:
-            print("Unknown Parameter!!!")
+            if pName in list(self.params):
+                if pName=='Temperature Grid (C)':
+                    Tinit = self._resolve_param_value(valueDict.get('Initial Temperature (C)'))
+                    Tfin = self._resolve_param_value(valueDict.get('Final Temperature (C)'))
+                    numT = self._resolve_param_value(valueDict.get('Number of Temperatures'))
+                    Tgrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
+                    self.params[pName] = Tgrid
+                else:
+                    self.params[pName] = self._resolve_param_value(valueDict.get(pName))
 
         return 0
 
-    def loadParams(self):
+    def setParam(self, pName='Initial Temperature (C)', valueDict=None):
+        if not valueDict is None:
+            if pName in list(self.params):
+                if pName == 'Initial Temperature (C)':
+                    self.params[pName] = self._resolve_param_value(valueDict.get("Initial Temperature (C)"))
+                elif pName == 'Final Temperature (C)':
+                    self.params[pName] = self._resolve_param_value(valueDict.get("Final Temperature (C)"))
+                elif pName == 'Number of Temperatures':
+                    self.params[pName] = self._resolve_param_value(valueDict.get("Number of Temperatures"))
+                elif pName == 'Temperature Ramp (C/min)':
+                    self.params[pName] = self._resolve_param_value(valueDict.get("Temperature Ramp (C/min)"))
+                elif pName == 'Stability Delay (s)':
+                    self.params[pName] = self._resolve_param_value(valueDict.get("Stability Delay (s)"))
+                elif pName == 'Temperature Grid (C)':
+                    Tinit = self._resolve_param_value(self.params['Initial Temperature (C)'])
+                    Tfin = self._resolve_param_value(self.params['Final Temperature (C)'])
+                    numT = self._resolve_param_value(self.params['Number of Temperatures'])
+                    Tgrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
+                    self.params[pName] = Tgrid
+            else:
+                print("Unknown Parameter!!!")
+        else:
+            print("No value dictionary provided!")
+        return 0
+
+    def loadParams(self, valueDict):
         for pName in list(self.params):
-            self.setParam(pName)
+            self.setParam(pName, valueDict)
         return 0
 
     def measureProxyTemp(self, Tf):
