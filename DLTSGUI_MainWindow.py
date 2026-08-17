@@ -55,8 +55,9 @@ dltsc.postprocessingTab = ttk.Frame(dltsc.tabControl)
 
 def on_closing():
 #     dltsc.tempDev.disconnTController()
-    if tk.messagebox.askokcancel("Quit", "Do you want to quit?"):
-        dltsc.root.destroy()  # Manually close the window
+#     if tk.messagebox.askokcancel("Quit", "Do you want to quit?"):
+#         dltsc.root.destroy()  # Manually close the window
+    dltsc.root.destroy()  # Manually close the window
 
 dltsc.root.protocol("WM_DELETE_WINDOW", on_closing)
 dltsc.root.mainloop()

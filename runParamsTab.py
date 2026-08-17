@@ -61,6 +61,8 @@ def apply_and_push_params(devType='impedance'):
                    range(len(list(dltsc.t_params_vars)))])
     if devType=='output':
         if dltsc.d_params_vars['Data Root Folder'] is not None:
+            print("Hello there, welcome to DltsOnHallProbeSetup!")
+            print(dltsc.d_param_inputField['Data Root Folder'])
             print([dltsc.d_params_vars[list(dltsc.d_params_vars)[k]].get() for k in
                    range(len(list(dltsc.d_params_vars)))])
         else:
@@ -72,14 +74,14 @@ def apply_and_push_params(devType='impedance'):
 
 def browse_root_folder():
     """Open a folder selection dialog and set the Root Folder entry."""
-    if hasattr(dltsc, d_param_inputField):
-        dltsc.d_param_inputField['Data Root Folder'] = filedialog.askdirectory()
-    else:
-        print()
-    if dltsc.d_param_inputField['Data Root Folder'] is None:
-        print('Folder selection canceled.')
-    else:
-        print(f'Selected folder: {dltsc.d_param_inputField["Data Root Folder"]}')
+    if hasattr(dltsc, 'd_param_inputField'):
+        if dltsc.d_param_inputField['Data Root Folder'] is not None:
+            selected_path = filedialog.askdirectory()
+        if selected_path:
+            dltsc.d_param_inputField['Data Root Folder'] = selected_path
+            print('Root Folder set to:', dltsc.d_param_inputField['Data Root Folder'])
+        else:
+            print('Root Folder set to:', dltsc.d_param_inputField['Data Root Folder'])
     return 0
 
 def construct_runParamsTab():
@@ -295,7 +297,6 @@ def construct_runParamsTab():
 
     idx_offset = len(t_param_list)+2
     for idx, (pname, pdef) in enumerate(d_param_list):
-        # pname = list(d_param_list)[i]
         var = tk.StringVar(value=pdef)
         lbl = ttk.Label(runParamsFrame, text=pname, style='green.TLabel')
         lbl.grid(row=idx+idx_offset, column=2, sticky='w', padx=4, pady=2)
@@ -311,6 +312,7 @@ def construct_runParamsTab():
         else:
             dltsc.d_param_inputField[pname] = ttk.Entry(runParamsFrame, width=8, textvariable=var)
             dltsc.d_param_inputField[pname].grid(row=idx+idx_offset, column=3, sticky='ew', padx=4, pady=2)
+        print(pdef, var)
         dltsc.d_params_vars[pname] = var
 
     # Device / control buttons at the bottom of the temperature panel
