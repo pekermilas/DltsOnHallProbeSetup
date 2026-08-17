@@ -20,7 +20,7 @@ import instecTempStage_Control as tsC
 import impedanceAnalysis_Tools as iaT
 import runDlts_Tools as rdT
 
-def connect_devices(devType='impedance'):
+def connect_and_get_params(devType='impedance'):
     if devType=='impedance':
         dltsc.impDev = None
         dltsc.impDev = ziC.ziDevice()
@@ -44,26 +44,38 @@ def apply_and_push_params(devType='impedance'):
         if dltsc.impDev.device is not None:
             for pName in list(dltsc.impDev.params):
                 dltsc.impDev.setParam(pName)
-            print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in range(len(list(dltsc.z_params_vars)))])
+            print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in
+                   range(len(list(dltsc.z_params_vars)))])
         else:
             print('No Impedance device connected.')
-            print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in range(len(list(dltsc.z_params_vars)))])
+            print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in
+                   range(len(list(dltsc.z_params_vars)))])
     if devType=='temperature':
         if dltsc.tempDev.dev is not None:
             # dltsc.tempDev.applyParams()
-            print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in range(len(list(dltsc.t_params_vars)))])
+            print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in
+                   range(len(list(dltsc.t_params_vars)))])
         else:
             print('No Temperature device connected.')
-            print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in range(len(list(dltsc.t_params_vars)))])
+            print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in
+                   range(len(list(dltsc.t_params_vars)))])
     if devType=='output':
+        if dltsc.d_params_vars['Data Root Folder'] is not None:
+            print([dltsc.d_params_vars[list(dltsc.d_params_vars)[k]].get() for k in
+                   range(len(list(dltsc.d_params_vars)))])
+        else:
+            print('No Data Folder selected.')
+            print([dltsc.d_params_vars[list(dltsc.d_params_vars)[k]].get() for k in
+                   range(len(list(dltsc.d_params_vars)))])
         return 0
 
 
 def browse_root_folder():
     """Open a folder selection dialog and set the Root Folder entry."""
-    dltsc.d_param_inputField['Data Root Folder'] = None
-    dltsc.d_param_inputField['Data Root Folder'] = filedialog.askdirectory()
-
+    if hasattr(dltsc, d_param_inputField):
+        dltsc.d_param_inputField['Data Root Folder'] = filedialog.askdirectory()
+    else:
+        print()
     if dltsc.d_param_inputField['Data Root Folder'] is None:
         print('Folder selection canceled.')
     else:
@@ -231,25 +243,23 @@ def construct_runParamsTab():
     button_row = len(z_param_list)
     cframe.grid(row=button_row, column=0, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn1 = ttk.Button(cframe, text='Connect + Get Params', style='blue.TButton', command=lambda: connect_devices(devType='impedance'))
+    connect_btn1 = ttk.Button(cframe, text='Connect + Get Params', style='blue.TButton',
+                              command=lambda: connect_and_get_params(devType='impedance'))
     connect_btn1.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
-    apply_btn1 = ttk.Button(cframe, text='Apply + Push Params', style='blue.TButton', command=lambda: apply_and_push_params(devType='impedance'))
+    apply_btn1 = ttk.Button(cframe, text='Apply + Push Params', style='blue.TButton',
+                            command=lambda: apply_and_push_params(devType='impedance'))
     apply_btn1.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
 
 
-    # Construct Temperature Controller Frame
+    # Construct Temperature Controller Params
     # -------------------------------------------------------------------------
-    dltsc.t_param_inputField = dict()
     dltsc.t_params_vars = dict()
     t_param_list = [('Initial Temperature (C)', '25'), ('Final Temperature (C)', '25'),
                     ('Number of Temperatures', '1'), ('Temperature Ramp (C/min)', '5'),
                     ('Stability Delay (s)', '0')]
-    for i in range(len(t_param_list)):
-        variable_name = list(t_param_list)[i]
-        dltsc.t_param_inputField[variable_name] = None
+    dltsc.t_param_inputField = dict(t_param_list)
 
-    # for i in range(len(t_param_list)):
     for idx, (pname, pdef) in enumerate(t_param_list):
         var = tk.StringVar(value=pdef)
         lbl = ttk.Label(runParamsFrame, text=pname, style='red.TLabel')
@@ -262,49 +272,53 @@ def construct_runParamsTab():
     tframe = ttk.Frame(runParamsFrame)
     tframe.grid(row=5, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
-    connect_btn2 = ttk.Button(tframe, text='Connect + Get Params', style='red.TButton', command=lambda: connect_devices(devType='temperature'))
+    connect_btn2 = ttk.Button(tframe, text='Connect + Get Params', style='red.TButton',
+                              command=lambda: connect_and_get_params(devType='temperature'))
     connect_btn2.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
-    apply_btn2 = ttk.Button(tframe, text='Apply + Push Params', style='red.TButton', command=lambda: apply_and_push_params(devType='temperature'))
+    apply_btn2 = ttk.Button(tframe, text='Apply + Push Params', style='red.TButton',
+                            command=lambda: apply_and_push_params(devType='temperature'))
     apply_btn2.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
 
-    spacer1 = ttk.Label(runParamsFrame, text="")
-    spacer1.grid(row=6, column=2)
-    spacer2 = ttk.Label(runParamsFrame, text="")
-    spacer2.grid(row=6, column=3)
-    # -----------------------------------------------------------------------------------------------------------
-    dltsc.d_param_inputField = dict()
-    d_param_list = ['Number of Points (power of 2)', 'Number of Reps',
-                    'Data File Format', 'Data Root Folder']
-    for i in range(len(d_param_list)):
-        variable_name = list(d_param_list)[i]
-        dltsc.d_param_inputField[variable_name] = None
+    # spacer1 = ttk.Label(runParamsFrame, text="")
+    # spacer1.grid(row=6, column=2)
+    # spacer2 = ttk.Label(runParamsFrame, text="")
+    # spacer2.grid(row=6, column=3)
+
+    # Construct Data Frame
+    # -------------------------------------------------------------------------
+
+    dltsc.d_params_vars = dict()
+    d_param_list = [('Number of Points (power of 2)', 16), ('Number of Reps', 500),
+                    ('Data File Format', 'JSON'), ('Data Root Folder', None)]
+    dltsc.d_param_inputField = dict(d_param_list)
 
     idx_offset = len(t_param_list)+2
-    for i in range(len(d_param_list)):
-        pname = list(d_param_list)[i]
+    for idx, (pname, pdef) in enumerate(d_param_list):
+        # pname = list(d_param_list)[i]
+        var = tk.StringVar(value=pdef)
         lbl = ttk.Label(runParamsFrame, text=pname, style='green.TLabel')
-        lbl.grid(row=i+idx_offset, column=2, sticky='w', padx=4, pady=2)
+        lbl.grid(row=idx+idx_offset, column=2, sticky='w', padx=4, pady=2)
         if pname == 'Data File Format':
-            dltsc.d_param_inputField[pname] = ttk.Combobox(runParamsFrame, width=16,
+            dltsc.d_param_inputField[pname] = ttk.Combobox(runParamsFrame, width=16, textvariable=var,
                                                            values=["JSON", "HDF5"], state='readonly')
-            dltsc.d_param_inputField[pname].set("JSON")
-            dltsc.d_param_inputField[pname].grid(row=i+idx_offset, column=3, sticky='ew', padx=4, pady=0)
+            dltsc.d_param_inputField[pname].grid(row=idx+idx_offset, column=3, sticky='ew', padx=4, pady=0)
 
         elif pname == 'Data Root Folder':
             dltsc.d_param_inputField[pname] = ttk.Button(runParamsFrame, text='Browse...',
                                                          style='green.TButton', command=browse_root_folder)
-            dltsc.d_param_inputField[pname].grid(row=i+idx_offset, column=3, sticky='ew', padx=4, pady=2)
+            dltsc.d_param_inputField[pname].grid(row=idx+idx_offset, column=3, sticky='ew', padx=4, pady=2)
         else:
-            dltsc.d_param_inputField[pname] = ttk.Entry(runParamsFrame, width=8)
-            dltsc.d_param_inputField[pname].insert(0, '25')
-            dltsc.d_param_inputField[pname].grid(row=i+idx_offset, column=3, sticky='ew', padx=4, pady=2)
+            dltsc.d_param_inputField[pname] = ttk.Entry(runParamsFrame, width=8, textvariable=var)
+            dltsc.d_param_inputField[pname].grid(row=idx+idx_offset, column=3, sticky='ew', padx=4, pady=2)
+        dltsc.d_params_vars[pname] = var
 
     # Device / control buttons at the bottom of the temperature panel
     oframe = ttk.Frame(runParamsFrame)
     oframe.grid(row=13, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
-    apply_btn4 = ttk.Button(oframe, text='Apply + Push Params', style='purple.TButton', command=lambda: apply_and_push_params(devType='output'))
+    apply_btn4 = ttk.Button(oframe, text='Apply + Push Params', style='purple.TButton',
+                            command=lambda: apply_and_push_params(devType='output'))
     apply_btn4.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
 
