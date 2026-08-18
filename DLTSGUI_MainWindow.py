@@ -29,12 +29,17 @@ import liveDataTab as ldT
 import postprocessingTab as ppT
 
 
-dltsc.maxTextLineCount = 5
+dltsc.maxTextLineCount = 10
+dltsc.textlinecount = 0
 dltsc.root = tk.Tk()
 dltsc.root.title('DLTS Control GUI')
 try:
-    dltsc.root.geometry('1020x820')
-    dltsc.root.minsize(860, 700)
+    # Keep the GUI compact and adapt the height to the screen so it fits smaller displays.
+    screen_h = dltsc.root.winfo_screenheight()
+    window_h = min(900, max(780, screen_h - 120))
+    min_h = min(window_h, max(760, screen_h - 180))
+    dltsc.root.geometry(f'940x{window_h}')
+    dltsc.root.minsize(860, min_h)
 except:
     pass
 

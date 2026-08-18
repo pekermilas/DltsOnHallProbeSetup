@@ -26,3 +26,7 @@ def init():
     global d_params_vars
     global d_param_inputField
     global root_data_folder
+    global param_history
+    global param_history_labels
+    global param_history_selection
+    global param_history_inputField
