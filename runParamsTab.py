@@ -452,7 +452,8 @@ def construct_runParamsTab():
     apply_btn4.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
 
     history_frame = ttk.Frame(runParamsFrame)
-    history_frame.grid(row=12, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+    # Place history controls below the existing parameter rows to avoid altering row heights above.
+    history_frame.grid(row=24, column=2, columnspan=4, sticky='ew', pady=(8, 2))
     history_frame.grid_columnconfigure(0, weight=1)
 
     history_lbl = ttk.Label(history_frame, text='Parameter History', style=style_names['purple']['label'])
