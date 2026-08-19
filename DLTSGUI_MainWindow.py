@@ -53,8 +53,8 @@ dltsc.runParamsTab = ttk.Frame(dltsc.tabControl)
 rpT.construct_runParamsTab()
 
 dltsc.livePlotTab = ttk.Frame(dltsc.tabControl)
-# ldT.construct_livePlotTab()
-#
+ldT.construct_livePlotTab()
+
 dltsc.postprocessingTab = ttk.Frame(dltsc.tabControl)
 # ppT.construct_postprocessingTab()
 

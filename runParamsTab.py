@@ -409,6 +409,11 @@ def construct_runParamsTab():
     tframe = ttk.Frame(runParamsFrame)
     tframe.grid(row=5, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
+    # spacer1 = ttk.Label(runParamsFrame, text="")
+    # spacer1.grid(row=6, column=2)
+    # spacer2 = ttk.Label(runParamsFrame, text="")
+    # spacer2.grid(row=6, column=3)
+
     connect_btn2 = ttk.Button(tframe, text='Connect + Get Params', style=style_names['red']['button'],
                                command=lambda: connect_and_get_params(devType='temperature'))
     connect_btn2.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
@@ -453,7 +458,7 @@ def construct_runParamsTab():
 
     history_frame = ttk.Frame(runParamsFrame)
     # Place history controls below the existing parameter rows to avoid altering row heights above.
-    history_frame.grid(row=24, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+    history_frame.grid(row=23, column=2, columnspan=4, sticky='ew', pady=(8, 2))
     history_frame.grid_columnconfigure(0, weight=1)
 
     history_lbl = ttk.Label(history_frame, text='Parameter History', style=style_names['purple']['label'])
