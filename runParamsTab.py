@@ -217,7 +217,7 @@ def construct_runParamsTab():
     runParamsTab = dltsc.runParamsTab
     tabControl = dltsc.tabControl
 
-    tabControl.add(runParamsTab, text='Run Parameters')
+    tabControl.add(runParamsTab, text='Input Parameters')
     tabControl.pack(expand=1, fill="both")
 
     style = ttk.Style()
@@ -458,7 +458,7 @@ def construct_runParamsTab():
 
     history_frame = ttk.Frame(runParamsFrame)
     # Place history controls below the existing parameter rows to avoid altering row heights above.
-    history_frame.grid(row=23, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+    history_frame.grid(row=len(dltsc.z_param_inputField)//2+1, column=2, columnspan=4, sticky='ew', pady=(8, 2))
     history_frame.grid_columnconfigure(0, weight=1)
 
     history_lbl = ttk.Label(history_frame, text='Parameter History', style=style_names['purple']['label'])

@@ -30,3 +30,5 @@ def init():
     global param_history_labels
     global param_history_selection
     global param_history_inputField
+
+    global run_button

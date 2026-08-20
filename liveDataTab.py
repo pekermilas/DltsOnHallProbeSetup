@@ -1,4 +1,5 @@
 import tkinter as tk
+import threading
 import os
 import sys
 import time
@@ -20,10 +21,86 @@ import instecTempStage_Control as tsC
 import impedanceAnalysis_Tools as iaT
 import runDlts_Tools as rdT
 
+def _log_to_textbox(message):
+    """Append one log line to the GUI textbox and reset after maxTextLineCount."""
+    if not hasattr(dltsc, 'textbox') or dltsc.textbox is None:
+        return
+
+    if not hasattr(dltsc, 'textlinecount'):
+        dltsc.textlinecount = 0
+    if not hasattr(dltsc, 'maxTextLineCount') or dltsc.maxTextLineCount is None:
+        dltsc.maxTextLineCount = 10
+
+    if dltsc.textlinecount >= dltsc.maxTextLineCount:
+        dltsc.textbox.delete('1.0', END)
+        dltsc.textlinecount = 0
+
+    timestamped_message = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
+    dltsc.textbox.insert(END, timestamped_message + '\n')
+    dltsc.textbox.see(END)
+    dltsc.textlinecount += 1
+
+def start_dlts():
+    # Simulate a heavy execution (e.g., file download, scraping, heavy calculations)
+    _log_to_textbox("DLTS run started...")
+    time.sleep(5)
+    _log_to_textbox("DLTS run completed!")
+
+    # Re-enable the button safely once done
+    dltsc.run_button.config(state="normal")
+
+def start_thread():
+    # 1. Disable the button to prevent the user from clicking it multiple times
+    dltsc.run_button.config(state="disabled")
+    # 2. Create a background thread for the heavy task
+    task_thread = threading.Thread(target=start_dlts)
+    # 3. Set daemon to True so the thread dies instantly if the GUI window is closed
+    task_thread.daemon = True
+    # 4. Start the background execution
+    task_thread.start()
+
 def construct_livePlotTab():
     root = dltsc.root
     livePlotTab = dltsc.livePlotTab
     tabControl = dltsc.tabControl
 
-    tabControl.add(livePlotTab, text='Live Plot')
+    tabControl.add(livePlotTab, text='Live Tools')
     tabControl.pack(expand=1, fill="both")
+
+    # Allow tab content to expand with the notebook window.
+    dltsc.livePlotTab.grid_rowconfigure(0, weight=0)
+    dltsc.livePlotTab.grid_rowconfigure(1, weight=1)
+    dltsc.livePlotTab.grid_columnconfigure(0, weight=1)
+
+
+
+    runButtonFrame = tk.Frame(dltsc.livePlotTab, highlightbackground="gray",
+                              highlightthickness=1, highlightcolor='gray',
+                              width=860, height=220)
+
+    runButtonFrame.grid(row=0, column=0, padx=10, pady=(0, 2), sticky='nsew')
+    runButtonFrame.grid_propagate(False)
+    runButtonFrame.grid_columnconfigure(0, weight=1)
+    runButtonFrame.grid_columnconfigure(1, weight=1)
+    runButtonFrame.grid_columnconfigure(2, weight=0)
+    runButtonFrame.grid_columnconfigure(3, weight=1)
+    runButtonFrame.config()
+
+    dltsc.run_button = tk.Button(runButtonFrame, text="Run DLTS", command=start_thread)
+    dltsc.run_button.pack(fill='both', expand=True, padx=4, pady=0)
+
+
+    reportLivesFrame = tk.Frame(dltsc.livePlotTab, highlightbackground="gray",
+                              highlightthickness=1, highlightcolor='gray',
+                              width=860, height=220)
+
+    reportLivesFrame.grid(row=1, column=0, padx=10, pady=(0, 2), sticky='nsew')
+    reportLivesFrame.grid_propagate(False)
+    reportLivesFrame.grid_columnconfigure(0, weight=1)
+    reportLivesFrame.grid_columnconfigure(1, weight=1)
+    reportLivesFrame.grid_columnconfigure(2, weight=0)
+    reportLivesFrame.grid_columnconfigure(3, weight=1)
+    reportLivesFrame.config()
+
+    dltsc.textbox = tk.Text(reportLivesFrame, wrap='none', width=1, height=10)
+    dltsc.textbox.grid(row=0, column=0, sticky='nsew', padx=4, pady=4)
