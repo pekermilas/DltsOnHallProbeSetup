@@ -21,30 +21,11 @@ import instecTempStage_Control as tsC
 import impedanceAnalysis_Tools as iaT
 import runDlts_Tools as rdT
 
-def _log_to_textbox(message):
-    """Append one log line to the GUI textbox and reset after maxTextLineCount."""
-    if not hasattr(dltsc, 'textbox') or dltsc.textbox is None:
-        return
-
-    if not hasattr(dltsc, 'textlinecount'):
-        dltsc.textlinecount = 0
-    if not hasattr(dltsc, 'maxTextLineCount') or dltsc.maxTextLineCount is None:
-        dltsc.maxTextLineCount = 10
-
-    if dltsc.textlinecount >= dltsc.maxTextLineCount:
-        dltsc.textbox.delete('1.0', END)
-        dltsc.textlinecount = 0
-
-    timestamped_message = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
-    dltsc.textbox.insert(END, timestamped_message + '\n')
-    dltsc.textbox.see(END)
-    dltsc.textlinecount += 1
-
 def start_dlts():
     # Simulate a heavy execution (e.g., file download, scraping, heavy calculations)
-    _log_to_textbox("DLTS run started...")
+    dltsc.log_to_textbox("DLTS run started...")
     time.sleep(5)
-    _log_to_textbox("DLTS run completed!")
+    dltsc.log_to_textbox("DLTS run completed!")
 
     # Re-enable the button safely once done
     dltsc.run_button.config(state="normal")
@@ -53,11 +34,11 @@ def start_thread():
     # 1. Disable the button to prevent the user from clicking it multiple times
     dltsc.run_button.config(state="disabled")
     # 2. Create a background thread for the heavy task
-    task_thread = threading.Thread(target=start_dlts)
+    taskThread = threading.Thread(target=start_dlts)
     # 3. Set daemon to True so the thread dies instantly if the GUI window is closed
-    task_thread.daemon = True
+    taskThread.daemon = True
     # 4. Start the background execution
-    task_thread.start()
+    taskThread.start()
 
 def construct_livePlotTab():
     root = dltsc.root

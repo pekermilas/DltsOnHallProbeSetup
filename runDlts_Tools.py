@@ -42,6 +42,16 @@ class dltsRun:
         self.senseRunFailure = True
         self.excludedRuns = []
 
+    def init_experiment(self):
+        # Initialize the experiment by setting up devices and parameters
+        # 1. Check if devices exists, if not report error
+        global tempDev
+        global impDev
+
+        # 2. Check device parameters and I/O parameters, report the errors if any
+        # 3. Execute the run by an altered version of the run function below
+        return 0
+
     def initSetup(self):
         # THIS MECHANISM NEEDS TO CHANGE FOR THE GUI AND FOR THE CHANGES IN
         # TEMP DEVICE OBJECT PROPERTIES!!!!!!!!!!!!!!!!!!!

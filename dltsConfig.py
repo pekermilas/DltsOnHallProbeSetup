@@ -32,3 +32,21 @@ def init():
     global param_history_inputField
 
     global run_button
+
+#-----------------------Global Functions--------------------------------#
+def log_to_textbox(message):
+    """Appends text to the shared GUI textbox and manages line limits."""
+    # Use 'global' inside the function ONLY if you plan to reassign the variable (e.g., textlinecount = ...)
+    global textlinecount
+    # global maxTextLineCount
+    # global textbox
+
+    # You can read and call methods on objects (like textbox) without the 'global' keyword
+    if textbox:
+        textbox.insert("end", f"{message}\n")
+        textlinecount += 1
+
+        # Example using your shared max limit constant
+        if textlinecount > maxTextLineCount:
+            textbox.delete("1.0", "2.0")
+            textlinecount -= 1

@@ -92,14 +92,14 @@ def _save_current_param_set(source='Manual Save', should_log=False):
     dltsc.param_history = dltsc.param_history[:5]
     _update_param_history_field()
     if should_log:
-        _log_to_textbox(f"Saved parameter set to history [{source}]")
+        dltsc.log_to_textbox(f"Saved parameter set to history [{source}]")
 
 def _load_selected_param_set():
     """Restore the currently selected parameter set from history."""
     _ensure_param_history_state()
     selected_label = dltsc.param_history_selection.get()
     if not selected_label or selected_label not in dltsc.param_history_labels:
-        _log_to_textbox('No parameter history entry selected.')
+        dltsc.log_to_textbox('No parameter history entry selected.')
         return 0
 
     selected_idx = dltsc.param_history_labels.index(selected_label)
@@ -107,27 +107,8 @@ def _load_selected_param_set():
     _apply_param_values(getattr(dltsc, 'z_params_vars', {}), selected_entry['z_params'])
     _apply_param_values(getattr(dltsc, 't_params_vars', {}), selected_entry['t_params'])
     _apply_param_values(getattr(dltsc, 'd_params_vars', {}), selected_entry['d_params'])
-    _log_to_textbox(f"Reloaded parameter set from history [{selected_entry['source']}]")
+    dltsc.log_to_textbox(f"Reloaded parameter set from history [{selected_entry['source']}]")
     return 0
-
-def _log_to_textbox(message):
-    """Append one log line to the GUI textbox and reset after maxTextLineCount."""
-    if not hasattr(dltsc, 'textbox') or dltsc.textbox is None:
-        return
-
-    if not hasattr(dltsc, 'textlinecount'):
-        dltsc.textlinecount = 0
-    if not hasattr(dltsc, 'maxTextLineCount') or dltsc.maxTextLineCount is None:
-        dltsc.maxTextLineCount = 10
-
-    if dltsc.textlinecount >= dltsc.maxTextLineCount:
-        dltsc.textbox.delete('1.0', END)
-        dltsc.textlinecount = 0
-
-    timestamped_message = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
-    dltsc.textbox.insert(END, timestamped_message + '\n')
-    dltsc.textbox.see(END)
-    dltsc.textlinecount += 1
 
 def connect_and_get_params(devType='impedance'):
     if devType=='impedance':
@@ -138,7 +119,7 @@ def connect_and_get_params(devType='impedance'):
         for pName in list(dltsc.impDev.params):
             dltsc.impDev.assignParam(pName, dltsc.z_params_vars)
         _save_current_param_set(source='Connect/Get impedance')
-        _log_to_textbox('Connect + Get Params [impedance]: ' +
+        dltsc.log_to_textbox('Connect + Get Params [impedance]: ' +
                         _format_param_snapshot(dltsc.z_params_vars))
 
     if devType=='temperature':
@@ -149,7 +130,7 @@ def connect_and_get_params(devType='impedance'):
         for pName in list(dltsc.tempDev.params):
             dltsc.tempDev.assignParam(pName, dltsc.t_params_vars)
         _save_current_param_set(source='Connect/Get temperature')
-        _log_to_textbox('Connect + Get Params [temperature]: ' +
+        dltsc.log_to_textbox('Connect + Get Params [temperature]: ' +
                         _format_param_snapshot(dltsc.t_params_vars))
 
     return  0
@@ -162,13 +143,13 @@ def apply_and_push_params(devType='impedance'):
             print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in
                    range(len(list(dltsc.z_params_vars)))])
             _save_current_param_set(source='Apply/Push impedance')
-            _log_to_textbox('Apply + Push Params [impedance]: ' +
+            dltsc.log_to_textbox('Apply + Push Params [impedance]: ' +
                             _format_param_snapshot(dltsc.z_params_vars))
         else:
             print('No Impedance device connected.')
             print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in
                    range(len(list(dltsc.z_params_vars)))])
-            _log_to_textbox('Apply + Push Params [impedance]: No device connected. ' +
+            dltsc.log_to_textbox('Apply + Push Params [impedance]: No device connected. ' +
                             _format_param_snapshot(dltsc.z_params_vars))
     if devType=='temperature':
         if dltsc.tempDev.dev is not None:
@@ -176,13 +157,13 @@ def apply_and_push_params(devType='impedance'):
             print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in
                    range(len(list(dltsc.t_params_vars)))])
             _save_current_param_set(source='Apply/Push temperature')
-            _log_to_textbox('Apply + Push Params [temperature]: ' +
+            dltsc.log_to_textbox('Apply + Push Params [temperature]: ' +
                             _format_param_snapshot(dltsc.t_params_vars))
         else:
             print('No Temperature device connected.')
             print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in
                    range(len(list(dltsc.t_params_vars)))])
-            _log_to_textbox('Apply + Push Params [temperature]: No device connected. ' +
+            dltsc.log_to_textbox('Apply + Push Params [temperature]: No device connected. ' +
                             _format_param_snapshot(dltsc.t_params_vars))
     if devType=='output':
         selected_root = dltsc.d_params_vars['Data Root Folder'].get()
@@ -191,13 +172,13 @@ def apply_and_push_params(devType='impedance'):
             print([dltsc.d_params_vars[list(dltsc.d_params_vars)[k]].get() for k in
                    range(len(list(dltsc.d_params_vars)))])
             _save_current_param_set(source='Apply/Push output')
-            _log_to_textbox('Apply + Push Params [output]: ' +
+            dltsc.log_to_textbox('Apply + Push Params [output]: ' +
                             _format_param_snapshot(dltsc.d_params_vars))
         else:
             print('No Data Folder selected.')
             print([dltsc.d_params_vars[list(dltsc.d_params_vars)[k]].get() for k in
                    range(len(list(dltsc.d_params_vars)))])
-            _log_to_textbox('Apply + Push Params [output]: No data folder selected. ' +
+            dltsc.log_to_textbox('Apply + Push Params [output]: No data folder selected. ' +
                             _format_param_snapshot(dltsc.d_params_vars))
         return 0
 
