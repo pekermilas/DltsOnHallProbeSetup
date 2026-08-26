@@ -472,5 +472,9 @@ def construct_runParamsTab():
 
     dltsc.textbox = tk.Text(reportParamsFrame, wrap='none', width=1, height=10)
     dltsc.textbox.grid(row=0, column=0, sticky='nsew', padx=4, pady=4)
+    if not hasattr(dltsc, 'textboxes') or dltsc.textboxes is None:
+        dltsc.textboxes = []
+    if dltsc.textbox not in dltsc.textboxes:
+        dltsc.textboxes.append(dltsc.textbox)
 
     return 0

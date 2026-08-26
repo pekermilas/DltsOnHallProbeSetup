@@ -32,6 +32,7 @@ import postprocessingTab as ppT
 
 dltsc.maxTextLineCount = 10
 dltsc.textlinecount = 0
+dltsc.textboxes = []
 dltsc.root = tk.Tk()
 dltsc.root.title('DLTS Control GUI')
 try:
