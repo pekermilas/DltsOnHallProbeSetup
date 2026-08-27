@@ -26,6 +26,7 @@ from lmfit.models import LognormalModel, GaussianModel
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
 
+import dltsConfig as dltsc
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
 import impedanceAnalysis_Tools as iaT
@@ -45,8 +46,20 @@ class dltsRun:
     def init_experiment(self):
         # Initialize the experiment by setting up devices and parameters
         # 1. Check if devices exists, if not report error
-        global tempDev
-        global impDev
+
+        if hasattr(dltsc, 'impDev'):
+            if dltsc.impDev is None:
+                print("Error: Cannot connect impedance analyzer device.")
+            else:
+                if hasattr(dltsc, 'tempDev'):
+                    if dltsc.tempDev is None:
+                        print("Error: Cannot connect temperature stage device.")
+                    else:
+                        pass
+                else:
+                    print("Error: temperature stage device does not exist.")
+        else:
+            print("Error: impedance analyzer device does not exist.")
 
         # 2. Check device parameters and I/O parameters, report the errors if any
         # 3. Execute the run by an altered version of the run function below
