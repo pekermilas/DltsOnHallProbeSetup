@@ -43,6 +43,57 @@ class dltsRun:
         self.senseRunFailure = True
         self.excludedRuns = []
 
+    @staticmethod
+    def check_device_connections():
+        if hasattr(dltsc, 'impDev') and hasattr(dltsc, 'tempDev'):
+            if dltsc.impDev is None and dltsc.tempDev is None:
+                print("Error: Impedance Analyzer device and temperature stage device are not connected.")
+                returnVal = [0, 0]
+            if not dltsc.impDev is None and dltsc.tempDev is None:
+                print("Error: Temperature controller device is not connected.")
+                returnVal = [1, 0]
+            if dltsc.impDev is None and not dltsc.tempDev is None:
+                print("Error: Impedance Analyzer device is not connected.")
+                returnVal = [0, 1]
+            if not dltsc.impDev is None and not dltsc.tempDev is None:
+                print("Impedance Analyzer device and temperature stage device are connected.")
+                returnVal = [1, 1]
+
+        if hasattr(dltsc, 'impDev') and not hasattr(dltsc, 'tempDev'):
+            if dltsc.impDev is None:
+                print("Error: Impedance Analyzer device is not connected and "
+                      "temperature stage device does not exist.")
+                returnVal = [0, -1]
+            if not dltsc.impDev is None:
+                print("Error: Temperature controller device does not exist.")
+                returnVal = [1, -1]
+
+        if not hasattr(dltsc, 'impDev') and hasattr(dltsc, 'tempDev'):
+            if dltsc.tempDev is None:
+                print("Error: Temperature controller device is not connected and "
+                      "impedance analyzer device does not exist.")
+                returnVal = [-1, 0]
+            if not dltsc.tempDev is None:
+                print("Error: Impedance analyzer device does not exist.")
+                returnVal = [-1, 1]
+
+        if not hasattr(dltsc, 'impDev') and not hasattr(dltsc, 'tempDev'):
+            print("Error: Impedance Analyzer device and Temperature controller device do not exist.")
+            returnVal = [-1, -1]
+
+        return returnVal
+
+    @staticmethod
+    def check_device_parameters(device='impDev'):
+        if device == 'impDev':
+
+
+            return 0
+        if device == 'tempDev':
+            return 0
+        if device == 'output':
+            return 0
+
     def init_experiment(self):
         # Initialize the experiment by setting up devices and parameters
         # 1. Check if devices exists, if not report error
