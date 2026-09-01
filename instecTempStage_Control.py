@@ -65,7 +65,7 @@ class mK2000B:
     def _resolve_param_value(value):
         return value.get() if hasattr(value, 'get') else value
 
-    def connectTempController(self):
+    def connect_temp_controller(self):
         if not self.state:
             try:
                 self.dev = serial.Serial()
@@ -91,7 +91,7 @@ class mK2000B:
         # maxTimeDelay=2.0
         return 0
 
-    def disconnTController(self):
+    def disconnect_temp_controller(self):
         if not self.dev is None:
             if self.state:
                 ser = self.dev
@@ -106,7 +106,7 @@ class mK2000B:
         
         return 0
 
-    def expectedDelT(self, T=25):
+    def expected_del_t(self, T=25):
         Ttheo = np.array([19.648,100.0,199.990,300.0,400.0,500.0,600.0])
         Tmeas = np.array([19.648,99.679,199.633,299.235,398.980,498.725,598.470])
         
@@ -133,7 +133,7 @@ class mK2000B:
             
         return delTEstimate
 
-    def goToTemp(self, Tf=25, ramp=5, delayTime = 0):
+    def go_to_temp(self, Tf=25, ramp=5, delayTime = 0):
         if not self.dev is None:
             ramp = self.tRamp
             delayTime = self.tStableDelay
@@ -161,7 +161,7 @@ class mK2000B:
         
         return 0
 
-    def goToRoomTemp(self, Tr=25, ramp=5):
+    def go_to_room_temp(self, Tr=25, ramp=5):
         if not self.dev is None:
             if self.state:
                 device = self.dev
@@ -194,12 +194,17 @@ class mK2000B:
         
         return 0
 
-    def setTempGrid(self):
+    def set_temp_grid(self, userInput = False):
         if not self.dev is None:
-            Tinit = input("Please enter Initial Temperature (C): ") or self.Tinitial
-            Tfin = input("Please enter Final Temperature (C): ") or self.Tfinal
-            numT = input("Please enter number of Temperature steps: ") or self.numTemps
-            
+            if userInput:
+                Tinit = input("Please enter Initial Temperature (C): ") or self.Tinitial
+                Tfin = input("Please enter Final Temperature (C): ") or self.Tfinal
+                numT = input("Please enter number of Temperature steps: ") or self.numTemps
+            else:
+                Tinit = self.params.get('Initial Temperature (C)')
+                Tfin = self.params.get('Final Temperature (C)')
+                numT = self.params.get('Number of Temperatures')
+
             self.Tinitial = Tinit
             self.Tfinal = Tfin
             self.numTemps = numT
@@ -210,7 +215,7 @@ class mK2000B:
         
         return 0
 
-    def assignParam(self, pName='Initial Temperature (C)', valueDict=None):
+    def assign_param(self, pName='Initial Temperature (C)', valueDict=None):
         if valueDict is None:
             if pName in list(self.params):
                 if pName == 'Initial Temperature (C)':
@@ -249,7 +254,7 @@ class mK2000B:
 
         return 0
 
-    def setParam(self, pName='Initial Temperature (C)', valueDict=None):
+    def set_param(self, pName='Initial Temperature (C)', valueDict=None):
         if not valueDict is None:
             if pName in list(self.params):
                 if pName == 'Initial Temperature (C)':
@@ -274,17 +279,17 @@ class mK2000B:
             print("No value dictionary provided!")
         return 0
 
-    def loadParams(self, valueDict):
+    def load_params(self, valueDict):
         for pName in list(self.params):
-            self.setParam(pName, valueDict)
+            self.set_param(pName, valueDict)
         return 0
 
-    def measureProxyTemp(self, Tf):
+    def measure_proxy_temp(self, Tf):
         if not self.dev is None:
             device = self.dev
             device.write(str.encode(":TEMPerature:CTEMperature?\n"))
             currT = float(device.readline().strip().decode())
-            delTtheo = self.expectedDelT(Tf)
+            delTtheo = self.expected_del_t(Tf)
             delTmeas = np.abs(Tf-currT)
         else:
             print("Nothing to do!")
