@@ -74,7 +74,7 @@ class ziDevice:
             self.device = None
         return 0
 
-    def assignParam(self, pName='Oscillation Frequency', valueDict=None):
+    def set_param_value(self, pName='Oscillation Frequency', valueDict=None):
         if valueDict is None:
             if pName in list(self.params):
                 if pName == 'Oscillation Amplitude':
@@ -163,7 +163,7 @@ class ziDevice:
                 print(f"Parameter {pName} not found!")
         return 0
     
-    def setParam(self, pName='Oscillation Frequency'):
+    def push_param_to_device(self, pName='Oscillation Frequency'):
         if pName in list(self.params):
             if pName == 'Oscillation Amplitude':
                 self.session.daq_server.set('/dev32271/imps/0/output/amplitude', self.params[pName])
@@ -215,7 +215,7 @@ class ziDevice:
             print("Unknown Parameter!!!")
         return 0
 
-    def checkParam(self, pName='Oscillation Frequency'):
+    def check_param(self, pName='Oscillation Frequency'):
         if pName in list(self.params):
             if pName =='Oscillation Amplitude':
                 returnVal = np.isclose(self.params[pName], 
@@ -314,19 +314,20 @@ class ziDevice:
             returnVal = False
         return returnVal
 
-    def loadParams(self):
+    def load_params(self):
         for pName in list(self.params):
-            self.assignParam(pName)
-            self.setParam(pName)
+            self.set_param_value(pName)
+            self.push_param_to_device(pName)
         return 0
     
-    def reloadParams(self):
+    def reload_params(self):
         for pName in list(self.params):
-            if not self.checkParam(pName):
-                self.setParam(pName)
+            if not self.check_param(pName):
+                self.set_param_value(pName)
+                self.push_param_to_device(pName)
         return 0
     
-    def pullData(self, plot=True, trigger=False, numPoints=1024, numReps=1):
+    def pull_data(self, plot=True, trigger=False, numPoints=1024, numReps=1):
         data = None
         if trigger:
             daq_module = self.session.modules.daq

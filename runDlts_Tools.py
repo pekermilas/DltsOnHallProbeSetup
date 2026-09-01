@@ -86,35 +86,91 @@ class dltsRun:
     @staticmethod
     def check_device_parameters(device='impDev'):
         if device == 'impDev':
-
-
-            return 0
-        if device == 'tempDev':
-            return 0
-        if device == 'output':
-            return 0
-
-    def init_experiment(self):
-        # Initialize the experiment by setting up devices and parameters
-        # 1. Check if devices exists, if not report error
-
-        if hasattr(dltsc, 'impDev'):
-            if dltsc.impDev is None:
-                print("Error: Cannot connect impedance analyzer device.")
-            else:
-                if hasattr(dltsc, 'tempDev'):
-                    if dltsc.tempDev is None:
-                        print("Error: Cannot connect temperature stage device.")
+            impfail = []
+            if hasattr(dltsc, 'z_params_vars'):
+                for p in dltsc.z_params_vars:
+                    # Perform checks on each parameter 'p'
+                    if dltsc.z_params_vars[p].get() is None:
+                        impfail.append(p)
                     else:
                         pass
-                else:
-                    print("Error: temperature stage device does not exist.")
-        else:
-            print("Error: impedance analyzer device does not exist.")
+            else:
+                dltsc.log_to_textbox("Error: Impedance analyzer parameters do not exist.")
 
+            if len(impfail)>0:
+                for f in impfail:
+                    dltsc.log_to_textbox("Error: Parameter " + str(f) + " does not exist.")
+            return len(impfail)
+
+        if device == 'tempDev':
+            tempfail = []
+            if hasattr(dltsc, 't_params_vars'):
+                for p in dltsc.t_params_vars:
+                    # Perform checks on each parameter 'p'
+                    if dltsc.t_params_vars[p].get() is None:
+                        tempfail.append(p)
+                    else:
+                        pass
+            else:
+                dltsc.log_to_textbox("Error: Temperature controller parameters do not exist.")
+
+            if len(tempfail) > 0:
+                for f in tempfail:
+                    dltsc.log_to_textbox("Error: Parameter " + str(f) + " does not exist.")
+            return len(tempfail)
+
+        if device == 'output':
+            outputfail = []
+            if hasattr(dltsc, 'd_params_vars'):
+                for p in dltsc.d_params_vars:
+                    # Perform checks on each parameter 'p'
+                    if dltsc.d_params_vars[p].get() is None:
+                        outputfail.append(p)
+                    else:
+                        pass
+            else:
+                dltsc.log_to_textbox("Error: Output parameters do not exist.")
+            if len(outputfail) > 0:
+                for f in outputfail:
+                    dltsc.log_to_textbox("Error: Parameter " + str(f) + " does not exist.")
+            return len(outputfail)
+
+    def init_devices(self):
+        returnVal = 0
+        # 1. Check if devices exists, if not report error
+        device_status = self.check_device_connections()
+        if sum(device_status) < 2:
+            dltsc.log_to_textbox("Error: One or more devices are not connected.")
+            returnVal -= 1
+        else:
+            dltsc.log_to_textbox("All devices are connected.")
+            returnVal += 1
         # 2. Check device parameters and I/O parameters, report the errors if any
-        # 3. Execute the run by an altered version of the run function below
-        return 0
+        param_status = self.check_device_parameters('impDev')
+        param_status += self.check_device_parameters('tempDev')
+        param_status += self.check_device_parameters('output')
+        if param_status > 0:
+            dltsc.log_to_textbox("Error: One or more device parameters are not set.")
+            returnVal -= 1
+        else:
+            dltsc.log_to_textbox("All device parameters are set.")
+            returnVal += 1
+
+
+        return returnVal
+
+    def init_experiment(self):
+        hardware_status = self.init_devices()
+        if hardware_status < 2:
+            dltsc.log_to_textbox("Error: Cannot initialize experiment. Hardware is not ready.")
+            return -1
+        else:
+            dltsc.log_to_textbox("Hardware initialized.")
+            # a
+
+
+
+
 
     def initSetup(self):
         # THIS MECHANISM NEEDS TO CHANGE FOR THE GUI AND FOR THE CHANGES IN
