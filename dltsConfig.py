@@ -1,3 +1,39 @@
+##---------------------GUI-------------------------
+# Main GUI constants
+root = None
+tabControl = None
+textbox = None
+textboxes = None
+textlinecount = None
+maxTextLineCount = None
+
+# Main TAB constants
+runParamsTab = None
+livePlotTab = None
+postprocessingTab = None
+
+##---------------------RUNTIME-------------------------
+# Devices
+tempDev = None
+impDev = None
+
+##---------------------TEST-------------------------
+sourcePrefixSelection = None
+z_params_vars = dict()
+z_param_inputField = None
+t_params_vars = dict()
+t_param_inputField = None
+d_params_vars = dict()
+d_param_inputField = None
+root_data_folder = None
+param_history = None
+param_history_labels = None
+param_history_selection = None
+param_history_inputField = None
+
+run_button = None
+
+
 def init():
     ##---------------------GUI-------------------------
     # Main GUI constants

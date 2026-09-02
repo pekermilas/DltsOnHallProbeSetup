@@ -112,9 +112,8 @@ def _load_selected_param_set():
 
 def connect_and_get_params(devType='impedance'):
     if devType=='impedance':
-        dltsc.impDev = None
         dltsc.impDev = ziC.ziDevice()
-        dltsc.impDev.connectDevice()
+        dltsc.impDev.connect_device()
         time.sleep(1)
         for pName in list(dltsc.impDev.params):
             dltsc.impDev.assignParam(pName, dltsc.z_params_vars)

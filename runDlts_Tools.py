@@ -33,18 +33,20 @@ import impedanceAnalysis_Tools as iaT
 
 class dltsRun:
     def __init__(self, fName=None):
-        self.runDevices = []
-        self.runParams = None
+        self.impDevice = None
+        self.tempDevice = None
+        self.impDeviceParams = None
+        self.tempDeviceParams = None
+        self.outputParams = None
         self.dataFolder = None
         self.runOutputFileType = None
         self.dataFileNames = None
         self.paramsFileName = None
-        self.livePlot = True
-        self.senseRunFailure = True
-        self.excludedRuns = []
+        # self.livePlot = True
+        # self.senseRunFailure = True
+        # self.excludedRuns = []
 
-    @staticmethod
-    def check_device_connections():
+    def check_device_connections(self):
         if hasattr(dltsc, 'impDev') and hasattr(dltsc, 'tempDev'):
             if dltsc.impDev is None and dltsc.tempDev is None:
                 print("Error: Impedance Analyzer device and temperature stage device are not connected.")
@@ -57,6 +59,8 @@ class dltsRun:
                 returnVal = [0, 1]
             if not dltsc.impDev is None and not dltsc.tempDev is None:
                 print("Impedance Analyzer device and temperature stage device are connected.")
+                self.impDevice = dltsc.impDev
+                self.tempDevice = dltsc.tempDev
                 returnVal = [1, 1]
 
         if hasattr(dltsc, 'impDev') and not hasattr(dltsc, 'tempDev'):
@@ -83,13 +87,14 @@ class dltsRun:
 
         return returnVal
 
-    @staticmethod
-    def check_device_parameters(device='impDev'):
+    def check_device_parameters(self, device='impDev'):
         if device == 'impDev':
+            self.impDeviceParams = dict()
             impfail = []
             if hasattr(dltsc, 'z_params_vars'):
                 for p in dltsc.z_params_vars:
                     # Perform checks on each parameter 'p'
+                    self.impDeviceParams[p] = dltsc.z_params_vars[p].get()
                     if dltsc.z_params_vars[p].get() is None:
                         impfail.append(p)
                     else:
@@ -103,10 +108,12 @@ class dltsRun:
             return len(impfail)
 
         if device == 'tempDev':
+            self.tempDeviceParams = dict()
             tempfail = []
             if hasattr(dltsc, 't_params_vars'):
                 for p in dltsc.t_params_vars:
                     # Perform checks on each parameter 'p'
+                    self.tempDeviceParams[p] = dltsc.t_params_vars[p].get()
                     if dltsc.t_params_vars[p].get() is None:
                         tempfail.append(p)
                     else:
@@ -120,10 +127,12 @@ class dltsRun:
             return len(tempfail)
 
         if device == 'output':
+            self.outputParams = dict()
             outputfail = []
             if hasattr(dltsc, 'd_params_vars'):
                 for p in dltsc.d_params_vars:
                     # Perform checks on each parameter 'p'
+                    self.outputParams[p] = dltsc.d_params_vars[p].get()
                     if dltsc.d_params_vars[p].get() is None:
                         outputfail.append(p)
                     else:
@@ -135,7 +144,7 @@ class dltsRun:
                     dltsc.log_to_textbox("Error: Parameter " + str(f) + " does not exist.")
             return len(outputfail)
 
-    def init_devices(self):
+    def check_setup(self):
         returnVal = 0
         # 1. Check if devices exists, if not report error
         device_status = self.check_device_connections()
@@ -159,17 +168,17 @@ class dltsRun:
         return returnVal
 
     def init_experiment(self):
-        hardware_status = self.init_devices()
+        hardware_status = self.check_setup()
         if hardware_status < 2:
             dltsc.log_to_textbox("Error: Cannot initialize experiment. Hardware is not ready.")
             return -1
         else:
             dltsc.log_to_textbox("1. Hardware initialized.")
-            dltsc.tempDev.set_temp_grid()
+            self.tempDevice.set_temp_grid()
             dltsc.log_to_textbox("2. Temperature grid set.")
 
-            rootFolder = dltsc.d_params_vars['Data Root Folder'].get()
-            outputType = dltsc.d_params_vars['Data File Format'].get()
+            rootFolder = self.outputParams['Data Root Folder']
+            outputType = self.outputParams['Data File Format']
 
             timeAndDate = datetime.now()
             temp = '{:02d}'.format(timeAndDate.month) + '{:02d}'.format(timeAndDate.day) + \
@@ -184,19 +193,23 @@ class dltsRun:
             if outputType == 'txt':
                 for i in range(len(dltsc.tempDev.tempGrid)):
                     if '-' in str(dltsc.tempDev.tempGrid[i]):
-                        fName.append(self.dataFolder + 'n' + str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.',
-                                                                                                                 'p') + '.txt')
+                        fName.append(self.dataFolder +
+                                     'n' +
+                                     str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.','p') +
+                                     '.txt')
                     else:
-                        fName.append(self.dataFolder + 'p' + str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.',
-                                                                                                                 'p') + '.txt')
+                        fName.append(self.dataFolder +
+                                     'p' +
+                                     str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.','p') +
+                                     '.txt')
             self.dataFileNames = fName
             self.paramsFileName = self.dataFolder + 'runParams.txt'
             dltsc.log_to_textbox("3. Output file names set.")
             return 0
 
     def run_experiment(self):
-        tempDev = dltsc.tempDev
-        impdDev = dltsc.impDev
+        tempDev = self.tempDevice
+        impdDev = self.impDevice
         for i in range(len(tempDev.tempGrid)):
             ramp = tempDev.tRamp
             delay = tempDev.tStableDelay
@@ -206,27 +219,27 @@ class dltsRun:
                 impdDev.device.factory_reset()
             impdDev.reloadParams()
 
-            # numPoints = impdDev.numPoints
-            # numReps = impdDev.numReps
-            # outType = self.runOutputFileType
-            # if outType=='txt':
-            #     fName = self.dataFileNames[i]
-            #     data = impdDev.pullData(plot=False, trigger=True,
-            #                             numPoints=numPoints, numReps=numReps)
-            #     impdDev.writeDataJson(data, fName)
+            numPoints = self.outputParams['Number of Points (power of 2)'].get()
+            numReps = self.outputParams['Number of Reps'].get()
+            outType = self.runOutputFileType
+            if outType=='txt':
+                fName = self.dataFileNames[i]
+                data = impdDev.pullData(plot=False, trigger=True,
+                                        numPoints=numPoints, numReps=numReps)
+                impdDev.writeDataJson(data, fName)
 
         return 0
 
-    def finishExperiment(self):
-        tempDev = self.runDevices[0]
-        impdDev = self.runDevices[1]
+    def finish_experiment(self):
+        tempDev = self.tempDevice
+        impdDev = self.impDevice
         
-        runParams = self.runParams
+        runParams = self.impDeviceParams | self.tempDeviceParams | self.outputParams
         fName = self.paramsFileName
         impdDev.writeDataJson(runParams, fName)
-        
-        tempDev.goToRoomTemp(Tr=35)
-        tempDev.disconnTController()
+
+        tempDev.go_to_room_temp(Tr=35)
+        tempDev.disconnect_temp_controller()
         impdDev.session.disconnect_device('dev32271')
         
         return 0        

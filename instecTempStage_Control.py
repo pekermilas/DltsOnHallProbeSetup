@@ -215,7 +215,7 @@ class mK2000B:
         
         return 0
 
-    def assign_param(self, pName='Initial Temperature (C)', valueDict=None):
+    def set_param_value(self, pName='Initial Temperature (C)', valueDict=None):
         if valueDict is None:
             if pName in list(self.params):
                 if pName == 'Initial Temperature (C)':
@@ -244,44 +244,20 @@ class mK2000B:
         else:
             if pName in list(self.params):
                 if pName=='Temperature Grid (C)':
-                    Tinit = self._resolve_param_value(valueDict.get('Initial Temperature (C)'))
-                    Tfin = self._resolve_param_value(valueDict.get('Final Temperature (C)'))
-                    numT = self._resolve_param_value(valueDict.get('Number of Temperatures'))
+                    Tinit = valueDict.get('Initial Temperature (C)')
+                    Tfin = valueDict.get('Final Temperature (C)')
+                    numT = valueDict.get('Number of Temperatures')
                     Tgrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
                     self.params[pName] = Tgrid
                 else:
-                    self.params[pName] = self._resolve_param_value(valueDict.get(pName))
-
-        return 0
-
-    def set_param(self, pName='Initial Temperature (C)', valueDict=None):
-        if not valueDict is None:
-            if pName in list(self.params):
-                if pName == 'Initial Temperature (C)':
-                    self.params[pName] = self._resolve_param_value(valueDict.get("Initial Temperature (C)"))
-                elif pName == 'Final Temperature (C)':
-                    self.params[pName] = self._resolve_param_value(valueDict.get("Final Temperature (C)"))
-                elif pName == 'Number of Temperatures':
-                    self.params[pName] = self._resolve_param_value(valueDict.get("Number of Temperatures"))
-                elif pName == 'Temperature Ramp (C/min)':
-                    self.params[pName] = self._resolve_param_value(valueDict.get("Temperature Ramp (C/min)"))
-                elif pName == 'Stability Delay (s)':
-                    self.params[pName] = self._resolve_param_value(valueDict.get("Stability Delay (s)"))
-                elif pName == 'Temperature Grid (C)':
-                    Tinit = self._resolve_param_value(self.params['Initial Temperature (C)'])
-                    Tfin = self._resolve_param_value(self.params['Final Temperature (C)'])
-                    numT = self._resolve_param_value(self.params['Number of Temperatures'])
-                    Tgrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
-                    self.params[pName] = Tgrid
+                    self.params[pName] = valueDict.get(pName)
             else:
-                print("Unknown Parameter!!!")
-        else:
-            print("No value dictionary provided!")
+                print(f"Unknown Parameter {pName}!!!")
         return 0
 
     def load_params(self, valueDict):
         for pName in list(self.params):
-            self.set_param(pName, valueDict)
+            self.set_param_value(pName, valueDict)
         return 0
 
     def measure_proxy_temp(self, Tf):

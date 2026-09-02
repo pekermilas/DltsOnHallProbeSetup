@@ -55,7 +55,7 @@ class ziDevice:
                  'Aux Output Upper Limit', 'Signal Output Add', 'Trigger Source Signal']
         self.params = dict.fromkeys(pList, 0)
         
-    def connectDevice(self):
+    def connect_device(self):
         discovery = zi.ziDiscovery()
         device_id = discovery.find(self.devSerial)
         device_props = discovery.get(device_id)
