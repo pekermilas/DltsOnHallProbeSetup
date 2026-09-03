@@ -100,8 +100,8 @@ def log_to_textbox(message):
 
 def recast_param_type(device, pname):
     if device == 'impDev':
-        if pname in dltsc.z_params_vars:
-            oldValue = dltsc.z_params_vars[pname].get()
+        if pname in z_params_vars:
+            oldValue = z_params_vars[pname].get()
             if pname == 'Oscillation Amplitude':
                 newValue = float(oldValue)
             if pname == 'Oscillation Frequency':
@@ -217,8 +217,8 @@ def recast_param_type(device, pname):
                 if oldValue == '52 - MDS Sync Out':
                     newValue = 52
         if device == 'tempDev':
-            if pname in dltsc.t_params_vars:
-                oldValue = dltsc.t_params_vars[pname].get()
+            if pname in t_params_vars:
+                oldValue = t_params_vars[pname].get()
                 if pname == 'Initial Temperature (C)':
                     newValue = float(oldValue)
                 if pname == 'Final Temperature (C)':
@@ -230,8 +230,8 @@ def recast_param_type(device, pname):
                 if pname == 'Stability Delay (s)':
                     newValue = int(oldValue)
         if device == 'output':
-            if pname in dltsc.d_params_vars:
-                oldValue = dltsc.d_params_vars[pname].get()
+            if pname in d_params_vars:
+                oldValue = d_params_vars[pname].get()
                 if pname == 'Number of Points (power of 2)':
                     newValue = int(oldValue)
                 if pname == 'Number of Reps':
