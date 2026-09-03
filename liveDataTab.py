@@ -24,6 +24,14 @@ import runDlts_Tools as rdT
 def start_dlts():
     # Simulate a heavy execution (e.g., file download, scraping, heavy calculations)
     dltsc.log_to_textbox("DLTS run started...")
+    dlts = rdT.dltsRun()
+    run = dlts.init_experiment()
+    if run < 0:
+        dltsc.log_to_textbox("Error: Failed to initialize the experiment.")
+    else:
+        dltsc.log_to_textbox("Experiment initialized successfully.")
+        dlts.run_experiment()
+        dlts.finish_experiment()
     time.sleep(5)
     dltsc.log_to_textbox("DLTS run completed!")
 
