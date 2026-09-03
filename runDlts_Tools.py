@@ -219,8 +219,10 @@ class dltsRun:
                 impdDev.device.factory_reset()
             impdDev.reloadParams()
 
-            numPoints = self.outputParams['Number of Points (power of 2)'].get()
-            numReps = self.outputParams['Number of Reps'].get()
+            # numPoints = self.outputParams['Number of Points (power of 2)'].get()
+            # numReps = self.outputParams['Number of Reps'].get()
+            numPoints = dltsc.recast_param_type('output', 'Number of Points (power of 2)')
+            numReps = dltsc.recast_param_type('output', 'Number of Reps')
             outType = self.runOutputFileType
             if outType=='txt':
                 fName = self.dataFileNames[i]

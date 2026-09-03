@@ -118,7 +118,8 @@ def connect_and_get_params(devType='impedance'):
         time.sleep(1)
 
         # Current parameter values are Strings, cast them to float or int accordingly
-        dltsc.z_params_for_push = copy.deepcopy(dltsc.z_params_vars)
+        # dltsc.z_params_for_push = copy.deepcopy(dltsc.z_params_vars)
+        dltsc.z_params_for_push = dict.fromkeys(list(dltsc.z_params_vars))
         for p in list(dltsc.z_params_vars):
             dltsc.z_params_for_push[p] = dltsc.recast_param_type('impDev',p)
 
@@ -136,7 +137,8 @@ def connect_and_get_params(devType='impedance'):
         time.sleep(1)
 
         # Current parameter values are Strings, cast them to float or int accordingly
-        dltsc.t_params_for_push = copy.deepcopy(dltsc.t_params_vars)
+        # dltsc.t_params_for_push = copy.deepcopy(dltsc.t_params_vars)
+        dltsc.t_params_for_push = dict.fromkeys(list(dltsc.t_params_vars))
         for p in list(dltsc.t_params_vars):
             dltsc.t_params_for_push[p] = dltsc.recast_param_type('tempDev',p)
 
