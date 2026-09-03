@@ -158,7 +158,8 @@ class ziDevice:
                 print(f"Unknown Parameter {pName}!!!")
         else:
             if pName in list(self.params):
-                self.params[pName] = valueDict.get(pName)
+                # self.params[pName] = valueDict.get(pName)
+                self.params[pName] = valueDict[pName].get()
             else:
                 print(f"Parameter {pName} not found!")
         return 0

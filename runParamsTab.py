@@ -116,7 +116,7 @@ def connect_and_get_params(devType='impedance'):
         dltsc.impDev.connect_device()
         time.sleep(1)
         for pName in list(dltsc.impDev.params):
-            dltsc.impDev.assignParam(pName, dltsc.z_params_vars)
+            dltsc.impDev.set_param_value(pName, dltsc.z_params_vars)
         _save_current_param_set(source='Connect/Get impedance')
         dltsc.log_to_textbox('Connect + Get Params [impedance]: ' +
                         _format_param_snapshot(dltsc.z_params_vars))
@@ -124,10 +124,10 @@ def connect_and_get_params(devType='impedance'):
     if devType=='temperature':
         dltsc.tempDev = None
         dltsc.tempDev = tsC.mK2000B()
-        dltsc.tempDev.connectTempController()
+        dltsc.tempDev.connect_temp_controller()
         time.sleep(1)
         for pName in list(dltsc.tempDev.params):
-            dltsc.tempDev.assignParam(pName, dltsc.t_params_vars)
+            dltsc.tempDev.set_param_value(pName, dltsc.t_params_vars)
         _save_current_param_set(source='Connect/Get temperature')
         dltsc.log_to_textbox('Connect + Get Params [temperature]: ' +
                         _format_param_snapshot(dltsc.t_params_vars))
@@ -138,45 +138,29 @@ def apply_and_push_params(devType='impedance'):
     if devType=='impedance':
         if dltsc.impDev.device is not None:
             for pName in list(dltsc.impDev.params):
-                dltsc.impDev.setParam(pName)
-            print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in
-                   range(len(list(dltsc.z_params_vars)))])
+                dltsc.impDev.push_param_to_device(pName)
             _save_current_param_set(source='Apply/Push impedance')
             dltsc.log_to_textbox('Apply + Push Params [impedance]: ' +
                             _format_param_snapshot(dltsc.z_params_vars))
         else:
-            print('No Impedance device connected.')
-            print([dltsc.z_params_vars[list(dltsc.z_params_vars)[k]].get() for k in
-                   range(len(list(dltsc.z_params_vars)))])
             dltsc.log_to_textbox('Apply + Push Params [impedance]: No device connected. ' +
                             _format_param_snapshot(dltsc.z_params_vars))
     if devType=='temperature':
         if dltsc.tempDev.dev is not None:
-            # dltsc.tempDev.applyParams()
-            print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in
-                   range(len(list(dltsc.t_params_vars)))])
+            dltsc.tempDev.load_params(dltsc.t_params_vars)
             _save_current_param_set(source='Apply/Push temperature')
             dltsc.log_to_textbox('Apply + Push Params [temperature]: ' +
                             _format_param_snapshot(dltsc.t_params_vars))
         else:
-            print('No Temperature device connected.')
-            print([dltsc.t_params_vars[list(dltsc.t_params_vars)[k]].get() for k in
-                   range(len(list(dltsc.t_params_vars)))])
             dltsc.log_to_textbox('Apply + Push Params [temperature]: No device connected. ' +
                             _format_param_snapshot(dltsc.t_params_vars))
     if devType=='output':
         selected_root = dltsc.d_params_vars['Data Root Folder'].get()
         if selected_root:
-            print('Root Folder:', selected_root)
-            print([dltsc.d_params_vars[list(dltsc.d_params_vars)[k]].get() for k in
-                   range(len(list(dltsc.d_params_vars)))])
             _save_current_param_set(source='Apply/Push output')
             dltsc.log_to_textbox('Apply + Push Params [output]: ' +
                             _format_param_snapshot(dltsc.d_params_vars))
         else:
-            print('No Data Folder selected.')
-            print([dltsc.d_params_vars[list(dltsc.d_params_vars)[k]].get() for k in
-                   range(len(list(dltsc.d_params_vars)))])
             dltsc.log_to_textbox('Apply + Push Params [output]: No data folder selected. ' +
                             _format_param_snapshot(dltsc.d_params_vars))
         return 0
@@ -187,9 +171,9 @@ def browse_root_folder():
         selected_path = filedialog.askdirectory()
         if selected_path:
             dltsc.d_params_vars['Data Root Folder'].set(selected_path)
-            print('Root Folder set to:', selected_path)
         else:
-            print('Root Folder set to:', dltsc.d_params_vars['Data Root Folder'].get())
+            pass
+
     return 0
 
 def construct_runParamsTab():

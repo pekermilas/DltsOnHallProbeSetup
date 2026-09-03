@@ -1,5 +1,5 @@
+import json
 import time
-from datetime import datetime
 import zhinst.core
 import zhinst.toolkit as zt
 import numpy as np
@@ -7,20 +7,20 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import copy
-from tkinter.filedialog import askopenfilenames
-
-from numpy.ma.extras import apply_along_axis
-from scipy.interpolate import CubicSpline
-import json
-from sklearn.mixture import GaussianMixture
 import h5py
 import statistics
-from uncertainties import unumpy, ufloat
 import itertools
-from scipy.stats import weibull_min
 import torch
-from scipy.integrate import quad
 import lmfit
+
+from tkinter.filedialog import askopenfilenames
+from datetime import datetime
+from numpy.ma.extras import apply_along_axis
+from scipy.interpolate import CubicSpline
+from sklearn.mixture import GaussianMixture
+from uncertainties import unumpy, ufloat
+from scipy.stats import weibull_min
+from scipy.integrate import quad
 from lmfit.models import LognormalModel, GaussianModel
 
 import warnings

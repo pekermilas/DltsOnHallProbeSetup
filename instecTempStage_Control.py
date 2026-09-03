@@ -61,10 +61,6 @@ class mK2000B:
         if not self.dev is None:
             return self.dev.query(queryStr)
 
-    @staticmethod
-    def _resolve_param_value(value):
-        return value.get() if hasattr(value, 'get') else value
-
     def connect_temp_controller(self):
         if not self.state:
             try:
@@ -244,13 +240,13 @@ class mK2000B:
         else:
             if pName in list(self.params):
                 if pName=='Temperature Grid (C)':
-                    Tinit = valueDict.get('Initial Temperature (C)')
-                    Tfin = valueDict.get('Final Temperature (C)')
-                    numT = valueDict.get('Number of Temperatures')
+                    Tinit = valueDict['Initial Temperature (C)'].get()
+                    Tfin = valueDict['Final Temperature (C)'].get()
+                    numT = valueDict['Number of Temperatures'].get()
                     Tgrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
                     self.params[pName] = Tgrid
                 else:
-                    self.params[pName] = valueDict.get(pName)
+                    self.params[pName] = valueDict[pName].get()
             else:
                 print(f"Unknown Parameter {pName}!!!")
         return 0
