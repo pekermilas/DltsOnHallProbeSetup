@@ -2,6 +2,7 @@ import tkinter as tk
 import os
 import sys
 import time
+import copy
 
 from tkinter import *
 from tkinter import ttk
@@ -115,8 +116,15 @@ def connect_and_get_params(devType='impedance'):
         dltsc.impDev = ziC.ziDevice()
         dltsc.impDev.connect_device()
         time.sleep(1)
+
+        # Current parameter values are Strings, cast them to float or int accordingly
+        dltsc.z_params_for_push = copy.deepcopy(dltsc.z_params_vars)
+        for p in list(dltsc.z_params_vars):
+            dltsc.z_params_for_push[p] = dltsc.recast_param_type('impDev',p)
+
+        # Set the parameters after recasting them.
         for pName in list(dltsc.impDev.params):
-            dltsc.impDev.set_param_value(pName, dltsc.z_params_vars)
+            dltsc.impDev.set_param_value(pName, dltsc.z_params_for_push)
         _save_current_param_set(source='Connect/Get impedance')
         dltsc.log_to_textbox('Connect + Get Params [impedance]: ' +
                         _format_param_snapshot(dltsc.z_params_vars))
@@ -126,8 +134,14 @@ def connect_and_get_params(devType='impedance'):
         dltsc.tempDev = tsC.mK2000B()
         dltsc.tempDev.connect_temp_controller()
         time.sleep(1)
+
+        # Current parameter values are Strings, cast them to float or int accordingly
+        dltsc.t_params_for_push = copy.deepcopy(dltsc.t_params_vars)
+        for p in list(dltsc.t_params_vars):
+            dltsc.t_params_for_push[p] = dltsc.recast_param_type('tempDev',p)
+
         for pName in list(dltsc.tempDev.params):
-            dltsc.tempDev.set_param_value(pName, dltsc.t_params_vars)
+            dltsc.tempDev.set_param_value(pName, dltsc.t_params_for_push)
         _save_current_param_set(source='Connect/Get temperature')
         dltsc.log_to_textbox('Connect + Get Params [temperature]: ' +
                         _format_param_snapshot(dltsc.t_params_vars))
@@ -138,11 +152,14 @@ def apply_and_push_params(devType='impedance'):
     if devType=='impedance':
         if dltsc.impDev is not None:
             if dltsc.impDev.device is not None:
-                for pName in list(dltsc.impDev.params):
-                    dltsc.impDev.push_param_to_device(pName)
-                _save_current_param_set(source='Apply/Push impedance')
-                dltsc.log_to_textbox('Apply + Push Params [impedance]: ' +
-                                _format_param_snapshot(dltsc.z_params_vars))
+                if dltsc.z_params_for_push is not None:
+                    for pName in list(dltsc.impDev.params):
+                        dltsc.impDev.push_param_to_device(pName)
+                    _save_current_param_set(source='Apply/Push impedance')
+                    dltsc.log_to_textbox('Apply + Push Params [impedance]: ' +
+                                         _format_param_snapshot(dltsc.z_params_vars))
+                else:
+                    dltsc.log_to_textbox('Set impedance parameters first by Connect + Get Params!')
             else:
                 dltsc.log_to_textbox('Apply + Push Params [impedance]: No device connected. ' +
                                 _format_param_snapshot(dltsc.z_params_vars))
@@ -152,10 +169,13 @@ def apply_and_push_params(devType='impedance'):
     if devType=='temperature':
         if dltsc.tempDev is not None:
             if dltsc.tempDev.dev is not None:
-                dltsc.tempDev.load_params(dltsc.t_params_vars)
-                _save_current_param_set(source='Apply/Push temperature')
-                dltsc.log_to_textbox('Apply + Push Params [temperature]: ' +
-                                _format_param_snapshot(dltsc.t_params_vars))
+                if dltsc.t_params_for_push is not None:
+                    dltsc.tempDev.load_params(dltsc.t_params_vars)
+                    _save_current_param_set(source='Apply/Push temperature')
+                    dltsc.log_to_textbox('Apply + Push Params [temperature]: ' +
+                                    _format_param_snapshot(dltsc.t_params_vars))
+                else:
+                    dltsc.log_to_textbox('Set temperature parameters first by Connect + Get Params!')
             else:
                 dltsc.log_to_textbox('Apply + Push Params [temperature]: No device connected. ' +
                                 _format_param_snapshot(dltsc.t_params_vars))
@@ -216,7 +236,7 @@ def construct_runParamsTab():
     # -------------------------------------------------------------------------
     runParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="gray",
                               highlightthickness=1, highlightcolor='gray',
-                              width=860, height=770)
+                              width=860, height=730)
 
     runParamsFrame.grid(row=0, column=0, padx=10, pady=(2, 10), sticky='ew')
     runParamsFrame.grid_propagate(False)
@@ -394,7 +414,7 @@ def construct_runParamsTab():
                              command=lambda: apply_and_push_params(devType='temperature'))
     apply_btn2.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
 
-    # Construct Data Frame
+    # Construct Data Params
     # -------------------------------------------------------------------------
     dltsc.d_params_vars = dict()
     d_param_list = [('Number of Points (power of 2)', 16), ('Number of Reps', 500),
@@ -449,6 +469,11 @@ def construct_runParamsTab():
     load_history_btn = ttk.Button(history_frame, text='Load Selected', style=style_names['purple']['button'],
                                   command=_load_selected_param_set)
     load_history_btn.grid(row=2, column=1, padx=4, pady=(4, 0), sticky='ew')
+
+    spacer1 = ttk.Label(history_frame, text="")
+    spacer1.grid(row=3, column=0)
+    spacer2 = ttk.Label(history_frame, text="")
+    spacer2.grid(row=3, column=1)
 
     _update_param_history_field()
 
