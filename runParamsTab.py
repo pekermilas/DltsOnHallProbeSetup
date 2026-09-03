@@ -136,21 +136,29 @@ def connect_and_get_params(devType='impedance'):
 
 def apply_and_push_params(devType='impedance'):
     if devType=='impedance':
-        if dltsc.impDev.device is not None:
-            for pName in list(dltsc.impDev.params):
-                dltsc.impDev.push_param_to_device(pName)
-            _save_current_param_set(source='Apply/Push impedance')
-            dltsc.log_to_textbox('Apply + Push Params [impedance]: ' +
-                            _format_param_snapshot(dltsc.z_params_vars))
+        if dltsc.impDev is not None:
+            if dltsc.impDev.device is not None:
+                for pName in list(dltsc.impDev.params):
+                    dltsc.impDev.push_param_to_device(pName)
+                _save_current_param_set(source='Apply/Push impedance')
+                dltsc.log_to_textbox('Apply + Push Params [impedance]: ' +
+                                _format_param_snapshot(dltsc.z_params_vars))
+            else:
+                dltsc.log_to_textbox('Apply + Push Params [impedance]: No device connected. ' +
+                                _format_param_snapshot(dltsc.z_params_vars))
         else:
             dltsc.log_to_textbox('Apply + Push Params [impedance]: No device connected. ' +
                             _format_param_snapshot(dltsc.z_params_vars))
     if devType=='temperature':
-        if dltsc.tempDev.dev is not None:
-            dltsc.tempDev.load_params(dltsc.t_params_vars)
-            _save_current_param_set(source='Apply/Push temperature')
-            dltsc.log_to_textbox('Apply + Push Params [temperature]: ' +
-                            _format_param_snapshot(dltsc.t_params_vars))
+        if dltsc.tempDev is not None:
+            if dltsc.tempDev.dev is not None:
+                dltsc.tempDev.load_params(dltsc.t_params_vars)
+                _save_current_param_set(source='Apply/Push temperature')
+                dltsc.log_to_textbox('Apply + Push Params [temperature]: ' +
+                                _format_param_snapshot(dltsc.t_params_vars))
+            else:
+                dltsc.log_to_textbox('Apply + Push Params [temperature]: No device connected. ' +
+                                _format_param_snapshot(dltsc.t_params_vars))
         else:
             dltsc.log_to_textbox('Apply + Push Params [temperature]: No device connected. ' +
                             _format_param_snapshot(dltsc.t_params_vars))
@@ -208,7 +216,7 @@ def construct_runParamsTab():
     # -------------------------------------------------------------------------
     runParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="gray",
                               highlightthickness=1, highlightcolor='gray',
-                              width=860, height=730)
+                              width=860, height=770)
 
     runParamsFrame.grid(row=0, column=0, padx=10, pady=(2, 10), sticky='ew')
     runParamsFrame.grid_propagate(False)
