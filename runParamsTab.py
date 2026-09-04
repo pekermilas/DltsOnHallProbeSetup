@@ -238,7 +238,7 @@ def construct_runParamsTab():
     # -------------------------------------------------------------------------
     runParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="gray",
                               highlightthickness=1, highlightcolor='gray',
-                              width=860, height=730)
+                              width=860, height=770)
 
     runParamsFrame.grid(row=0, column=0, padx=10, pady=(2, 10), sticky='ew')
     runParamsFrame.grid_propagate(False)
