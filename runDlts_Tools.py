@@ -213,7 +213,7 @@ class dltsRun:
         for i in range(len(tempDev.tempGrid)):
             ramp = tempDev.tRamp
             delay = tempDev.tStableDelay
-            tempDev.goToTemp(tempDev.tempGrid[i], ramp, delay)
+            tempDev.go_to_temp(tempDev.tempGrid[i], ramp, delay)
             time.sleep(1)
             if not i==0:
                 impdDev.device.factory_reset()

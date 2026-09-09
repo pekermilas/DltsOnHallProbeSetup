@@ -140,12 +140,12 @@ class mK2000B:
         
                 # Wait for T stabilization
                 print('Wait for T = {} stabilization!'.format(Tf))
-                delTmeas, delTtheo = self.measureProxyTemp(Tf)
+                delTmeas, delTtheo = self.measure_proxy_temp(Tf)
                 while(delTmeas>delTtheo):
-                    delTmeas, delTtheo = self.measureProxyTemp(Tf)
+                    delTmeas, delTtheo = self.measure_proxy_temp(Tf)
                     if delTmeas<delTtheo:
                         time.sleep(10)
-                        delTmeas, delTtheo = self.measureProxyTemp(Tf)
+                        delTmeas, delTtheo = self.measure_proxy_temp(Tf)
                     else:
                         time.sleep(5)
             else:
