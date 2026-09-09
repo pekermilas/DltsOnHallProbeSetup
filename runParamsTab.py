@@ -172,7 +172,7 @@ def apply_and_push_params(devType='impedance'):
         if dltsc.tempDev is not None:
             if dltsc.tempDev.dev is not None:
                 if dltsc.t_params_for_push is not None:
-                    dltsc.tempDev.load_params(dltsc.t_params_vars)
+                    dltsc.tempDev.load_params(dltsc.t_params_for_push)
                     _save_current_param_set(source='Apply/Push temperature')
                     dltsc.log_to_textbox('Apply + Push Params [temperature]: ' +
                                     _format_param_snapshot(dltsc.t_params_vars))

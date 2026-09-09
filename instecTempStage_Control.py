@@ -240,13 +240,13 @@ class mK2000B:
         else:
             if pName in list(self.params):
                 if pName=='Temperature Grid (C)':
-                    Tinit = valueDict['Initial Temperature (C)'].get()
-                    Tfin = valueDict['Final Temperature (C)'].get()
-                    numT = valueDict['Number of Temperatures'].get()
+                    Tinit = valueDict.get('Initial Temperature (C)')
+                    Tfin = valueDict.get('Final Temperature (C)')
+                    numT = valueDict.get('Number of Temperatures')
                     Tgrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
                     self.params[pName] = Tgrid
                 else:
-                    self.params[pName] = valueDict[pName].get()
+                    self.params[pName] = valueDict.get(pName)
             else:
                 print(f"Unknown Parameter {pName}!!!")
         return 0

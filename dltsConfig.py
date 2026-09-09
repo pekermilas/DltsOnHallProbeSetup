@@ -216,26 +216,26 @@ def recast_param_type(device, pname):
                     newValue = 39
                 if oldValue == '52 - MDS Sync Out':
                     newValue = 52
-        if device == 'tempDev':
-            if pname in t_params_vars:
-                oldValue = t_params_vars[pname].get()
-                if pname == 'Initial Temperature (C)':
-                    newValue = float(oldValue)
-                if pname == 'Final Temperature (C)':
-                    newValue = float(oldValue)
-                if pname == 'Number of Temperatures':
-                    newValue = int(oldValue)
-                if pname == 'Temperature Ramp (C/min)':
-                    newValue = float(oldValue)
-                if pname == 'Stability Delay (s)':
-                    newValue = int(oldValue)
-        if device == 'output':
-            if pname in d_params_vars:
-                oldValue = d_params_vars[pname].get()
-                if pname == 'Number of Points (power of 2)':
-                    newValue = int(oldValue)
-                if pname == 'Number of Reps':
-                    newValue = int(oldValue)
+    if device == 'tempDev':
+        if pname in t_params_vars:
+            oldValue = t_params_vars[pname].get()
+            if pname == 'Initial Temperature (C)':
+                newValue = float(oldValue)
+            if pname == 'Final Temperature (C)':
+                newValue = float(oldValue)
+            if pname == 'Number of Temperatures':
+                newValue = int(oldValue)
+            if pname == 'Temperature Ramp (C/min)':
+                newValue = float(oldValue)
+            if pname == 'Stability Delay (s)':
+                newValue = int(oldValue)
+    if device == 'output':
+        if pname in d_params_vars:
+            oldValue = d_params_vars[pname].get()
+            if pname == 'Number of Points (power of 2)':
+                newValue = int(oldValue)
+            if pname == 'Number of Reps':
+                newValue = int(oldValue)
 
     return newValue
 
