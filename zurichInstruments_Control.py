@@ -40,6 +40,9 @@ import os
 from pathlib import Path
 import h5py
 
+import dltsConfig as dltsc
+
+
 class ziDevice:
 
     def __init__(self, devSerial = None):
@@ -74,7 +77,41 @@ class ziDevice:
             self.device = None
         return 0
 
+    def disconnect_device(self):
+        try:
+            if self.device is not None:
+                self.device = None
+        except Exception:
+            pass
+
+        try:
+            if self.session is not None:
+                self.session.disconnect_device(self.devSerial)
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self.session, 'close'):
+                self.session.close()
+        except Exception:
+            pass
+
+        self.session = None
+        self.device = None
+        return 0
+
     def set_param_value(self, pName='Oscillation Frequency', valueDict=None):
+        if valueDict is None:
+            # GUI-driven runs store the latest values in dltsConfig; prefer those before
+            # falling back to interactive terminal prompts.
+            if hasattr(dltsc, 'z_params_for_push') and dltsc.z_params_for_push and pName in dltsc.z_params_for_push:
+                valueDict = dltsc.z_params_for_push
+            elif hasattr(dltsc, 'z_params_vars') and dltsc.z_params_vars:
+                valueDict = {
+                    key: (var.get() if hasattr(var, 'get') else var)
+                    for key, var in dltsc.z_params_vars.items()
+                }
+
         if valueDict is None:
             if pName in list(self.params):
                 if pName == 'Oscillation Amplitude':

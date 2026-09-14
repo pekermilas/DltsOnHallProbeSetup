@@ -111,21 +111,43 @@ def _load_selected_param_set():
     dltsc.log_to_textbox(f"Reloaded parameter set from history [{selected_entry['source']}]")
     return 0
 
+def _sync_param_values_to_device(device, param_vars, device_type):
+    """Flatten current UI state into a plain dict and push it into the device's params dict."""
+    if device is None or param_vars is None:
+        return {}
+
+    values = {}
+    for pname in list(param_vars):
+        try:
+            values[pname] = param_vars[pname].get()
+        except Exception:
+            values[pname] = param_vars[pname]
+
+    typed_values = {}
+    for pname in list(values):
+        if device_type == 'impDev':
+            typed_values[pname] = dltsc.recast_param_type('impDev', pname)
+        elif device_type == 'tempDev':
+            typed_values[pname] = dltsc.recast_param_type('tempDev', pname)
+        else:
+            typed_values[pname] = values[pname]
+
+    for pName in list(device.params):
+        if pName in typed_values:
+            device.set_param_value(pName, typed_values)
+
+    return typed_values
+
+
 def connect_and_get_params(devType='impedance'):
     if devType=='impedance':
         dltsc.impDev = ziC.ziDevice()
         dltsc.impDev.connect_device()
         time.sleep(1)
 
-        # Current parameter values are Strings, cast them to float or int accordingly
-        # dltsc.z_params_for_push = copy.deepcopy(dltsc.z_params_vars)
-        dltsc.z_params_for_push = dict.fromkeys(list(dltsc.z_params_vars))
-        for p in list(dltsc.z_params_vars):
-            dltsc.z_params_for_push[p] = dltsc.recast_param_type('impDev',p)
-
-        # Set the parameters after recasting them.
-        for pName in list(dltsc.impDev.params):
-            dltsc.impDev.set_param_value(pName, dltsc.z_params_for_push)
+        dltsc.z_params_for_push = _sync_param_values_to_device(
+            dltsc.impDev, getattr(dltsc, 'z_params_vars', {}), 'impDev'
+        )
         _save_current_param_set(source='Connect/Get impedance')
         dltsc.log_to_textbox('Connect + Get Params [impedance]: ' +
                         _format_param_snapshot(dltsc.z_params_vars))
@@ -136,27 +158,27 @@ def connect_and_get_params(devType='impedance'):
         dltsc.tempDev.connect_temp_controller()
         time.sleep(1)
 
-        # Current parameter values are Strings, cast them to float or int accordingly
-        # dltsc.t_params_for_push = copy.deepcopy(dltsc.t_params_vars)
-        dltsc.t_params_for_push = dict.fromkeys(list(dltsc.t_params_vars))
-        for p in list(dltsc.t_params_vars):
-            dltsc.t_params_for_push[p] = dltsc.recast_param_type('tempDev',p)
-
-        for pName in list(dltsc.tempDev.params):
-            dltsc.tempDev.set_param_value(pName, dltsc.t_params_for_push)
+        dltsc.t_params_for_push = _sync_param_values_to_device(
+            dltsc.tempDev, getattr(dltsc, 't_params_vars', {}), 'tempDev'
+        )
         _save_current_param_set(source='Connect/Get temperature')
         dltsc.log_to_textbox('Connect + Get Params [temperature]: ' +
                         _format_param_snapshot(dltsc.t_params_vars))
 
     return  0
 
+
 def apply_and_push_params(devType='impedance'):
     if devType=='impedance':
         if dltsc.impDev is not None:
             if dltsc.impDev.device is not None:
-                if dltsc.z_params_for_push is not None:
+                dltsc.z_params_for_push = _sync_param_values_to_device(
+                    dltsc.impDev, getattr(dltsc, 'z_params_vars', {}), 'impDev'
+                )
+                if dltsc.z_params_for_push:
                     for pName in list(dltsc.impDev.params):
-                        dltsc.impDev.push_param_to_device(pName)
+                        if pName in dltsc.z_params_for_push:
+                            dltsc.impDev.push_param_to_device(pName)
                     _save_current_param_set(source='Apply/Push impedance')
                     dltsc.log_to_textbox('Apply + Push Params [impedance]: ' +
                                          _format_param_snapshot(dltsc.z_params_vars))
@@ -171,7 +193,10 @@ def apply_and_push_params(devType='impedance'):
     if devType=='temperature':
         if dltsc.tempDev is not None:
             if dltsc.tempDev.dev is not None:
-                if dltsc.t_params_for_push is not None:
+                dltsc.t_params_for_push = _sync_param_values_to_device(
+                    dltsc.tempDev, getattr(dltsc, 't_params_vars', {}), 'tempDev'
+                )
+                if dltsc.t_params_for_push:
                     dltsc.tempDev.load_params(dltsc.t_params_for_push)
                     _save_current_param_set(source='Apply/Push temperature')
                     dltsc.log_to_textbox('Apply + Push Params [temperature]: ' +

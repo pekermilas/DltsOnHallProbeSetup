@@ -60,8 +60,10 @@ def init():
     ##---------------------TEST-------------------------
     global sourcePrefixSelection
     global z_params_vars
+    global z_params_for_push
     global z_param_inputField
     global t_params_vars
+    global t_params_for_push
     global t_param_inputField
     global d_params_vars
     global d_param_inputField
@@ -72,6 +74,12 @@ def init():
     global param_history_inputField
 
     global run_button
+
+    z_params_vars = dict()
+    z_params_for_push = dict()
+    t_params_vars = dict()
+    t_params_for_push = dict()
+    d_params_vars = dict()
 
 #-----------------------Global Functions--------------------------------#
 def log_to_textbox(message):

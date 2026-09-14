@@ -31,6 +31,21 @@ import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
 import impedanceAnalysis_Tools as iaT
 
+
+def _get_runtime_param_value(param_vars, param_name, fallback_bucket=None):
+    """Read the current value from either the UI variables or the synced plain-value dict."""
+    if fallback_bucket is not None and param_name in fallback_bucket:
+        return fallback_bucket[param_name]
+
+    if param_vars is None or param_name not in param_vars:
+        return None
+
+    try:
+        return param_vars[param_name].get()
+    except Exception:
+        return param_vars[param_name]
+
+
 class dltsRun:
     def __init__(self, fName=None):
         self.impDevice = None
@@ -91,14 +106,14 @@ class dltsRun:
         if device == 'impDev':
             self.impDeviceParams = dict()
             impfail = []
+            param_vars = getattr(dltsc, 'z_params_vars', {})
+            push_values = getattr(dltsc, 'z_params_for_push', {})
             if hasattr(dltsc, 'z_params_vars'):
-                for p in dltsc.z_params_vars:
-                    # Perform checks on each parameter 'p'
-                    self.impDeviceParams[p] = dltsc.z_params_vars[p].get()
-                    if dltsc.z_params_vars[p].get() is None:
+                for p in param_vars:
+                    value = _get_runtime_param_value(param_vars, p, push_values)
+                    self.impDeviceParams[p] = value
+                    if value is None:
                         impfail.append(p)
-                    else:
-                        pass
             else:
                 dltsc.log_to_textbox("Error: Impedance analyzer parameters do not exist.")
 
@@ -110,14 +125,14 @@ class dltsRun:
         if device == 'tempDev':
             self.tempDeviceParams = dict()
             tempfail = []
+            param_vars = getattr(dltsc, 't_params_vars', {})
+            push_values = getattr(dltsc, 't_params_for_push', {})
             if hasattr(dltsc, 't_params_vars'):
-                for p in dltsc.t_params_vars:
-                    # Perform checks on each parameter 'p'
-                    self.tempDeviceParams[p] = dltsc.t_params_vars[p].get()
-                    if dltsc.t_params_vars[p].get() is None:
+                for p in param_vars:
+                    value = _get_runtime_param_value(param_vars, p, push_values)
+                    self.tempDeviceParams[p] = value
+                    if value is None:
                         tempfail.append(p)
-                    else:
-                        pass
             else:
                 dltsc.log_to_textbox("Error: Temperature controller parameters do not exist.")
 
@@ -129,14 +144,13 @@ class dltsRun:
         if device == 'output':
             self.outputParams = dict()
             outputfail = []
+            param_vars = getattr(dltsc, 'd_params_vars', {})
             if hasattr(dltsc, 'd_params_vars'):
-                for p in dltsc.d_params_vars:
-                    # Perform checks on each parameter 'p'
-                    self.outputParams[p] = dltsc.d_params_vars[p].get()
-                    if dltsc.d_params_vars[p].get() is None:
+                for p in param_vars:
+                    value = _get_runtime_param_value(param_vars, p)
+                    self.outputParams[p] = value
+                    if value is None:
                         outputfail.append(p)
-                    else:
-                        pass
             else:
                 dltsc.log_to_textbox("Error: Output parameters do not exist.")
             if len(outputfail) > 0:
@@ -178,7 +192,15 @@ class dltsRun:
             dltsc.log_to_textbox("2. Temperature grid set.")
 
             rootFolder = self.outputParams['Data Root Folder']
-            outputType = self.outputParams['Data File Format']
+            outputType = str(self.outputParams['Data File Format']).strip().lower()
+            if outputType == 'json':
+                ext = '.json'
+            elif outputType == 'hdf5':
+                ext = '.h5'
+            elif outputType == 'txt':
+                ext = '.txt'
+            else:
+                ext = '.json'
 
             timeAndDate = datetime.now()
             temp = '{:02d}'.format(timeAndDate.month) + '{:02d}'.format(timeAndDate.day) + \
@@ -198,18 +220,13 @@ class dltsRun:
             self.dataFolder = subFolder
 
             fName = []
-            if outputType == 'txt':
-                for i in range(len(dltsc.tempDev.tempGrid)):
-                    if '-' in str(dltsc.tempDev.tempGrid[i]):
-                        fName.append(self.dataFolder +
-                                     'n' +
-                                     str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.','p') +
-                                     '.txt')
-                    else:
-                        fName.append(self.dataFolder +
-                                     'p' +
-                                     str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.','p') +
-                                     '.txt')
+            for i in range(len(dltsc.tempDev.tempGrid)):
+                if '-' in str(dltsc.tempDev.tempGrid[i]):
+                   prefix = 'n'
+                else:
+                   prefix = 'p'
+                fName.append(self.dataFolder + prefix +
+                            str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.','p') + ext)
             self.dataFileNames = fName
             self.paramsFileName = self.dataFolder + 'runParams.txt'
             dltsc.log_to_textbox("3. Output file names set.")
@@ -227,32 +244,37 @@ class dltsRun:
                 impdDev.device.factory_reset()
             impdDev.reload_params()
 
-            # numPoints = self.outputParams['Number of Points (power of 2)'].get()
-            # numReps = self.outputParams['Number of Reps'].get()
             numPoints = dltsc.recast_param_type('output', 'Number of Points (power of 2)')
             numReps = dltsc.recast_param_type('output', 'Number of Reps')
-            outType = self.runOutputFileType
-            if outType=='txt':
+            outType = str(self.runOutputFileType).strip().lower()
+            if outType in ('txt', 'json', 'hdf5'):
                 fName = self.dataFileNames[i]
-                data = impdDev.pullData(plot=False, trigger=True,
-                                        numPoints=numPoints, numReps=numReps)
-                impdDev.writeDataJson(data, fName)
+                data = impdDev.pull_data(plot=False, trigger=True,
+                                       numPoints=numPoints, numReps=numReps)
+                if outType == 'hdf5':
+                   impdDev.writeDataH5(data, fName, i, shape=[1, 8, 1], start=(i == 0), finish=(i == len(tempDev.tempGrid) - 1))
+                else:
+                   impdDev.writeDataJson(data, fName)
 
         return 0
 
     def finish_experiment(self):
         tempDev = self.tempDevice
         impdDev = self.impDevice
-        
-        runParams = self.impDeviceParams | self.tempDeviceParams | self.outputParams
-        fName = self.paramsFileName
-        impdDev.writeDataJson(runParams, fName)
 
-        tempDev.go_to_room_temp(Tr=35)
-        tempDev.disconnect_temp_controller()
-        impdDev.session.disconnect_device('dev32271')
-        
-        return 0        
+        if self.impDeviceParams is not None and self.tempDeviceParams is not None and self.outputParams is not None:
+            runParams = {**self.impDeviceParams, **self.tempDeviceParams, **self.outputParams}
+        else:
+            runParams = {}
+        fName = self.paramsFileName
+        if impdDev is not None and hasattr(impdDev, 'writeDataJson') and fName is not None:
+            impdDev.writeDataJson(runParams, fName)
+
+        if tempDev is not None:
+            tempDev.go_to_room_temp(Tr=30)
+
+        dltsc.log_to_textbox("Run complete: devices remain connected for the next run until the GUI is closed.")
+        return 0
         
         
         

@@ -61,9 +61,19 @@ dltsc.postprocessingTab = ttk.Frame(dltsc.tabControl)
 # ppT.construct_postprocessingTab()
 
 def on_closing():
-#     dltsc.tempDev.disconnTController()
-#     if tk.messagebox.askokcancel("Quit", "Do you want to quit?"):
-#         dltsc.root.destroy()  # Manually close the window
+    try:
+        if hasattr(dltsc, 'tempDev') and dltsc.tempDev is not None and getattr(dltsc.tempDev, 'state', False):
+            dltsc.tempDev.disconnect_temp_controller()
+    except Exception:
+        pass
+
+    try:
+        if hasattr(dltsc, 'impDev') and dltsc.impDev is not None:
+            if hasattr(dltsc.impDev, 'disconnect_device'):
+                dltsc.impDev.disconnect_device()
+    except Exception:
+        pass
+
     dltsc.root.destroy()  # Manually close the window
 
 dltsc.root.protocol("WM_DELETE_WINDOW", on_closing)

@@ -175,14 +175,14 @@ class mK2000B:
                     currT = float(device.readline().strip().decode())
                     delTmeas = np.abs(Tr-currT)
                     
-                    delTmeas, delTtheo = self.measureProxyTemp(Tr)
+                    delTmeas, delTtheo = self.measure_proxy_temp(Tr)
                     if delTmeas<delTtheo:
                         time.sleep(10)
-                        delTmeas, delTtheo = self.measureProxyTemp(Tr)
+                        delTmeas, delTtheo = self.measure_proxy_temp(Tr)
                     else:
                         time.sleep(5)
             else:
-                print("T-Controller is disconnected!")
+                print("''T-Controller is disconnected!''")
         else:
             print("Nothing to do!")
         
