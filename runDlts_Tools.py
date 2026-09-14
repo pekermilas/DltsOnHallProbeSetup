@@ -183,11 +183,19 @@ class dltsRun:
             timeAndDate = datetime.now()
             temp = '{:02d}'.format(timeAndDate.month) + '{:02d}'.format(timeAndDate.day) + \
                    '{:02d}'.format(timeAndDate.year)[-2:] + '\\'
-            topFolder = rootFolder + temp
+            topFolder = rootFolder + '\\' + temp
             if not os.path.exists(topFolder):
                 os.makedirs(topFolder)
+
+            timeAndDate = datetime.now()
+            temp = '{:02d}'.format(timeAndDate.hour) + '{:02d}'.format(timeAndDate.minute) + \
+                   '{:02d}'.format(timeAndDate.second) + '\\'
+            subFolder = topFolder + '\\' + temp
+            if not os.path.exists(subFolder):
+                os.makedirs(subFolder)
+
             self.runOutputFileType = outputType
-            self.dataFolder = topFolder
+            self.dataFolder = subFolder
 
             fName = []
             if outputType == 'txt':
@@ -217,7 +225,7 @@ class dltsRun:
             time.sleep(1)
             if not i==0:
                 impdDev.device.factory_reset()
-            impdDev.reloadParams()
+            impdDev.reload_params()
 
             # numPoints = self.outputParams['Number of Points (power of 2)'].get()
             # numReps = self.outputParams['Number of Reps'].get()
