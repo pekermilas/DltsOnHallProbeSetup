@@ -147,7 +147,7 @@ class impdData:
                 merged.append(temp)
         return merged
 
-    def readData(self):
+    def read_data(self):
 
         if self.fileName is None:
             self.fileName = askopenfilenames(title="Select a file",
@@ -320,9 +320,9 @@ class impdData:
         print("Unsupported file type. Please select .txt or .csv files.")
         return -1
 
-    def appendData(self, fName=None):
+    def append_data(self, fName=None):
         # Use a LOCAL variable for the files to append.
-        # Never reuse self.fileName here — that still points to whatever readData() loaded.
+        # Never reuse self.fileName here — that still points to whatever read_data() loaded.
         if fName is not None:
             append_files = self._normalize_file_selection(fName)
         else:
@@ -560,13 +560,44 @@ class impdData:
             # Find the indices of 0 time stamp elements
             idxtimeless = np.where(signal['tickStampImps']==0)[0]
             if len(idxtimeless) > 0:
-                # Update the data by adding time stamps to elements
-                deltas = np.diff(signal['tickStampImps'][:idxtimeless[0]])
-                offset = signal['tickStampImps'][idxtimeless[0]-1]
-                delt = int(np.mean(deltas))
-                for i in range(len(idxtimeless)):
-                    idx = idxtimeless[i]
-                    signal['tickStampImps'][idx] = offset + delt*(i+1)
+                valid_idx = np.where(signal['tickStampImps'] != 0)[0]
+                if valid_idx.size == 0:
+                    # No valid timestamps to infer a step from; leave data unchanged.
+                    return signal
+
+                diffs = np.diff(signal['tickStampImps'][valid_idx])
+                if diffs.size > 0:
+                    delt = int(np.median(diffs))
+                    if delt <= 0:
+                        delt = 1
+                else:
+                    delt = 1
+
+                for idx in idxtimeless:
+                    prev_valid = valid_idx[valid_idx < idx]
+                    next_valid = valid_idx[valid_idx > idx]
+
+                    if prev_valid.size > 0 and next_valid.size > 0:
+                        prev_idx = prev_valid[-1]
+                        next_idx = next_valid[0]
+                        prev_t = signal['tickStampImps'][prev_idx]
+                        next_t = signal['tickStampImps'][next_idx]
+                        span = next_t - prev_t
+                        total_steps = next_idx - prev_idx
+                        if total_steps <= 1:
+                            signal['tickStampImps'][idx] = prev_t + (span / 2.0)
+                        else:
+                            step = span / total_steps
+                            signal['tickStampImps'][idx] = prev_t + step * (idx - prev_idx)
+                    elif prev_valid.size > 0:
+                        prev_t = signal['tickStampImps'][prev_valid[-1]]
+                        signal['tickStampImps'][idx] = prev_t + delt * (idx - prev_valid[-1])
+                    elif next_valid.size > 0:
+                        next_t = signal['tickStampImps'][next_valid[0]]
+                        signal['tickStampImps'][idx] = next_t - delt * (next_valid[0] - idx)
+                    else:
+                        signal['tickStampImps'][idx] = 0
+
                 signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
                 signal['tickStampDemods'] = np.array(signal['tickStampImps'], copy=True)
                 signal['timeStampDemods'] = np.array(signal['timeStampImps'], copy=True)
@@ -591,10 +622,10 @@ class impdData:
 
         return 0
 
-    def findDataLevelsScikit(self, dataType = 'emission', model='gmm',
+    def find_data_levels_scikit(self, dataType = 'emission', model='gmm',
                              interactivePlot=False):
         if self.dataTemps is None or self.dataValues is None or len(self.dataTemps) == 0:
-            raise ValueError("No loaded data found. Call readData() first.")
+            raise ValueError("No loaded data found. Call read_data() first.")
 
         model_key = str(model).strip().lower()
         if model_key not in ('gmm', 'kmeans', 'hybrid'):
@@ -782,8 +813,8 @@ class impdData:
 
         return means, stds, labels
 
-    # This is a caller function. It calls findDataLevelsScikit for finding data classes/levels
-    def findDataLevels(self, dataType = 'excitation', algorithm='gmm',
+    # This is a caller function. It calls find_data_levels_scikit for finding data classes/levels
+    def find_data_levels(self, dataType = 'excitation', algorithm='gmm',
                        recalculate=True, interactivePlot=False):
         alg_key = str(algorithm).strip().lower()
         if not recalculate: 
@@ -809,11 +840,11 @@ class impdData:
 
         if recalculate:
             if alg_key in ('gmm', 'gaussianmixture'):
-                m, c, l = self.findDataLevelsScikit(dataType=dataType, model='gmm', interactivePlot=interactivePlot)
+                m, c, l = self.find_data_levels_scikit(dataType=dataType, model='gmm', interactivePlot=interactivePlot)
             elif alg_key in ('kmeans',):
-                m, c, l = self.findDataLevelsScikit(dataType=dataType, model='kmeans', interactivePlot=interactivePlot)
+                m, c, l = self.find_data_levels_scikit(dataType=dataType, model='kmeans', interactivePlot=interactivePlot)
             elif alg_key in ('hybrid', 'gmmkmeans', 'kmeansgmm'):
-                m, c, l = self.findDataLevelsScikit(dataType=dataType, model='hybrid', interactivePlot=interactivePlot)
+                m, c, l = self.find_data_levels_scikit(dataType=dataType, model='hybrid', interactivePlot=interactivePlot)
             else:
                 raise ValueError(
                     "Unknown algorithm: " + str(algorithm) +
@@ -932,7 +963,7 @@ class impdData:
 
         return blocks, clusterSizesFreqs
     
-    def findClusters(self, dataType='excitation', method='free',
+    def find_clusters(self, dataType='excitation', method='free',
                      recalculate=False, align=False):
         if not recalculate:
             if dataType == 'excitation':
@@ -953,7 +984,7 @@ class impdData:
                 return -1
             if dataType == 'excitation':
                 self.dataExcitationClusterParams = dict()
-                m, c, l = self.findDataLevels(
+                m, c, l = self.find_data_levels(
                     dataType=dataType,
                     algorithm="hybrid",
                     recalculate=True,
@@ -963,11 +994,11 @@ class impdData:
                 self.dataExcitationClusterParams["clusterBlocks"] = blocks
                 self.dataExcitationClusterParams["clusterSizesFreqs"] = clusterSizesFreqs
                 if align:
-                    self.alignClusters(dataType="excitation")
+                    self.align_clusters(dataType="excitation")
             if dataType == 'emission':
                 self.dataEmissionClusterParams = dict()
                 if method == 'free':
-                    m, c, l = self.findDataLevels(
+                    m, c, l = self.find_data_levels(
                         dataType=dataType,
                         algorithm="hybrid",
                         recalculate=True,
@@ -977,9 +1008,9 @@ class impdData:
                     self.dataEmissionClusterParams["clusterBlocks"] = blocks
                     self.dataEmissionClusterParams["clusterSizesFreqs"] = clusterSizesFreqs
                     if align:
-                        self.alignClusters(dataType="emission")
+                        self.align_clusters(dataType="emission")
                 if method == 'synced':
-                    m, c, l = self.findDataLevels(
+                    m, c, l = self.find_data_levels(
                         dataType='excitation',
                         algorithm="hybrid",
                         recalculate=True,
@@ -988,22 +1019,22 @@ class impdData:
                     self.dataEmissionClusterParams["clusterBlocks"] = blocks
                     self.dataEmissionClusterParams["clusterSizesFreqs"] = clusterSizesFreqs
                     if align:
-                        self.alignClusters(dataType="emission")
+                        self.align_clusters(dataType="emission")
                 if not method == 'free' and not method == 'synced':
                     print("Invalid method. Must be 'free' or 'synced'.")
                     return -1
 
         return 0
 
-    def alignClusters(self, dataType='excitation', method='free'):
+    def align_clusters(self, dataType='excitation', method='free'):
         if not dataType == 'excitation' and not dataType == 'emission':
             print("Invalid data type. Must be 'excitation' or 'emission'.")
             return -1
         else:
             if dataType == 'excitation':
-                self.findClusters(dataType='excitation', method=method)
+                self.find_clusters(dataType='excitation', method=method)
             if dataType == 'emission':
-                self.findClusters(dataType='emission', method=method)
+                self.find_clusters(dataType='emission', method=method)
 
             for i in range(len(self.dataTemps)):
                 T = self.dataTemps[i]
@@ -1151,10 +1182,10 @@ class impdData:
 
         return 0
 
-    def selectedEmissions(self, emissionIndex=0, trimHead = 10, trimTail = 10, plot=False):
+    def selected_emissions(self, emissionIndex=0, trimHead = 10, trimTail = 10, plot=False):
         if self.dataEmissionClusterParams is None:
             self.cleanup_data()
-            self.findClusters(dataType='emission', method='synced', recalculate=True, align=True)
+            self.find_clusters(dataType='emission', method='synced', recalculate=True, align=True)
 
         T = self.dataTemps[0]
         if self.dataEmissionClusterParams["clusterSizesFreqs"][T]['low'][0][1]-1 > 0:
@@ -1428,17 +1459,17 @@ class impdData:
 
         return x, yDenoised, yRaw
 
-    def filterEmissions(self, method='pca', emissionIndex=-1, recalculate=False,
+    def filter_emissions(self, method='pca', emissionIndex=-1, recalculate=False,
                         trimHead=10, trimTail=10, interactivePlot=True):
         method_key = str(method).strip().lower()
         if method_key not in ('pca', 'wavelet', 'sgolay', 'lowess'):
             raise ValueError("method must be one of: 'pca', 'wavelet', 'sgolay', 'lowess'")
 
         if self.dataEmissions is None:
-            self.selectedEmissions(emissionIndex=emissionIndex, trimHead=trimHead, trimTail=trimTail, plot=False)
+            self.selected_emissions(emissionIndex=emissionIndex, trimHead=trimHead, trimTail=trimTail, plot=False)
 
         if self.dataEmissions is None or len(self.dataEmissions) == 0:
-            raise ValueError("No emission data found. Run selectedEmissions() first.")
+            raise ValueError("No emission data found. Run selected_emissions() first.")
 
         if not recalculate and 'yFiltered' not in self.dataEmissions[self.dataTemps[0]]:
             recalculate = True
@@ -1515,7 +1546,7 @@ class impdData:
 
         return 0
 
-    def calculateDelCNormalized(self, t1=0.003, t2=0.203,
+    def calculate_delC_normalized(self, t1=0.003, t2=0.203,
                                 emissionIndex=0, denoiseEmission=False, smoothCapacitance=True,
                                 plot=False):
 
@@ -1523,10 +1554,10 @@ class impdData:
         # Smoothing the Capacitance is for estimating the real value of C right at t1 and/or t2
 
         if self.dataEmissions is None:
-            self.selectedEmissions(emissionIndex=0, trimHead=10, trimTail=10, plot=False)
+            self.selected_emissions(emissionIndex=0, trimHead=10, trimTail=10, plot=False)
 
         # if denoiseEmission and 'filterMethod' not in self.dataEmissions[self.dataTemps[0]]:
-        self.filterEmissions(method='pca', emissionIndex=emissionIndex, recalculate=True, interactivePlot=False)
+        self.filter_emissions(method='pca', emissionIndex=emissionIndex, recalculate=True, interactivePlot=False)
 
         # If emission index is -1 and denoiseEmission is False, use ymean and yerr
         # If emission index is -1 and denoiseEmission is True, use yFiltered and yerr
@@ -1586,7 +1617,7 @@ class impdData:
         for i in range(len(t1)):
             for j in range(len(t2)):
                 if t2[j] > t1[i]:
-                    temp = self.calculateDelCNormalized(t1=t1[i], t2=t2[j], emissionIndex=0, denoiseEmission=False,
+                    temp = self.calculate_delC_normalized(t1=t1[i], t2=t2[j], emissionIndex=0, denoiseEmission=False,
                                                         smoothCapacitance=False, plot=False)
                     csC = CubicSpline(temp[:,0], temp[:,3])
                     bounds = [(np.min(temp[:,0]), np.max(temp[:,0]))]
@@ -1636,4 +1667,6 @@ class impdData:
             plt.show()
 
         return C
+
+
 
