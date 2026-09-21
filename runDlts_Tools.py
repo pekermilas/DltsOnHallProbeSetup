@@ -229,6 +229,13 @@ class dltsRun:
                             str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.','p') + ext)
             self.dataFileNames = fName
             self.paramsFileName = self.dataFolder + 'runParams.txt'
+
+            # Publish this run's file manifest so liveDataTab.py can watch for
+            # each temperature's file without reaching into this instance.
+            dltsc.run_dataFolder = self.dataFolder
+            dltsc.run_dataFileNames = list(self.dataFileNames)
+            dltsc.run_outputFileType = self.runOutputFileType
+
             dltsc.log_to_textbox("3. Output file names set.")
             return 0
 

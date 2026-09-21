@@ -172,7 +172,7 @@ class impdData:
 
         file_ext = os.path.splitext(self.fileName[0])[1].lower()
 
-        if file_ext == '.txt':
+        if file_ext in ('.txt', '.json'):
             # Skip files whose name (excluding path) contains no numeric digits.
             filtered = []
             for f in self.fileName:
@@ -209,14 +209,19 @@ class impdData:
 
                 self.dataTemps = data_temps
                 self.dataValues = data
+
                 params_path = os.path.join(self.rootFolder, 'runParams.txt')
-                with open(params_path, 'r', encoding='utf-8') as file:
-                    param = json.load(file)
-                self.dataParams = param
+                try:
+                    with open(params_path, 'r', encoding='utf-8') as file:
+                        param = json.load(file)
+                    self.dataParams = param
+                except FileNotFoundError:
+                    print("Warning: runParams.txt not found alongside the selected files.")
+
                 return 0
 
             except FileNotFoundError:
-                print("Error: Params file does not exist.")
+                print("Error: Data file does not exist.")
                 self.fileName = None
                 return -1
 
@@ -340,7 +345,7 @@ class impdData:
         file_ext = os.path.splitext(append_files[0])[1].lower()
 
         # Append TXT/JSON data files.
-        if file_ext == '.txt':
+        if file_ext in ('.txt', '.json'):
             filtered = []
             for f in append_files:
                 basename = os.path.basename(f)
@@ -1376,7 +1381,7 @@ class impdData:
         return x, yDenoised, yRaw
 
     @staticmethod
-    def _savitzkyGolay_enoise(signal, index=-1, window_size=None, order=2):
+    def _savitzkyGolay_denoise(signal, index=-1, window_size=None, order=2):
         """
         Denoises a 1D signal using a Savitzky-Golay filter.
         """

@@ -36,13 +36,21 @@ dltsc.textboxes = []
 dltsc.root = tk.Tk()
 dltsc.root.title('DLTS Control GUI')
 try:
-    # Keep the GUI compact and adapt the height to the screen so it fits smaller displays.
+    # Start maximized: the Live Tools tab is dense enough that the extra room
+    # keeps it from feeling crowded on typical displays.
+    dltsc.root.state('zoomed')
+except Exception:
+    try:
+        screen_w = dltsc.root.winfo_screenwidth()
+        screen_h = dltsc.root.winfo_screenheight()
+        dltsc.root.geometry(f'{screen_w}x{screen_h}+0+0')
+    except Exception:
+        pass
+try:
     screen_h = dltsc.root.winfo_screenheight()
-    window_h = min(900, max(780, screen_h - 120))
-    min_h = min(window_h, max(760, screen_h - 180))
-    dltsc.root.geometry(f'940x{window_h}')
+    min_h = min(780, max(760, screen_h - 180))
     dltsc.root.minsize(860, min_h)
-except:
+except Exception:
     pass
 
 s = ttk.Style()
