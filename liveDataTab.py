@@ -5,6 +5,7 @@ import sys
 import time
 import re
 import json
+from concurrent.futures import ProcessPoolExecutor
 
 from tkinter import *
 from tkinter import ttk
@@ -175,6 +176,14 @@ def _on_mode_toggle():
     if dltsc.livePlot_modeVar is not None:
         _set_livePlot_mode(dltsc.livePlot_modeVar.get())
 
+def _format_dataset_label(t):
+    """Format a dataset's Kelvin temperature as 'K (C)', e.g. 273 (0) or 271 (-2)."""
+    try:
+        celsius = round(t - 273.15)
+    except TypeError:
+        return str(t)
+    return f"{t} ({celsius})"
+
 def _get_selected_dataset_temp():
     """Return the currently selected dataset's temperature key, or None."""
     var = dltsc.livePlot_datasetVar
@@ -183,23 +192,26 @@ def _get_selected_dataset_temp():
     raw = var.get()
     if not raw:
         return None
+    kelvinPart = raw.split(' (')[0]
     try:
-        return int(raw)
+        return int(kelvinPart)
     except ValueError:
         try:
-            return float(raw)
+            return float(kelvinPart)
         except ValueError:
             return None
 
 def _update_dataset_dropdown(temps, preferred=None):
     """Refresh the dataset dropdown's values.
 
-    Selects `preferred` (a previously-viewed dataset, e.g. when switching modes
-    back) if it is still available, otherwise the most recently added one.
+    Each entry is labeled with its Kelvin value and the equivalent Celsius value
+    in parentheses (e.g. '273 (0)'). Selects `preferred` (a previously-viewed
+    dataset label, e.g. when switching modes back) if it is still available,
+    otherwise the most recently added one.
     """
     if dltsc.livePlot_datasetCombo is None or dltsc.livePlot_datasetVar is None:
         return
-    values = [str(t) for t in temps]
+    values = [_format_dataset_label(t) for t in temps]
     dltsc.livePlot_datasetCombo['values'] = values
     if not values:
         dltsc.livePlot_datasetVar.set('')
@@ -601,8 +613,20 @@ def _build_autoPlotFrame(parent):
 #---------------------MANUAL / QUALITATIVE ANALYSIS-------------------------#
 # Ported from DrKayisScript.py's "1. Transient Extraction" tab (PyQt6) into tkinter,
 # plotting into an embedded canvas here instead of that script's own window.
+def _set_manual_buttons_state(state):
+    """Enable/disable the Qualitative Analysis frame's action buttons.
+
+    Mirrors the Run DLTS button's disabled-while-running pattern, giving visual
+    feedback (instead of a silent no-op) while a background worker is in flight,
+    and preventing a second worker from starting on top of it.
+    """
+    if dltsc.manual_selectFolderButton is not None:
+        dltsc.manual_selectFolderButton.config(state=state)
+    if dltsc.manual_extractButton is not None:
+        dltsc.manual_extractButton.config(state=state)
+
 def _browse_manual_folder():
-    if dltsc.manual_loadingBusy:
+    if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
         return
     dir_path = filedialog.askdirectory(
         title="Select DLTS Source Folder",
@@ -619,9 +643,10 @@ def _load_manual_directory_async(dir_path):
     plain Python/pandas work happens on the worker thread; all Tk widget updates
     are marshaled back onto the main thread via root.after().
     """
-    if dltsc.manual_loadingBusy:
+    if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
         return
     dltsc.manual_loadingBusy = True
+    _set_manual_buttons_state('disabled')
     if dltsc.manual_folderLabel is not None:
         dltsc.manual_folderLabel.config(text=f"Source: {os.path.basename(dir_path)} (scanning...)")
     if dltsc.manual_statusLabel is not None:
@@ -648,6 +673,7 @@ def _load_manual_directory_async(dir_path):
 
         def apply():
             dltsc.manual_loadingBusy = False
+            _set_manual_buttons_state('normal')
             dltsc.manual_dataDirectory = dir_path
             dltsc.manual_datasetRegistry = registry
             dltsc.manual_ziMode = ziMode
@@ -822,12 +848,47 @@ def _select_all_manual_temps():
 def _clear_manual_temps():
     dltsc.manual_tempListbox.select_clear(0, tk.END)
 
+_MAX_PLOT_POINTS = 3000
+
+def _downsample_for_plot(x, y, maxPoints=_MAX_PLOT_POINTS):
+    """Stride a transient down to at most maxPoints before handing it to
+    matplotlib. canvas.draw() cost scales with vertex count, and a raw
+    ~27,000-point transient (real reverse-bias sampling rate x duration) makes
+    the post-extraction plot redraw itself visibly stall the main thread for a
+    beat -- the one remaining rendering cost once the extraction itself runs
+    fully off-process. Striding is visually lossless for a smooth decay curve
+    at typical plot/screen resolution; the full-resolution data is untouched in
+    dltsc.manual_processedTransients for anything else that needs it.
+    """
+    n = len(x)
+    if n <= maxPoints:
+        return x, y
+    stride = -(-n // maxPoints)  # ceil division
+    return x[::stride], y[::stride]
+
+def _get_transient_executor():
+    """Return the shared ProcessPoolExecutor for _process_raw_transients, creating
+    it on first use. Reused across extractions so only the very first click pays
+    the child process's one-time import cold-start (matplotlib/pandas/etc.);
+    later clicks reuse the already-running worker process.
+    """
+    if dltsc.manual_transientExecutor is None:
+        dltsc.manual_transientExecutor = ProcessPoolExecutor(max_workers=1)
+    return dltsc.manual_transientExecutor
+
 def _process_raw_transients():
     """Extract & average transients for the checked temperatures (ZI or legacy format).
 
-    Runs the per-temperature file I/O and math on a background thread: confirmed
-    against a real 101-temperature legacy dataset that this can take ~20s of
-    synchronous work, which would otherwise freeze the whole GUI for that long.
+    Dispatches the per-temperature file I/O and math to a separate OS process
+    (via ProcessPoolExecutor), not just a background thread: confirmed against a
+    real 101-temperature legacy dataset that this can take ~20s of CPU-heavy
+    work (large JSON parses, list->ndarray conversions), and even off the main
+    thread that still holds Python's GIL for long, uninterrupted stretches
+    within a single temperature's processing -- enough to make tab switches and
+    redraws visibly lag behind a click. A genuinely separate process has its own
+    GIL, so it can never contend with the Tk main thread no matter how long any
+    single temperature takes to process. The calling background thread just
+    blocks on the process's result, which is a cheap OS-level wait.
     Only the resulting matplotlib plotting happens back on the main thread.
     """
     if not dltsc.manual_datasetRegistry:
@@ -851,6 +912,7 @@ def _process_raw_transients():
     cInfTargetMs = 0.90 * rbDurationMs
 
     dltsc.manual_processingBusy = True
+    _set_manual_buttons_state('disabled')
     dltsc.manual_statusLabel.config(text=f"Processing {len(selectedTemps)} temperature(s)...")
 
     # Snapshot everything the worker needs so it never touches Tk widgets/variables.
@@ -863,31 +925,39 @@ def _process_raw_transients():
     samplingRateS = dltsc.manual_samplingRate or 1.8666666666666665e-05
 
     def worker():
-        processedTransients = {}
-        executionErrors = []
-        if ziMode:
-            _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziDataFile,
-                                   ziGridColOffset, ziGridColDelta, ziChunkSize,
-                                   processedTransients, executionErrors)
-        else:
-            _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datasetRegistry,
-                                       samplingRateS, processedTransients, executionErrors)
+        try:
+            executor = _get_transient_executor()
+            if ziMode:
+                future = executor.submit(_compute_zi_transients, selectedTemps, cInfTargetMs,
+                                         datasetRegistry, ziDataFile, ziGridColOffset,
+                                         ziGridColDelta, ziChunkSize)
+            else:
+                future = executor.submit(_compute_legacy_transients, selectedTemps, rbDurationMs,
+                                         cInfTargetMs, datasetRegistry, samplingRateS)
+            processedTransients, executionErrors = future.result()
+        except Exception as exc:
+            processedTransients, executionErrors = {}, [f"extraction process failed: {exc}"]
 
         def apply():
             dltsc.manual_processingBusy = False
+            _set_manual_buttons_state('normal')
             dltsc.manual_processedTransients = processedTransients
 
             dltsc.manual_ax.clear()
             for temp in sorted(processedTransients.keys()):
                 rec = processedTransients[temp]
-                dltsc.manual_ax.plot(rec['time_ms'], rec['avg_cap_pf'], label=f"{temp}°C")
+                x, y = _downsample_for_plot(rec['time_ms'], rec['avg_cap_pf'])
+                dltsc.manual_ax.plot(x, y, label=f"{temp}°C")
             dltsc.manual_ax.set_xlabel("Time from Reverse Bias Start (ms)")
             dltsc.manual_ax.set_ylabel("Capacitance (pF)")
             dltsc.manual_ax.set_title("Averaged Capacitance Transients Profile")
             dltsc.manual_ax.grid(True, linestyle=":")
             handles, labels = dltsc.manual_ax.get_legend_handles_labels()
             if labels:
-                dltsc.manual_ax.legend(loc='best')
+                # A fixed corner instead of loc='best' skips matplotlib's
+                # overlap-search over every plotted point, which is otherwise a
+                # further main-thread rendering cost right when results land.
+                dltsc.manual_ax.legend(loc='upper right')
             dltsc.manual_figure.tight_layout(pad=2.0)
             dltsc.manual_canvas.draw()
 
@@ -904,18 +974,21 @@ def _process_raw_transients():
     threading.Thread(target=worker, daemon=True).start()
 
 def _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziDataFile,
-                           ziGridColOffset, ziGridColDelta, ziChunkSize,
-                           processedTransients, executionErrors):
+                           ziGridColOffset, ziGridColDelta, ziChunkSize):
     """Read the single ZI data CSV once, then extract each selected chunk.
 
-    Pure computation (no Tk/matplotlib calls) so it is safe to run on a background
-    thread; results are written into `processedTransients`, plotted by the caller.
+    Pure computation (no Tk/matplotlib calls), run in a separate OS process (see
+    _process_raw_transients) so it can never contend with the Tk main thread for
+    the GIL. Returns (processedTransients, executionErrors) since a separate
+    process can't mutate the caller's objects by reference.
     """
+    processedTransients = {}
+    executionErrors = []
     try:
         dfAll = pd.read_csv(ziDataFile, sep=';')
     except Exception as exc:
         executionErrors.append(f"failed to read ZI data CSV: {exc}")
-        return
+        return processedTransients, executionErrors
 
     # Time axis (relative to reverse-bias start at t = 0 ms).
     timeAxisMs = (ziGridColOffset + np.arange(ziChunkSize) * ziGridColDelta) * 1000.0
@@ -949,13 +1022,21 @@ def _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziDataF
         except Exception as exc:
             executionErrors.append(f"{temp}°C: {exc}")
 
+    return processedTransients, executionErrors
+
 def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datasetRegistry,
-                               samplingRateS, processedTransients, executionErrors):
+                               samplingRateS):
     """Legacy transient extraction, ported from DrKayisScript.py's original logic.
 
-    Pure computation (no Tk/matplotlib calls) so it is safe to run on a background
-    thread; results are written into `processedTransients`, plotted by the caller.
+    Pure computation (no Tk/matplotlib calls), run in a separate OS process (see
+    _process_raw_transients) so it can never contend with the Tk main thread for
+    the GIL -- a single large JSON parse/list-to-ndarray conversion here can hold
+    the GIL far longer than any inter-iteration yield could paper over. Returns
+    (processedTransients, executionErrors) since a separate process can't mutate
+    the caller's objects by reference.
     """
+    processedTransients = {}
+    executionErrors = []
     for temp in sorted(selectedTemps):
         targetSource = datasetRegistry[temp]
         try:
@@ -1022,6 +1103,8 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
         except Exception as exc:
             executionErrors.append(f"{temp}°C: {exc}")
 
+    return processedTransients, executionErrors
+
 def _build_manualPlotFrame(parent):
     # dltsConfig.init() (which would normally seed these as dicts/False) is not called
     # by DLTSGUI_MainWindow.py, so seed them here to be safe regardless of that wiring.
@@ -1071,8 +1154,8 @@ def _build_manualPlotFrame(parent):
     # --- Directory Loader Config ---
     ioGroup = tk.LabelFrame(leftPanel, text='Directory Loader Config')
     ioGroup.pack(fill='x', pady=(0, 4))
-    ttk.Button(ioGroup, text='Select Source Folder', command=_browse_manual_folder).pack(
-        fill='x', padx=4, pady=(4, 2))
+    dltsc.manual_selectFolderButton = ttk.Button(ioGroup, text='Select Source Folder', command=_browse_manual_folder)
+    dltsc.manual_selectFolderButton.pack(fill='x', padx=4, pady=(4, 2))
     dltsc.manual_folderLabel = ttk.Label(ioGroup, text='Source: (none selected)', wraplength=220, justify='left')
     dltsc.manual_folderLabel.pack(fill='x', padx=4, pady=(0, 4))
 
@@ -1121,9 +1204,9 @@ def _build_manualPlotFrame(parent):
     # --- Execution Action ---
     execGroup = tk.LabelFrame(leftPanel, text='Execution Action')
     execGroup.pack(fill='x')
-    extractBtn = tk.Button(execGroup, text='Extract & Average Transients', font=('Segoe UI', 9, 'bold'),
+    dltsc.manual_extractButton = tk.Button(execGroup, text='Extract & Average Transients', font=('Segoe UI', 9, 'bold'),
                            bg='#e8f5e9', command=_process_raw_transients)
-    extractBtn.pack(fill='x', padx=4, pady=(4, 2))
+    dltsc.manual_extractButton.pack(fill='x', padx=4, pady=(4, 2))
     dltsc.manual_statusLabel = ttk.Label(execGroup, text='Status: Idle')
     dltsc.manual_statusLabel.pack(fill='x', padx=4, pady=(0, 4))
 

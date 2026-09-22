@@ -1,3 +1,11 @@
+import sys
+
+# Shorten the interpreter's GIL switch granularity (default 5ms) so a CPU-heavy
+# background worker (e.g. Qualitative Analysis' transient extraction over many
+# files) yields control back to the Tk main thread far more often, keeping tab
+# switches and redraws responsive instead of visibly stalling behind it.
+sys.setswitchinterval(0.001)
+
 ##---------------------GUI-------------------------
 # Main GUI constants
 root = None
@@ -85,8 +93,12 @@ manual_processedTransients = None # temp -> {time_ms, avg_cap_pf, C_infinity}
 manual_paramVars = None           # dict of tk.StringVar: fp_ms, rb_ms, slice_start, slice_end
 manual_tempListbox = None
 manual_folderLabel = None
+manual_selectFolderButton = None  # 'Select Source Folder' button, disabled while a worker is running
+manual_extractButton = None       # 'Extract & Average Transients' button, disabled while a worker is running
 manual_processingBusy = None      # True while _process_raw_transients' background worker is running
 manual_loadingBusy = None         # True while _load_manual_directory_async' background worker is running
+manual_transientExecutor = None   # persistent ProcessPoolExecutor for _process_raw_transients, so
+                                   # repeat extractions skip the child process's one-time import cold-start
 manual_figure = None
 manual_ax = None
 manual_canvas = None
@@ -175,8 +187,11 @@ def init():
     global manual_paramVars
     global manual_tempListbox
     global manual_folderLabel
+    global manual_selectFolderButton
+    global manual_extractButton
     global manual_processingBusy
     global manual_loadingBusy
+    global manual_transientExecutor
     global manual_figure
     global manual_ax
     global manual_canvas

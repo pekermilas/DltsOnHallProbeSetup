@@ -45,7 +45,6 @@ def _get_runtime_param_value(param_vars, param_name, fallback_bucket=None):
     except Exception:
         return param_vars[param_name]
 
-
 class dltsRun:
     def __init__(self, fName=None):
         self.impDevice = None
@@ -251,7 +250,7 @@ class dltsRun:
                 impdDev.device.factory_reset()
             impdDev.reload_params()
 
-            numPoints = dltsc.recast_param_type('output', 'Number of Points (power of 2)')
+            numPoints = 2 ** dltsc.recast_param_type('output', 'Number of Points (power of 2)')
             numReps = dltsc.recast_param_type('output', 'Number of Reps')
             outType = str(self.runOutputFileType).strip().lower()
             if outType in ('txt', 'json', 'hdf5'):
