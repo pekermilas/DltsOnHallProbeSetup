@@ -7,9 +7,9 @@ Created on Wed May  6 13:23:08 2026
 
 import os
 import time
-import zhinst.core
+import zhinst.core as zi
 import zhinst.toolkit as zt
-import zhinst.ziPython as zi
+# import zhinst.ziPython as zi
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -34,6 +34,7 @@ from scipy.integrate import quad
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import CubicSpline
+from scipy.interpolate import BSpline, splrep, splev, interp2d
 from scipy.optimize import differential_evolution
 from lmfit.models import LognormalModel, GaussianModel
 from fastlowess import Lowess
@@ -1463,6 +1464,57 @@ class impdData:
         yDenoised = lowess_result.y
 
         return x, yDenoised, yRaw
+
+    @staticmethod
+    def _smoothingSpline_peakFinder(signalX = None, signalY = None, numberOfKnots = 100):
+        """
+        Fit a 1D signal to smoothing cubic splines and find the maxima
+        """
+        if signalX is None or signalY is None:
+            print("No data found.")
+            return -1
+        else:
+            # Fit
+            n_interior_knots = numberOfKnots
+            qs = np.linspace(0, 1, n_interior_knots + 2)[1:-1]
+            knots = np.quantile(signalX, qs)
+            tck = splrep(signalX, signalY, t=knots, k=3)
+            xf = np.linspace(np.min(signalX), np.max(signalX), 100000)
+            yf = splev(xf, tck)
+
+            # Find the maxima
+            maxX = xf[np.argmax(yf)]
+            maxY = yf[np.argmax(yf)]
+
+            return maxX, maxY, xf, yf
+
+    @staticmethod
+    def _curveFit_peakFinder(signalX = None, signalY = None, curveType = "pseudoVoigt"):
+        """
+        Fit a 1D signal to a curve and find the maxima
+        """
+        if signalX is None or signalY is None:
+            print("No data found.")
+            return -1
+        else:
+            # Fit
+            if curveType == "pseudoVoigt":
+                # Fit a pseudo-Voigt curve
+                pass
+            if curveType == "gaussian":
+                # Fit a pseudo-Voigt curve
+                pass
+            if curveType == "lorenzian":
+                # Fit a pseudo-Voigt curve
+                pass
+            if curveType == "voigt":
+                # Fit a pseudo-Voigt curve
+                pass
+            # Find the maxima
+            maxX = xf[np.argmax(yf)]
+            maxY = yf[np.argmax(yf)]
+
+            return maxX, maxY, xf, yf
 
     def filter_emissions(self, method='pca', emissionIndex=-1, recalculate=False,
                         trimHead=10, trimTail=10, interactivePlot=True):
