@@ -1,34 +1,13 @@
-import threading
 import tkinter as tk
-import threading
-import time
-import os
-import json
-import copy
 import multiprocessing
-
-from tkinter import *
-from tkinter import ttk
-from PIL import Image, ImageTk
-from datetime import datetime
-
 import matplotlib
 matplotlib.use('TkAgg')
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-import matplotlib.pyplot as plt
 
-import numpy as np
-from pathlib import Path
+from tkinter import ttk
 
 import dltsConfig as dltsc
-import zurichInstruments_Control as ziC
-import instecTempStage_Control as tsC
-import impedanceAnalysis_Tools as iaT
-import runDlts_Tools as rdT
-
 import runParamsTab as rpT
 import liveDataTab as ldT
-import postprocessingTab as ppT
 
 
 # Qualitative Analysis' transient extraction runs in a separate process (see

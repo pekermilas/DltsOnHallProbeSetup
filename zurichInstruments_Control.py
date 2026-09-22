@@ -29,14 +29,12 @@ Created on Fri Apr 17 16:06:33 2026
 # # b = list(device.triggers)
 
 import time
-import zhinst.core
+import zhinst.core as zi
 import zhinst.toolkit as zt
-import zhinst.ziPython as zi
+# import zhinst.ziPython as zi
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 import json
-import os
 from pathlib import Path
 import h5py
 
