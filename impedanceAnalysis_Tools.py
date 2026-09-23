@@ -34,7 +34,7 @@ from scipy.integrate import quad
 from scipy.signal import savgol_filter
 from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import CubicSpline
-from scipy.interpolate import BSpline, splrep, splev, interp2d
+from scipy.interpolate import BSpline, interp2d
 from scipy.optimize import differential_evolution
 from lmfit.models import LognormalModel, GaussianModel, PseudoVoigtModel, VoigtModel, LorentzianModel
 from fastlowess import Lowess
@@ -1485,9 +1485,32 @@ class impdData:
         return x, yDenoised, yRaw
 
     @staticmethod
-    def _smoothingSpline_peakFinder(signalX = None, signalY = None, numberOfKnots = 100):
+    def _smoothingSpline_peakFinder(signalX = None, signalY = None, smoothingFactor = None):
         """
-        Fit a 1D signal to smoothing cubic splines and find its extremum.
+        Fit a 1D signal to a smoothing cubic spline and find its extremum.
+
+        Uses scipy's UnivariateSpline rather than an explicit-knot LSQ spline
+        (splrep() with a fixed interior-knot COUNT, this function's earlier
+        approach): UnivariateSpline's FITPACK knot-placement algorithm adds
+        knots adaptively, only where the data actually needs them to satisfy
+        the requested residual tolerance `smoothingFactor`, instead of forcing
+        a fixed number of knots everywhere via quantile placement. That fixed
+        count previously tended to over-fit sparse boundary regions (few
+        points/knot right at the data's edges), producing wild spline
+        deflections right at the ends -- the adaptive approach doesn't pile
+        knots up where there isn't enough data density to support them.
+
+        scipy's own documented starting recommendation for `smoothingFactor`
+        is s ~= len(signalX), but that assumes roughly unit-variance,
+        weight-normalized residuals; a DLTS signal is typically an order (or
+        several) of magnitude smaller than 1 (a raw ΔC/C∞ ratio), so that
+        fixed default either barely smooths a large-amplitude signal or
+        oversmooths (flattening the actual peak) a small-amplitude one. When
+        `smoothingFactor` isn't given explicitly, it is instead scaled to the
+        data's own noise level -- estimated via the signal's second-difference
+        roughness (a standard, robust noise estimator: Reference: Rice,
+        J. (1984), "Bandwidth choice for nonparametric regression"), so it
+        self-adapts across very different y-scales rather than assuming one.
 
         Returns (maxX, maxY, xf, yf, maxXErr, maxYErr). Splines carry no fitted-
         parameter covariance, so maxXErr/maxYErr are always None -- this shape
@@ -1498,16 +1521,22 @@ class impdData:
             print("No data found.")
             return -1
         else:
-            # Fit. numberOfKnots is tuned for a dense raw signal (thousands of
-            # samples); clamp it down for smaller inputs (e.g. a DLTS-signal-
-            # vs-temperature scan with only tens of points) so splrep() doesn't
-            # error out on more interior knots than the data can support.
-            n_interior_knots = min(numberOfKnots, max(1, len(np.atleast_1d(signalX)) - 5))
-            qs = np.linspace(0, 1, n_interior_knots + 2)[1:-1]
-            knots = np.quantile(signalX, qs)
-            tck = splrep(signalX, signalY, t=knots, k=3)
-            xf = np.linspace(np.min(signalX), np.max(signalX), 100000)
-            yf = splev(xf, tck)
+            signalX = np.asarray(signalX, dtype=float)
+            signalY = np.asarray(signalY, dtype=float)
+            order = np.argsort(signalX)  # UnivariateSpline requires increasing x
+            xs, ys = signalX[order], signalY[order]
+
+            if smoothingFactor is None:
+                if len(ys) >= 5:
+                    secondDiff = ys[:-2] - 2 * ys[1:-1] + ys[2:]
+                    noiseVar = np.sum(secondDiff ** 2) / (6.0 * len(secondDiff))
+                else:
+                    noiseVar = np.var(ys)
+                smoothingFactor = max(noiseVar * len(xs), 1e-300)
+
+            spline = UnivariateSpline(xs, ys, k=3, s=smoothingFactor)
+            xf = np.linspace(xs.min(), xs.max(), 100000)
+            yf = spline(xf)
 
             # Find the extremum: DLTS peaks can be negative-going (minority vs.
             # majority trap signatures), so the largest-magnitude point is used

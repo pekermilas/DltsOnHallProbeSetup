@@ -33,12 +33,23 @@ DATA_SOURCE_OPTIONS = [DATA_SOURCE_AUTO, DATA_SOURCE_QUALITATIVE, DATA_SOURCE_LI
 # Peak-finding method for each rate-window's DLTS-signal-vs-temperature curve.
 # Deviating from DrKayisScript.py's own inline scipy pseudo-Voigt curve_fit:
 # this reuses impedanceAnalysis_Tools.impdData's shared peak finders instead,
-# with the smoothing spline as the (non-parametric, error-free) default and an
-# lmfit-based curve fit -- which also reports parameter standard errors -- as
-# the user-selectable alternative.
+# with the smoothing spline as the (non-parametric, error-free) default and a
+# choice of lmfit-based curve-fit shapes -- which also report parameter
+# standard errors -- as user-selectable alternatives.
 PEAK_METHOD_SPLINE = 'Smoothing Spline'
-PEAK_METHOD_CURVEFIT = 'Curve Fit (lmfit, Pseudo-Voigt)'
-PEAK_METHOD_OPTIONS = [PEAK_METHOD_SPLINE, PEAK_METHOD_CURVEFIT]
+PEAK_METHOD_PSEUDOVOIGT = 'Curve Fit (Pseudo-Voigt)'
+PEAK_METHOD_GAUSSIAN = 'Curve Fit (Gaussian)'
+PEAK_METHOD_LORENTZIAN = 'Curve Fit (Lorentzian)'
+PEAK_METHOD_VOIGT = 'Curve Fit (Voigt)'
+PEAK_METHOD_OPTIONS = [PEAK_METHOD_SPLINE, PEAK_METHOD_PSEUDOVOIGT, PEAK_METHOD_GAUSSIAN,
+                       PEAK_METHOD_LORENTZIAN, PEAK_METHOD_VOIGT]
+# Maps each curve-fit option above to the curveType impdData._curveFit_peakFinder() expects.
+PEAK_METHOD_CURVETYPE = {
+    PEAK_METHOD_PSEUDOVOIGT: 'pseudoVoigt',
+    PEAK_METHOD_GAUSSIAN: 'gaussian',
+    PEAK_METHOD_LORENTZIAN: 'lorenzian',
+    PEAK_METHOD_VOIGT: 'voigt',
+}
 
 
 #---------------------RATE WINDOW ANALYSIS (TOP FRAME)-------------------------#
@@ -184,8 +195,9 @@ def _calculate_rate_windows():
         peakMethod = dltsc.rateWindow_peakMethodVar.get() if dltsc.rateWindow_peakMethodVar is not None else PEAK_METHOD_SPLINE
 
         try:
-            if peakMethod == PEAK_METHOD_CURVEFIT:
-                result = iaT.impdData._curveFit_peakFinder(x, y, curveType='pseudoVoigt')
+            curveType = PEAK_METHOD_CURVETYPE.get(peakMethod)
+            if curveType is not None:
+                result = iaT.impdData._curveFit_peakFinder(x, y, curveType=curveType)
             else:
                 result = iaT.impdData._smoothingSpline_peakFinder(x, y)
             if result == -1:
