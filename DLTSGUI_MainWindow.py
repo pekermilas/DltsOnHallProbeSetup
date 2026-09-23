@@ -8,6 +8,7 @@ from tkinter import ttk
 import dltsConfig as dltsc
 import runParamsTab as rpT
 import liveDataTab as ldT
+import dataAnalysisTab as daT
 
 
 # Qualitative Analysis' transient extraction runs in a separate process (see
@@ -55,6 +56,9 @@ if __name__ == '__main__':
 
     dltsc.livePlotTab = ttk.Frame(dltsc.tabControl)
     ldT.construct_livePlotTab()
+
+    dltsc.dataAnalysisTab = ttk.Frame(dltsc.tabControl)
+    daT.construct_dataAnalysisTab()
 
     dltsc.postprocessingTab = ttk.Frame(dltsc.tabControl)
     # ppT.construct_postprocessingTab()

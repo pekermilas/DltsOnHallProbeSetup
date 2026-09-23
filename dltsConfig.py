@@ -18,6 +18,7 @@ maxTextLineCount = None
 # Main TAB constants
 runParamsTab = None
 livePlotTab = None
+dataAnalysisTab = None
 postprocessingTab = None
 
 ##---------------------RUNTIME-------------------------
@@ -104,6 +105,31 @@ manual_ax = None
 manual_canvas = None
 manual_statusLabel = None
 
+##---------------------DATA ANALYSIS (RATE WINDOW / ARRHENIUS)-------------------------
+# Rate Window Analysis (top frame). Reads dltsc.manual_processedTransients (populated by
+# the Qualitative Analysis "Extract & Average Transients" step in the Live Tools tab)
+# rather than loading its own data, mirroring DrKayisScript.py's Tab 2 depending on Tab 1.
+rateWindow_dataSourceVar = None   # tk.StringVar: which processed-transients source to analyze
+                                   # (Qualitative Analysis / Automated Live / Automated Offline / Auto)
+rateWindow_statusLabel = None     # shows which data source actually got used and how many temperatures
+rateWindow_peakMethodVar = None   # tk.StringVar: 'Smoothing Spline' (default) or lmfit curve fit
+rateWindow_windowVars = None      # list of 4 (t1Var, t2Var) tk.StringVar pairs, one per rate window set
+rateWindow_signals = None         # rw_index -> {'T_k': array, 'Signal': array}
+rateWindow_extractedPeaks = None  # rw_index -> {'T_peak':, 'S_peak':, 'e_n':}
+rateWindow_peakTable = None       # ttk.Treeview showing per-window fit results
+rateWindow_figure = None
+rateWindow_ax = None
+rateWindow_canvas = None
+
+# Arrhenius Defect Mapping (bottom frame). Consumes rateWindow_extractedPeaks.
+arrhenius_ndVar = None            # tk.StringVar, background doping Nd (cm^-3)
+arrhenius_energyLabel = None
+arrhenius_captureLabel = None
+arrhenius_densityLabel = None
+arrhenius_figure = None
+arrhenius_ax = None
+arrhenius_canvas = None
+
 
 def init():
     ##---------------------GUI-------------------------
@@ -118,6 +144,7 @@ def init():
     # Main TAB constants
     global runParamsTab
     global livePlotTab
+    global dataAnalysisTab
     global postprocessingTab
 
     ##---------------------RUNTIME-------------------------
@@ -197,6 +224,25 @@ def init():
     global manual_canvas
     global manual_statusLabel
 
+    ##---------------------DATA ANALYSIS (RATE WINDOW / ARRHENIUS)-------------------------
+    global rateWindow_dataSourceVar
+    global rateWindow_statusLabel
+    global rateWindow_peakMethodVar
+    global rateWindow_windowVars
+    global rateWindow_signals
+    global rateWindow_extractedPeaks
+    global rateWindow_peakTable
+    global rateWindow_figure
+    global rateWindow_ax
+    global rateWindow_canvas
+    global arrhenius_ndVar
+    global arrhenius_energyLabel
+    global arrhenius_captureLabel
+    global arrhenius_densityLabel
+    global arrhenius_figure
+    global arrhenius_ax
+    global arrhenius_canvas
+
     z_params_vars = dict()
     z_params_for_push = dict()
     t_params_vars = dict()
@@ -218,6 +264,8 @@ def init():
     manual_datasetRegistry = dict()
     manual_processedTransients = dict()
     manual_paramVars = dict()
+    rateWindow_signals = dict()
+    rateWindow_extractedPeaks = dict()
 
 #-----------------------Global Functions--------------------------------#
 def log_to_textbox(message):

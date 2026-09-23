@@ -36,7 +36,7 @@ from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import CubicSpline
 from scipy.interpolate import BSpline, splrep, splev, interp2d
 from scipy.optimize import differential_evolution
-from lmfit.models import LognormalModel, GaussianModel
+from lmfit.models import LognormalModel, GaussianModel, PseudoVoigtModel, VoigtModel, LorentzianModel
 from fastlowess import Lowess
 
 import warnings
@@ -1487,53 +1487,87 @@ class impdData:
     @staticmethod
     def _smoothingSpline_peakFinder(signalX = None, signalY = None, numberOfKnots = 100):
         """
-        Fit a 1D signal to smoothing cubic splines and find the maxima
+        Fit a 1D signal to smoothing cubic splines and find its extremum.
+
+        Returns (maxX, maxY, xf, yf, maxXErr, maxYErr). Splines carry no fitted-
+        parameter covariance, so maxXErr/maxYErr are always None -- this shape
+        matches _curveFit_peakFinder()'s return so callers can treat the two
+        peak-finding methods interchangeably.
         """
         if signalX is None or signalY is None:
             print("No data found.")
             return -1
         else:
-            # Fit
-            n_interior_knots = numberOfKnots
+            # Fit. numberOfKnots is tuned for a dense raw signal (thousands of
+            # samples); clamp it down for smaller inputs (e.g. a DLTS-signal-
+            # vs-temperature scan with only tens of points) so splrep() doesn't
+            # error out on more interior knots than the data can support.
+            n_interior_knots = min(numberOfKnots, max(1, len(np.atleast_1d(signalX)) - 5))
             qs = np.linspace(0, 1, n_interior_knots + 2)[1:-1]
             knots = np.quantile(signalX, qs)
             tck = splrep(signalX, signalY, t=knots, k=3)
             xf = np.linspace(np.min(signalX), np.max(signalX), 100000)
             yf = splev(xf, tck)
 
-            # Find the maxima
-            maxX = xf[np.argmax(yf)]
-            maxY = yf[np.argmax(yf)]
+            # Find the extremum: DLTS peaks can be negative-going (minority vs.
+            # majority trap signatures), so the largest-magnitude point is used
+            # rather than a positive-only argmax(yf).
+            peakIdx = np.argmax(np.abs(yf))
+            maxX = xf[peakIdx]
+            maxY = yf[peakIdx]
 
-            return maxX, maxY, xf, yf
+            return maxX, maxY, xf, yf, None, None
 
     @staticmethod
     def _curveFit_peakFinder(signalX = None, signalY = None, curveType = "pseudoVoigt"):
         """
-        Fit a 1D signal to a curve and find the maxima
+        Fit a 1D signal to a curve (lmfit) and find its extremum.
+
+        Returns (maxX, maxY, xf, yf, maxXErr, maxYErr): maxX/maxY are the
+        fitted peak position/height, maxXErr/maxYErr their standard errors as
+        estimated by lmfit from the fit's covariance matrix (None if lmfit
+        could not estimate them, e.g. a poorly-conditioned fit).
         """
         if signalX is None or signalY is None:
             print("No data found.")
             return -1
-        else:
-            # Fit
-            if curveType == "pseudoVoigt":
-                # Fit a pseudo-Voigt curve
-                pass
-            if curveType == "gaussian":
-                # Fit a pseudo-Voigt curve
-                pass
-            if curveType == "lorenzian":
-                # Fit a pseudo-Voigt curve
-                pass
-            if curveType == "voigt":
-                # Fit a pseudo-Voigt curve
-                pass
-            # Find the maxima
-            maxX = xf[np.argmax(yf)]
-            maxY = yf[np.argmax(yf)]
 
-            return maxX, maxY, xf, yf
+        modelClasses = {
+            "pseudovoigt": PseudoVoigtModel,
+            "gaussian": GaussianModel,
+            "lorenzian": LorentzianModel,
+            "lorentzian": LorentzianModel,
+            "voigt": VoigtModel,
+        }
+        modelClass = modelClasses.get(str(curveType).strip().lower())
+        if modelClass is None:
+            raise ValueError(
+                f"Unknown curveType: {curveType!r}. Valid options: pseudoVoigt, gaussian, lorenzian, voigt.")
+        model = modelClass()
+
+        signalX = np.asarray(signalX, dtype=float)
+        signalY = np.asarray(signalY, dtype=float)
+
+        params = model.guess(signalY, x=signalX)
+        result = model.fit(signalY, params, x=signalX)
+
+        xf = np.linspace(np.min(signalX), np.max(signalX), 2000)
+        yf = result.eval(x=xf)
+
+        centerParam = result.params.get('center')
+        heightParam = result.params.get('height')  # a derived parameter on all four models above
+
+        if centerParam is not None:
+            maxX, maxXErr = centerParam.value, centerParam.stderr
+        else:
+            maxX, maxXErr = xf[np.argmax(np.abs(yf))], None
+
+        if heightParam is not None:
+            maxY, maxYErr = heightParam.value, heightParam.stderr
+        else:
+            maxY, maxYErr = float(result.eval(x=maxX)), None
+
+        return maxX, maxY, xf, yf, maxXErr, maxYErr
 
     def filter_emissions(self, method='pca', emissionIndex=-1, recalculate=False,
                         trimHead=10, trimTail=10, interactivePlot=True):
