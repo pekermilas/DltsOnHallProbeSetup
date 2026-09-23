@@ -17,3 +17,6 @@ __pycache__/impedanceAnalysis_Tools.cpython-313.pyc
 *.iml
 *.iml
 *.pyc
+.idea/.name
+.idea/DltsOnHallProbeSetup.iml
+__pycache__/runDlts_Tools.cpython-313.pyc
