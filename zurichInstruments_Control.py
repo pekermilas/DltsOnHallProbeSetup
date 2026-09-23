@@ -387,8 +387,27 @@ class ziDevice:
             time.sleep(1)
             
             daq_module.execute()
+            # On a reused daq_module, progress() can still briefly report the
+            # PREVIOUS acquisition's completed (1.0) state for a moment right
+            # after execute() is issued (execute() returns before the module's
+            # internal state has actually transitioned to the new run) -- that
+            # made the loop below exit immediately without ever waiting for
+            # the new data. This settle delay lets progress() catch up before
+            # polling starts. The polling loop was also previously a tight
+            # busy-wait with no sleep, pegging a CPU core and hammering the
+            # device with status queries as fast as possible; it now throttles
+            # between checks and bails out (with a logged warning) instead of
+            # hanging forever if the trigger is never received.
+            time.sleep(0.5)
+            pollTimeout = 60.0
+            pollStart = time.time()
             while daq_module.progress() < 1.0:
-                pass
+                if time.time() - pollStart > pollTimeout:
+                    dltsc.log_to_textbox(
+                        f"Warning: DAQ acquisition did not complete within {pollTimeout:.0f}s; "
+                        "proceeding with whatever data is available.")
+                    break
+                time.sleep(0.05)
             time.sleep(1)
             
             allData = daq_module.read()

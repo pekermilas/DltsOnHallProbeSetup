@@ -125,7 +125,10 @@ class mK2000B:
         if T<Ttheo[0]:
             delTEstimate = mL*T+nL
         else:
-            delTEstimate = mH*T+nH
+            if T<=25.0:
+                delTEstimate = 0.1
+            else:
+                delTEstimate = mH*T+nH
             
         return delTEstimate
 
