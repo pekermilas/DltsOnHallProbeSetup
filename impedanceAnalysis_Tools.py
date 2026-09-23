@@ -1212,10 +1212,15 @@ class impdData:
                 selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]['low'][emissionIndex]
                 selectedIndex = [int(x) for x in selectedIndex]
                 x = np.asarray(self.dataValues[T]['timeStampImps'][selectedIndex[0]+trimHead:selectedIndex[1]+1-trimTail])
+                # Raw, un-shifted timeStampImps values -- kept alongside the
+                # pulse-relative 'x' (used by fits/rate-window math elsewhere)
+                # for callers that want to plot against the real timestamp.
+                xTimeStampImps = np.array(x, copy=True)
                 x = x-x[0]
                 y = np.asarray(self.dataValues[T]['ImpedanceIm'][selectedIndex[0]+trimHead:selectedIndex[1]+1-trimTail])
                 self.dataEmissions[T] = dict()
                 self.dataEmissions[T]["x"] = x
+                self.dataEmissions[T]["xTimeStampImps"] = xTimeStampImps
                 self.dataEmissions[T]["y"] = y
                 self.dataEmissions[T]["ymean"] = y
                 self.dataEmissions[T]["yerr"] = np.zeros(y.shape[0])
@@ -1227,6 +1232,10 @@ class impdData:
                 selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][selectedIndices[0]]
                 selectedIndex = [int(x) for x in selectedIndex]
                 x = np.asarray(self.dataValues[T]["timeStampImps"][selectedIndex[0]+trimHead : selectedIndex[1]+1-trimTail])
+                # Raw, un-shifted timeStampImps values -- kept alongside the
+                # pulse-relative 'x' (used by fits/rate-window math elsewhere)
+                # for callers that want to plot against the real timestamp.
+                xTimeStampImps = np.array(x, copy=True)
                 x = x - x[0]
                 for j in range(len(selectedIndices)):
                     selectedIndex = self.dataEmissionClusterParams["clusterBlocks"][T]["low"][selectedIndices[j]]
@@ -1238,9 +1247,19 @@ class impdData:
                         y = np.column_stack((y, temp))
                 self.dataEmissions[T] = dict()
                 self.dataEmissions[T]['x'] = x
+                self.dataEmissions[T]["xTimeStampImps"] = xTimeStampImps
                 self.dataEmissions[T]["y"] = y
-                self.dataEmissions[T]['ymean'] = np.mean(y,axis=1)
-                self.dataEmissions[T]['yerr'] = np.std(y,axis=1)
+                if y.ndim == 1:
+                    # Only one emission repeat (len(selectedIndices) == 1): y
+                    # never went through column_stack and stayed 1-D, so
+                    # np.mean(y, axis=1)/np.std(y, axis=1) would raise
+                    # (there is no axis 1). With a single repeat, its own
+                    # values ARE the mean, with zero spread.
+                    self.dataEmissions[T]['ymean'] = y
+                    self.dataEmissions[T]['yerr'] = np.zeros_like(y)
+                else:
+                    self.dataEmissions[T]['ymean'] = np.mean(y,axis=1)
+                    self.dataEmissions[T]['yerr'] = np.std(y,axis=1)
 
         return 0
 

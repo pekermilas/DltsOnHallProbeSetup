@@ -444,8 +444,15 @@ def construct_runParamsTab():
     # Construct Data Params
     # -------------------------------------------------------------------------
     dltsc.d_params_vars = dict()
+    # 'TXT' is the correct default here: the on-disk content is always JSON
+    # (runDlts_Tools.run_experiment() writes it via writeDataJson() for both
+    # the 'txt' and 'json' Data File Format selections -- the content format
+    # never changes), but files are meant to carry a .txt extension per
+    # impedanceAnalysis_Tools.impdData.read_data()'s expected convention. A
+    # 'JSON' default here previously made the file extension come out as
+    # .json instead.
     d_param_list = [('Number of Points (power of 2)', 16), ('Number of Reps', 500),
-                    ('Data File Format', 'JSON'), ('Data Root Folder', '')]
+                    ('Data File Format', 'TXT'), ('Data Root Folder', '')]
     dltsc.d_param_inputField = dict(d_param_list)
 
     idx_offset = len(t_param_list)+2
@@ -455,7 +462,7 @@ def construct_runParamsTab():
         lbl.grid(row=idx+idx_offset, column=2, sticky='w', padx=4, pady=2)
         if pname == 'Data File Format':
             dltsc.d_param_inputField[pname] = ttk.Combobox(runParamsFrame, width=16, textvariable=var,
-                                                           values=["JSON", "HDF5"], state='readonly')
+                                                           values=["TXT", "HDF5"], state='readonly')
             dltsc.d_param_inputField[pname].grid(row=idx+idx_offset, column=3, sticky='ew', padx=4, pady=0)
 
         elif pname == 'Data Root Folder':

@@ -409,7 +409,19 @@ def _redraw_auto_plots(*_args):
 
     selectedTemp = _get_selected_dataset_temp()
     if selectedTemp is None or selectedTemp not in emission0Data:
-        return
+        # The dropdown's current selection doesn't resolve to a temperature
+        # this mode actually has an emission-0 snapshot for -- e.g. the most
+        # recently ingested temperature failed clustering and never got one.
+        # Recover onto the latest temperature that DOES have data instead of
+        # silently leaving whatever was drawn before (a previous run, or the
+        # other mode) on screen, which is what made switching modes look like
+        # it got permanently stuck.
+        if not emission0Data:
+            _reset_auto_plot_placeholder()
+            return
+        selectedTemp = sorted(emission0Data.keys())[-1]
+        if dltsc.livePlot_datasetVar is not None:
+            dltsc.livePlot_datasetVar.set(_format_dataset_label(selectedTemp))
 
     method = dltsc.livePlot_denoiseMethodVar.get() if dltsc.livePlot_denoiseMethodVar is not None else DENOISE_METHODS[0]
 
@@ -417,7 +429,7 @@ def _redraw_auto_plots(*_args):
     ax1.clear()
 
     sig0 = emission0Data.get(selectedTemp, {})
-    x0 = np.asarray(sig0.get('x', []))
+    x0 = np.asarray(sig0.get('xTimeStampImps', sig0.get('x', [])))
     yRaw0 = np.asarray(sig0.get('ymean', sig0.get('y', [])))
     if x0.size and yRaw0.size:
         ax0.plot(x0, yRaw0, color='0.5', linewidth=1, label='Raw')
@@ -430,7 +442,7 @@ def _redraw_auto_plots(*_args):
     ax0.legend(loc='best', fontsize=8)
 
     sigAll = allEmissionsData.get(selectedTemp, {})
-    xAll = np.asarray(sigAll.get('x', []))
+    xAll = np.asarray(sigAll.get('xTimeStampImps', sigAll.get('x', [])))
     yAll = np.asarray(sigAll.get('y', []))
     if xAll.size and yAll.size:
         if yAll.ndim == 1:
