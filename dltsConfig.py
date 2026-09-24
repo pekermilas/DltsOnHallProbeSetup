@@ -45,6 +45,19 @@ param_history_inputField = None
 
 run_button = None
 
+##---------------------RUN CONTROL (PAUSE / RESUME / REDO / RETAKE)-------------------------
+run_dltsInstance = None     # the live runDlts_Tools.dltsRun instance for the run in progress or
+                             # paused, so Pause/Resume/Redo/Retake reach the same connected devices
+run_busy = None              # True while ANY run-thread (main sequence, resume, redo, retake) is active
+run_pauseRequested = None    # bool: set by the Pause button; the run loop checks it between steps
+run_paused = None            # bool: True once the run loop has actually stopped at a pause point
+run_stepStatus = None        # tempGrid index -> 'pending' / 'running' / 'done' / 'failed' / 'paused'
+run_stepListbox = None       # tk.Listbox showing each temperature grid step + its status
+run_pauseButton = None
+run_resumeButton = None
+run_redoButton = None
+run_retakeButton = None
+
 ##---------------------RUN FILE WATCH-------------------------
 run_dataFolder = None
 run_dataFileNames = None
@@ -83,18 +96,29 @@ livePlot_offlineIngestBusy = None
 
 ##---------------------MANUAL/QUALITATIVE ANALYSIS-------------------------
 manual_dataDirectory = None
-manual_datasetRegistry = None     # temp -> file path, or (path, chunk_id), or chunk_id (ZI mode)
-manual_ziMode = None
-manual_ziDataFile = None
+# temp -> one of:
+#   file path (str)                        -- plain legacy per-temperature file
+#   ('legacy_chunk', file_path, chunk_id)   -- legacy chunked CSV (chunk_id may be None)
+#   ('zi', data_file, chunk_id)             -- Zurich Instruments chunk; data_file's
+#                                              acquisition params live in manual_ziParamsByFile
+# Explicitly tagged (rather than bare 2-tuples) so temperatures loaded from
+# different-format sources can coexist in one registry after an append.
+manual_datasetRegistry = None
+manual_ziMode = None              # True/False/'mixed': format of the most recently loaded/combined data
+manual_ziParamsByFile = None      # zi data_file path -> {'gridColOffset','gridColDelta','chunkSize'};
+                                   # keyed per file so appended ZI sources keep their own acquisition params
+manual_ziDataFile = None          # most-recently-loaded ZI data file (status/back-compat display only)
 manual_ziGridColOffset = None
 manual_ziGridColDelta = None
 manual_ziChunkSize = None
+manual_sourceFolders = None       # list of folder paths combined into manual_datasetRegistry so far
 manual_samplingRate = None
 manual_processedTransients = None # temp -> {time_ms, avg_cap_pf, C_infinity}
 manual_paramVars = None           # dict of tk.StringVar: fp_ms, rb_ms, slice_start, slice_end
 manual_tempListbox = None
 manual_folderLabel = None
 manual_selectFolderButton = None  # 'Select Source Folder' button, disabled while a worker is running
+manual_appendFolderButton = None  # 'Append Source Folder' button, disabled while a worker is running
 manual_extractButton = None       # 'Extract & Average Transients' button, disabled while a worker is running
 manual_processingBusy = None      # True while _process_raw_transients' background worker is running
 manual_loadingBusy = None         # True while _load_manual_directory_async' background worker is running
@@ -112,6 +136,11 @@ manual_statusLabel = None
 rateWindow_dataSourceVar = None   # tk.StringVar: which processed-transients source to analyze
                                    # (Qualitative Analysis / Automated Live / Automated Offline / Auto)
 rateWindow_statusLabel = None     # shows which data source actually got used and how many temperatures
+rateWindow_signalMethodVar = None # tk.StringVar: DrKayisScript.py Method (default) / Measured C / Smoothed C
+rateWindow_denoiseVar = None      # tk.StringVar: 'None (raw)' (default) / pca / wavelet / sgolay / lowess --
+                                   # only applies to the Measured C / Smoothed C signal methods
+rateWindow_denoisedEmissions = None  # last impdData.calculate_delC_normalized() call's denoised/raw
+                                      # emission snapshot, T -> {'x','yRaw','yFiltered','yerr','filterMethod'}
 rateWindow_peakMethodVar = None   # tk.StringVar: 'Smoothing Spline' (default) or lmfit curve fit
 rateWindow_windowVars = None      # list of 4 (t1Var, t2Var) tk.StringVar pairs, one per rate window set
 rateWindow_signals = None         # rw_index -> {'T_k': array, 'Signal': array}
@@ -170,6 +199,18 @@ def init():
 
     global run_button
 
+    ##---------------------RUN CONTROL (PAUSE / RESUME / REDO / RETAKE)-------------------------
+    global run_dltsInstance
+    global run_busy
+    global run_pauseRequested
+    global run_paused
+    global run_stepStatus
+    global run_stepListbox
+    global run_pauseButton
+    global run_resumeButton
+    global run_redoButton
+    global run_retakeButton
+
     ##---------------------RUN FILE WATCH-------------------------
     global run_dataFolder
     global run_dataFileNames
@@ -205,16 +246,19 @@ def init():
     global manual_dataDirectory
     global manual_datasetRegistry
     global manual_ziMode
+    global manual_ziParamsByFile
     global manual_ziDataFile
     global manual_ziGridColOffset
     global manual_ziGridColDelta
     global manual_ziChunkSize
+    global manual_sourceFolders
     global manual_samplingRate
     global manual_processedTransients
     global manual_paramVars
     global manual_tempListbox
     global manual_folderLabel
     global manual_selectFolderButton
+    global manual_appendFolderButton
     global manual_extractButton
     global manual_processingBusy
     global manual_loadingBusy
@@ -227,6 +271,9 @@ def init():
     ##---------------------DATA ANALYSIS (RATE WINDOW / ARRHENIUS)-------------------------
     global rateWindow_dataSourceVar
     global rateWindow_statusLabel
+    global rateWindow_signalMethodVar
+    global rateWindow_denoiseVar
+    global rateWindow_denoisedEmissions
     global rateWindow_peakMethodVar
     global rateWindow_windowVars
     global rateWindow_signals
@@ -249,6 +296,10 @@ def init():
     t_params_for_push = dict()
     d_params_vars = dict()
 
+    run_busy = False
+    run_pauseRequested = False
+    run_paused = False
+    run_stepStatus = dict()
     run_dataFileNames = []
     livePlot_activeMode = 'live'
     livePlot_liveRunToken = 0
@@ -262,6 +313,8 @@ def init():
     livePlot_liveIngestBusy = False
     livePlot_offlineIngestBusy = False
     manual_datasetRegistry = dict()
+    manual_ziParamsByFile = dict()
+    manual_sourceFolders = list()
     manual_processedTransients = dict()
     manual_paramVars = dict()
     rateWindow_signals = dict()
@@ -417,8 +470,8 @@ def recast_param_type(device, pname):
                 newValue = float(oldValue)
             if pname == 'Final Temperature (C)':
                 newValue = float(oldValue)
-            if pname == 'Number of Temperatures':
-                newValue = int(oldValue)
+            if pname == 'Temperature Step (C)':
+                newValue = float(oldValue)
             if pname == 'Temperature Ramp (C/min)':
                 newValue = float(oldValue)
             if pname == 'Stability Delay (s)':

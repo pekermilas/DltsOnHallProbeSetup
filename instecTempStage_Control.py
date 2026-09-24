@@ -37,14 +37,38 @@ class mK2000B:
         self.state = False
         self.Tinitial = 25
         self.Tfinal = 25
+        self.tempStep = 5
         self.numTemps = 1
         self.tRamp = 5
         self.tStableDelay = 0
         self.tempGrid = 25
         pList = ['Initial Temperature (C)', 'Final Temperature (C)',
-                 'Number of Temperatures', 'Temperature Ramp (C/min)',
+                 'Temperature Step (C)', 'Temperature Ramp (C/min)',
                  'Stability Delay (s)', 'Temperature Grid (C)']
         self.params = dict.fromkeys(pList, None)
+
+    @staticmethod
+    def build_temp_grid(Tinit, Tfin, step):
+        """Build a temperature grid from start to stop inclusive, stepping by
+        `step` -- rather than a fixed step count -- so start/stop are always
+        exactly on-grid regardless of whether the span divides evenly by
+        step (the last interval is simply shorter/longer than the rest in
+        that case, landing exactly on Tfin instead of overshooting past it
+        or stopping short of it).
+        """
+        Tinit = float(Tinit)
+        Tfin = float(Tfin)
+        step = abs(float(step))
+        if Tinit == Tfin:
+            return np.array([Tinit])
+        if step <= 0:
+            return np.array([Tinit, Tfin])
+
+        direction = 1.0 if Tfin > Tinit else -1.0
+        nSteps = max(1, int(round(abs(Tfin - Tinit) / step)))
+        grid = Tinit + direction * step * np.arange(nSteps + 1)
+        grid[-1] = Tfin
+        return grid
 
     def read(self):
         return self.dev.read()
@@ -198,20 +222,21 @@ class mK2000B:
             if userInput:
                 Tinit = input("Please enter Initial Temperature (C): ") or self.Tinitial
                 Tfin = input("Please enter Final Temperature (C): ") or self.Tfinal
-                numT = input("Please enter number of Temperature steps: ") or self.numTemps
+                tStep = input("Please enter Temperature Step (C): ") or self.tempStep
             else:
                 Tinit = self.params.get('Initial Temperature (C)')
                 Tfin = self.params.get('Final Temperature (C)')
-                numT = self.params.get('Number of Temperatures')
+                tStep = self.params.get('Temperature Step (C)')
 
             self.Tinitial = Tinit
             self.Tfinal = Tfin
-            self.numTemps = numT
-            
-            self.tempGrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
+            self.tempStep = tStep
+
+            self.tempGrid = self.build_temp_grid(Tinit, Tfin, tStep)
+            self.numTemps = len(self.tempGrid)
         else:
            print("Nothing to do!")
-        
+
         return 0
 
     def set_param_value(self, pName='Initial Temperature (C)', valueDict=None):
@@ -223,9 +248,9 @@ class mK2000B:
                 elif pName == 'Final Temperature (C)':
                     pEntry = input("Final Temperature (C): ")
                     self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 25
-                elif pName == 'Number of Temperatures':
-                    pEntry = input("Number of Temperatures: ")
-                    self.params[pName] = int(pEntry) if not len(pEntry) == 0 else 1
+                elif pName == 'Temperature Step (C)':
+                    pEntry = input("Temperature Step (C): ")
+                    self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 5
                 elif pName == 'Temperature Ramp (C/min)':
                     pEntry = input("Temperature Ramp (C/min): ")
                     self.params[pName] = float(pEntry) if not len(pEntry) == 0 else 5
@@ -235,9 +260,8 @@ class mK2000B:
                 elif pName == 'Temperature Grid (C)':
                     Tinit = self.params.get('Initial Temperature (C)')
                     Tfin = self.params.get('Final Temperature (C)')
-                    numT = self.params.get('Number of Temperatures')
-                    pEntry = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
-                    self.params[pName] = pEntry if not len(pEntry) == 0 else Tinit
+                    tStep = self.params.get('Temperature Step (C)')
+                    self.params[pName] = self.build_temp_grid(Tinit, Tfin, tStep)
             else:
                 print(f"Unknown Parameter {pName}!!!")
         else:
@@ -245,9 +269,8 @@ class mK2000B:
                 if pName=='Temperature Grid (C)':
                     Tinit = valueDict.get('Initial Temperature (C)')
                     Tfin = valueDict.get('Final Temperature (C)')
-                    numT = valueDict.get('Number of Temperatures')
-                    Tgrid = np.linspace(float(Tinit), float(Tfin), int(numT), endpoint=True)
-                    self.params[pName] = Tgrid
+                    tStep = valueDict.get('Temperature Step (C)')
+                    self.params[pName] = self.build_temp_grid(Tinit, Tfin, tStep)
                 else:
                     self.params[pName] = valueDict.get(pName)
             else:

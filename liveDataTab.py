@@ -26,38 +26,181 @@ DENOISE_METHODS = ['pca', 'wavelet', 'sgolay', 'lowess']
 _LEGACY_FILENAME_PATTERN = re.compile(r'^([npNP])(\d+)(?:[pP](\d+))?[cC]?(?:_\d+)?\.(txt|csv)$')
 
 
+#---------------------DLTS RUN CONTROL (PAUSE / RESUME / REDO / RETAKE)-------------------------#
+# dltsc.run_busy gates hardware access: only one of the main sequence, a resume,
+# a redo, or a retake may be driving the connected devices at a time. Pausing
+# does NOT tear the run down -- the same dltsc.run_dltsInstance, with devices
+# still connected and dltsRun.currentStepIndex remembering where it stopped,
+# is reused by Resume/Redo/Retake, so pausing and resuming (or redoing/retaking
+# specific steps in between) never re-runs init_experiment() or reconnects.
 def start_dlts():
-    # Simulate a heavy execution (e.g., file download, scraping, heavy calculations)
     dltsc.log_to_textbox("DLTS run started...")
     dlts = rdT.dltsRun()
+    dltsc.run_dltsInstance = dlts
     run = dlts.init_experiment()
     if run < 0:
         dltsc.log_to_textbox("Error: Failed to initialize the experiment.")
-    else:
-        dltsc.log_to_textbox("Experiment initialized successfully.")
-        dlts.run_experiment()
-        dlts.finish_experiment()
-    time.sleep(5)
-    dltsc.log_to_textbox("DLTS run completed!")
 
-    # Re-enable the button safely once done
-    dltsc.run_button.config(state="normal")
+        def applyInitFailure():
+            dltsc.run_busy = False
+            _set_run_control_buttons('idle')
+        dltsc.root.after(0, applyInitFailure)
+        return
+
+    dltsc.log_to_textbox("Experiment initialized successfully.")
+    for i in range(len(dlts.tempDevice.tempGrid)):
+        dlts.stepStatus[i] = 'pending'
+    dltsc.root.after(0, _refresh_step_listbox)
+
+    status = dlts.run_experiment()
+
+    def apply():
+        _handle_run_status(status, isMainSequence=True)
+    dltsc.root.after(0, apply)
 
 def start_thread():
-    # 1. Disable the button to prevent the user from clicking it multiple times
-    dltsc.run_button.config(state="disabled")
-    # 2. Reset the live-mode plot state, switch the display to Live, and start
-    #    watching for output files. This runs on the Tk main thread (the button
-    #    callback), so the poll loop that follows never has to touch Tkinter from
-    #    the background run thread. Any Offline data already loaded is untouched.
+    if dltsc.run_busy:
+        return
+    # Reset the live-mode plot state, switch the display to Live, and start
+    # watching for output files. This runs on the Tk main thread (the button
+    # callback), so the poll loop that follows never has to touch Tkinter from
+    # the background run thread. Any Offline data already loaded is untouched.
+    dltsc.run_busy = True
+    dltsc.run_pauseRequested = False
+    dltsc.run_paused = False
+    _set_run_control_buttons('running')
     _reset_live_plot_state('live')
     _schedule_live_poll(dltsc.livePlot_liveRunToken)
-    # 3. Create a background thread for the heavy task
+
     taskThread = threading.Thread(target=start_dlts)
-    # 4. Set daemon to True so the thread dies instantly if the GUI window is closed
     taskThread.daemon = True
-    # 5. Start the background execution
     taskThread.start()
+    dltsc.root.after(200, _poll_step_listbox_while_busy)
+
+def _pause_run():
+    if not dltsc.run_busy:
+        return
+    dltsc.run_pauseRequested = True
+    if dltsc.run_pauseButton is not None:
+        dltsc.run_pauseButton.config(state="disabled")
+    dltsc.log_to_textbox("Pause requested; the run will stop after the current temperature step completes.")
+
+def _run_control_thread(indices=None, deleteFirst=False, isMainSequence=False):
+    """Common launcher for resuming the main sequence (indices=None) and for
+    redo/retake (indices=[...]); start_thread() launches the very first run of
+    a session separately since it also resets the live-plot watch state.
+    """
+    if dltsc.run_dltsInstance is None or dltsc.run_busy:
+        return
+    dltsc.run_busy = True
+    dltsc.run_pauseRequested = False
+    _set_run_control_buttons('running')
+
+    def worker():
+        status = dltsc.run_dltsInstance.run_experiment(indices=indices, deleteFirst=deleteFirst)
+
+        def apply():
+            _handle_run_status(status, isMainSequence)
+        dltsc.root.after(0, apply)
+
+    threading.Thread(target=worker, daemon=True).start()
+    dltsc.root.after(200, _poll_step_listbox_while_busy)
+
+def _resume_run():
+    if dltsc.run_dltsInstance is None or dltsc.run_busy:
+        return
+    dltsc.log_to_textbox("Resuming run...")
+    _run_control_thread(indices=None, isMainSequence=True)
+
+def _get_selected_step_indices():
+    if dltsc.run_stepListbox is None:
+        return []
+    return list(dltsc.run_stepListbox.curselection())
+
+def _redo_selected_steps():
+    indices = _get_selected_step_indices()
+    if not indices:
+        dltsc.log_to_textbox("Redo: select at least one step from the list first.")
+        return
+    if dltsc.run_dltsInstance is None or dltsc.run_busy:
+        return
+    dltsc.log_to_textbox(f"Redoing {len(indices)} step(s)...")
+    _run_control_thread(indices=indices, deleteFirst=False, isMainSequence=False)
+
+def _retake_selected_steps():
+    indices = _get_selected_step_indices()
+    if not indices:
+        dltsc.log_to_textbox("Remove & Retake: select at least one step from the list first.")
+        return
+    if dltsc.run_dltsInstance is None or dltsc.run_busy:
+        return
+    dltsc.log_to_textbox(f"Removing and retaking {len(indices)} step(s)...")
+    _run_control_thread(indices=indices, deleteFirst=True, isMainSequence=False)
+
+def _set_run_control_buttons(mode):
+    """mode: 'idle' (nothing has ever run) / 'running' / 'paused' /
+    'idle_with_instance' (completed or errored, but the run instance and its
+    connected devices are still there for Resume/Redo/Retake).
+    """
+    hasInstance = dltsc.run_dltsInstance is not None
+    tempGrid = getattr(getattr(dltsc.run_dltsInstance, 'tempDevice', None), 'tempGrid', None) if hasInstance else None
+    canResume = hasInstance and tempGrid is not None and dltsc.run_dltsInstance.currentStepIndex < len(tempGrid)
+
+    if mode == 'running':
+        buttonStates = dict(run=False, pause=True, resume=False, redo=False, retake=False)
+    elif mode == 'paused':
+        buttonStates = dict(run=False, pause=False, resume=True, redo=True, retake=True)
+    elif mode == 'idle_with_instance':
+        buttonStates = dict(run=True, pause=False, resume=canResume, redo=True, retake=True)
+    else:
+        buttonStates = dict(run=True, pause=False, resume=False, redo=False, retake=False)
+
+    widgets = dict(run=dltsc.run_button, pause=dltsc.run_pauseButton, resume=dltsc.run_resumeButton,
+                   redo=dltsc.run_redoButton, retake=dltsc.run_retakeButton)
+    for key, enabled in buttonStates.items():
+        widget = widgets.get(key)
+        if widget is not None:
+            widget.config(state="normal" if enabled else "disabled")
+
+def _handle_run_status(status, isMainSequence):
+    dltsc.run_busy = False
+    _refresh_step_listbox()
+    if status == 'completed':
+        if isMainSequence:
+            dltsc.run_dltsInstance.finish_experiment()
+            dltsc.log_to_textbox("DLTS run completed!")
+        else:
+            dltsc.log_to_textbox("Redo/Retake completed.")
+        dltsc.run_paused = False
+        _set_run_control_buttons('idle_with_instance')
+    elif status == 'paused':
+        dltsc.run_paused = True
+        dltsc.log_to_textbox("Run paused. Click Resume to continue, or Redo/Remove & Retake specific steps below.")
+        _set_run_control_buttons('paused')
+    else:
+        dltsc.log_to_textbox("Run stopped due to an error. Devices remain connected; Resume/Redo/Retake are available.")
+        _set_run_control_buttons('idle_with_instance')
+
+def _refresh_step_listbox():
+    if dltsc.run_stepListbox is None or dltsc.run_dltsInstance is None:
+        return
+    tempGrid = getattr(dltsc.run_dltsInstance.tempDevice, 'tempGrid', None)
+    if tempGrid is None:
+        return
+    stepStatus = dltsc.run_dltsInstance.stepStatus
+    selected = set(dltsc.run_stepListbox.curselection())
+    dltsc.run_stepListbox.delete(0, tk.END)
+    for i, t in enumerate(tempGrid):
+        status = stepStatus.get(i, 'pending')
+        dltsc.run_stepListbox.insert(tk.END, f"{i + 1}. {t:.2f} °C — {status}")
+    for i in selected:
+        if i < dltsc.run_stepListbox.size():
+            dltsc.run_stepListbox.select_set(i)
+
+def _poll_step_listbox_while_busy():
+    _refresh_step_listbox()
+    if dltsc.run_busy:
+        dltsc.root.after(500, _poll_step_listbox_while_busy)
 
 
 #---------------------AUTOMATED / LIVE DATA VISUALIZATION-------------------------#
@@ -623,6 +766,8 @@ def _set_manual_buttons_state(state):
     """
     if dltsc.manual_selectFolderButton is not None:
         dltsc.manual_selectFolderButton.config(state=state)
+    if dltsc.manual_appendFolderButton is not None:
+        dltsc.manual_appendFolderButton.config(state=state)
     if dltsc.manual_extractButton is not None:
         dltsc.manual_extractButton.config(state=state)
 
@@ -634,10 +779,39 @@ def _browse_manual_folder():
         initialdir=dltsc.manual_dataDirectory or os.getcwd()
     )
     if dir_path:
-        _load_manual_directory_async(dir_path)
+        _scan_manual_directory_async(dir_path, isAppend=False)
 
-def _load_manual_directory_async(dir_path):
-    """Auto-detect ZI vs. legacy format and index the available temperatures.
+def _append_manual_folder():
+    """Add another folder's temperatures to the current dataset instead of
+    replacing it, so a run that was split into pieces or taken across
+    different dates/sessions can still be analyzed together.
+    """
+    if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
+        return
+    if not dltsc.manual_datasetRegistry:
+        # Nothing loaded yet -- append is just a first load in that case.
+        _browse_manual_folder()
+        return
+    dir_path = filedialog.askdirectory(
+        title="Select DLTS Source Folder to Append",
+        initialdir=dltsc.manual_dataDirectory or os.getcwd()
+    )
+    if dir_path:
+        _scan_manual_directory_async(dir_path, isAppend=True)
+
+def _registry_format_label(registry):
+    """'ZI' / 'Legacy' / 'Mixed', describing the formats present in registry --
+    once appending is possible, a combined dataset can span both."""
+    hasZi = any(isinstance(v, tuple) and v[0] == 'zi' for v in registry.values())
+    hasLegacy = any(not (isinstance(v, tuple) and v[0] == 'zi') for v in registry.values())
+    if hasZi and hasLegacy:
+        return "Mixed"
+    return "ZI" if hasZi else "Legacy"
+
+def _scan_manual_directory_async(dir_path, isAppend):
+    """Auto-detect ZI vs. legacy format and index the available temperatures in
+    dir_path, then merge (isAppend=True) into the current dataset or replace
+    it (isAppend=False) with them.
 
     Runs the directory scan/parse on a background thread, like Run DLTS does for
     the experiment itself, so scanning a large folder never freezes the GUI. Only
@@ -648,15 +822,16 @@ def _load_manual_directory_async(dir_path):
         return
     dltsc.manual_loadingBusy = True
     _set_manual_buttons_state('disabled')
-    if dltsc.manual_folderLabel is not None:
+    action = "Appending" if isAppend else "Loading"
+    if dltsc.manual_folderLabel is not None and not isAppend:
         dltsc.manual_folderLabel.config(text=f"Source: {os.path.basename(dir_path)} (scanning...)")
     if dltsc.manual_statusLabel is not None:
-        dltsc.manual_statusLabel.config(text="Scanning folder...")
+        dltsc.manual_statusLabel.config(text=f"{action} {os.path.basename(dir_path)}...")
 
     def worker():
         errorMsgs = []
         registry = {}
-        ziMode = False
+        ziDetected = False
         ziInfo = None
         try:
             # Detect Zurich Instruments format: a header CSV matching
@@ -665,7 +840,7 @@ def _load_manual_directory_async(dir_path):
                           if re.search(r'imps_0_sample_param1_avg_header', f, re.IGNORECASE)
                           and f.endswith('.csv')]
             if zi_headers:
-                ziMode = True
+                ziDetected = True
                 registry, ziInfo = _compute_zi_dataset(dir_path, zi_headers[0], errorMsgs)
             else:
                 registry = _compute_legacy_dataset(dir_path, errorMsgs)
@@ -675,35 +850,62 @@ def _load_manual_directory_async(dir_path):
         def apply():
             dltsc.manual_loadingBusy = False
             _set_manual_buttons_state('normal')
-            dltsc.manual_dataDirectory = dir_path
-            dltsc.manual_datasetRegistry = registry
-            dltsc.manual_ziMode = ziMode
-            if ziInfo is not None:
-                dltsc.manual_ziDataFile = ziInfo['dataFile']
-                dltsc.manual_ziGridColOffset = ziInfo['gridColOffset']
-                dltsc.manual_ziGridColDelta = ziInfo['gridColDelta']
-                dltsc.manual_ziChunkSize = ziInfo['chunkSize']
-                if ziInfo.get('fpMs') is not None:
-                    dltsc.manual_paramVars['fp_ms'].set(ziInfo['fpMs'])
-                if ziInfo.get('rbMs') is not None:
-                    dltsc.manual_paramVars['rb_ms'].set(ziInfo['rbMs'])
-                    dltsc.manual_paramVars['slice_end'].set(ziInfo['sliceEnd'])
-            else:
-                dltsc.manual_ziDataFile = None
 
-            if dltsc.manual_folderLabel is not None:
-                dltsc.manual_folderLabel.config(text=f"Source: {os.path.basename(dir_path)}")
+            if isAppend:
+                if dltsc.manual_datasetRegistry is None:
+                    dltsc.manual_datasetRegistry = {}
+                skipped = sorted(t for t in registry if t in dltsc.manual_datasetRegistry)
+                added = {t: v for t, v in registry.items() if t not in dltsc.manual_datasetRegistry}
+                dltsc.manual_datasetRegistry.update(added)
+                if dltsc.manual_sourceFolders is None:
+                    dltsc.manual_sourceFolders = []
+                dltsc.manual_sourceFolders.append(dir_path)
+                if skipped:
+                    dltsc.log_to_textbox(
+                        f"Manual analysis: skipped {len(skipped)} temperature(s) already present "
+                        f"from a previous source (kept the first-loaded copy): {skipped}")
+            else:
+                dltsc.manual_datasetRegistry = registry
+                dltsc.manual_sourceFolders = [dir_path]
+                dltsc.manual_dataDirectory = dir_path
+                dltsc.manual_ziParamsByFile = {}
+                if dltsc.manual_folderLabel is not None:
+                    dltsc.manual_folderLabel.config(text=f"Source: {os.path.basename(dir_path)}")
+
+            if ziDetected and ziInfo is not None:
+                ziParams = {'gridColOffset': ziInfo['gridColOffset'], 'gridColDelta': ziInfo['gridColDelta'],
+                            'chunkSize': ziInfo['chunkSize']}
+                dltsc.manual_ziParamsByFile[ziInfo['dataFile']] = ziParams
+                dltsc.manual_ziDataFile = ziInfo['dataFile']
+                dltsc.manual_ziGridColOffset = ziParams['gridColOffset']
+                dltsc.manual_ziGridColDelta = ziParams['gridColDelta']
+                dltsc.manual_ziChunkSize = ziParams['chunkSize']
+                if not isAppend:
+                    if ziInfo.get('fpMs') is not None:
+                        dltsc.manual_paramVars['fp_ms'].set(ziInfo['fpMs'])
+                    if ziInfo.get('rbMs') is not None:
+                        dltsc.manual_paramVars['rb_ms'].set(ziInfo['rbMs'])
+                        dltsc.manual_paramVars['slice_end'].set(ziInfo['sliceEnd'])
+
+            dltsc.manual_ziMode = _registry_format_label(dltsc.manual_datasetRegistry)
+
+            if isAppend and dltsc.manual_folderLabel is not None:
+                nSources = len(dltsc.manual_sourceFolders)
+                dltsc.manual_folderLabel.config(
+                    text=f"Source: {nSources} folder(s) combined (latest: {os.path.basename(dir_path)})")
+
             dltsc.manual_tempListbox.delete(0, tk.END)
-            for temp in sorted(registry.keys()):
+            for temp in sorted(dltsc.manual_datasetRegistry.keys()):
                 dltsc.manual_tempListbox.insert(tk.END, f"{temp} °C")
             dltsc.manual_tempListbox.select_set(0, tk.END)
 
             for msg in errorMsgs:
                 dltsc.log_to_textbox(f"Manual analysis: {msg}")
 
-            fmt = "ZI" if ziMode else "Legacy"
             if dltsc.manual_statusLabel is not None:
-                dltsc.manual_statusLabel.config(text=f"[{fmt}] Indexed {len(registry)} temperature steps.")
+                dltsc.manual_statusLabel.config(
+                    text=f"[{dltsc.manual_ziMode}] {len(dltsc.manual_datasetRegistry)} temperature step(s) "
+                        f"from {len(dltsc.manual_sourceFolders)} source(s).")
 
         dltsc.root.after(0, apply)
 
@@ -761,7 +963,10 @@ def _compute_zi_dataset(dir_path, header_filename, errorMsgs):
         m = temp_pattern.match(name)
         if m:
             temp_c = float(m.group(1))
-            registry[temp_c] = chunk_num
+            # Explicitly tagged (not a bare chunk number) so entries from a
+            # ZI source can coexist in the registry with legacy-format entries
+            # appended from a different folder.
+            registry[temp_c] = ('zi', ziInfo['dataFile'], chunk_num)
 
     # Update timing defaults if we can parse them from the folder name.
     folder_name = os.path.basename(dir_path)
@@ -808,7 +1013,7 @@ def _compute_legacy_dataset(dir_path, errorMsgs):
                                          8: 160.0}
                             for ch in unique_chunks:
                                 if ch in chunk_map:
-                                    registry[chunk_map[ch]] = (file_path, ch)
+                                    registry[chunk_map[ch]] = ('legacy_chunk', file_path, ch)
                         else:
                             match = _LEGACY_FILENAME_PATTERN.search(file)
                             if match:
@@ -817,7 +1022,7 @@ def _compute_legacy_dataset(dir_path, errorMsgs):
                                                            if frac_part else 0.0)
                                 if sign.lower() == 'n':
                                     t_val = -t_val
-                                registry[t_val] = (file_path, unique_chunks[0])
+                                registry[t_val] = ('legacy_chunk', file_path, unique_chunks[0])
                         continue
                     elif has_smoothed:
                         match = _LEGACY_FILENAME_PATTERN.search(file)
@@ -827,7 +1032,7 @@ def _compute_legacy_dataset(dir_path, errorMsgs):
                                                        if frac_part else 0.0)
                             if sign.lower() == 'n':
                                 t_val = -t_val
-                            registry[t_val] = (file_path, None)
+                            registry[t_val] = ('legacy_chunk', file_path, None)
                         continue
             except Exception as exc:
                 errorMsgs.append(f"skipping CSV pre-scan on {file}: {exc}")
@@ -917,24 +1122,22 @@ def _process_raw_transients():
     dltsc.manual_statusLabel.config(text=f"Processing {len(selectedTemps)} temperature(s)...")
 
     # Snapshot everything the worker needs so it never touches Tk widgets/variables.
-    ziMode = dltsc.manual_ziMode
+    # Selected temperatures are split by their OWN registry entry's format tag
+    # (not a single global mode) so a combined dataset -- some temperatures
+    # from an appended ZI source, others from an appended legacy source -- is
+    # routed correctly instead of forcing every selection through one format.
     datasetRegistry = dict(dltsc.manual_datasetRegistry)
-    ziDataFile = dltsc.manual_ziDataFile
-    ziGridColOffset = dltsc.manual_ziGridColOffset
-    ziGridColDelta = dltsc.manual_ziGridColDelta
-    ziChunkSize = dltsc.manual_ziChunkSize
+    ziTemps = [t for t in selectedTemps
+              if isinstance(datasetRegistry.get(t), tuple) and datasetRegistry[t][0] == 'zi']
+    legacyTemps = [t for t in selectedTemps if t not in ziTemps]
+    ziParamsByFile = dict(dltsc.manual_ziParamsByFile or {})
     samplingRateS = dltsc.manual_samplingRate or 1.8666666666666665e-05
 
     def worker():
         try:
             executor = _get_transient_executor()
-            if ziMode:
-                future = executor.submit(_compute_zi_transients, selectedTemps, cInfTargetMs,
-                                         datasetRegistry, ziDataFile, ziGridColOffset,
-                                         ziGridColDelta, ziChunkSize)
-            else:
-                future = executor.submit(_compute_legacy_transients, selectedTemps, rbDurationMs,
-                                         cInfTargetMs, datasetRegistry, samplingRateS)
+            future = executor.submit(_compute_mixed_transients, ziTemps, legacyTemps, cInfTargetMs,
+                                     datasetRegistry, ziParamsByFile, rbDurationMs, samplingRateS)
             processedTransients, executionErrors = future.result()
         except Exception as exc:
             processedTransients, executionErrors = {}, [f"extraction process failed: {exc}"]
@@ -974,9 +1177,12 @@ def _process_raw_transients():
 
     threading.Thread(target=worker, daemon=True).start()
 
-def _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziDataFile,
-                           ziGridColOffset, ziGridColDelta, ziChunkSize):
-    """Read the single ZI data CSV once, then extract each selected chunk.
+def _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziParamsByFile):
+    """Read each distinct ZI data CSV once, then extract every selected chunk
+    from it. datasetRegistry[temp] is ('zi', dataFile, chunkId); appended ZI
+    sources can contribute different dataFiles (each with its own acquisition
+    params in ziParamsByFile), so temps are grouped by dataFile first and each
+    file is only read from disk once regardless of how many temps use it.
 
     Pure computation (no Tk/matplotlib calls), run in a separate OS process (see
     _process_raw_transients) so it can never contend with the Tk main thread for
@@ -985,44 +1191,75 @@ def _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziDataF
     """
     processedTransients = {}
     executionErrors = []
-    try:
-        dfAll = pd.read_csv(ziDataFile, sep=';')
-    except Exception as exc:
-        executionErrors.append(f"failed to read ZI data CSV: {exc}")
-        return processedTransients, executionErrors
 
-    # Time axis (relative to reverse-bias start at t = 0 ms).
-    timeAxisMs = (ziGridColOffset + np.arange(ziChunkSize) * ziGridColDelta) * 1000.0
+    byFile = {}
+    for temp in selectedTemps:
+        _, dataFile, chunkId = datasetRegistry[temp]
+        byFile.setdefault(dataFile, []).append((temp, chunkId))
 
-    for temp in sorted(selectedTemps):
-        chunkId = datasetRegistry[temp]
+    for dataFile, entries in byFile.items():
+        params = ziParamsByFile.get(dataFile, {})
+        ziGridColOffset = params.get('gridColOffset', -0.001)
+        ziGridColDelta = params.get('gridColDelta', 1.86667e-05)
+        ziChunkSize = params.get('chunkSize', 32768)
+
         try:
-            chunkRows = dfAll[dfAll['chunk'] == chunkId]['value'].to_numpy()
-
-            if len(chunkRows) == 0:
-                executionErrors.append(f"{temp}°C: No data for chunk {chunkId}")
-                continue
-
-            n = min(len(chunkRows), ziChunkSize)
-            avgCurve = chunkRows[:n].astype(np.float64)
-            tAxis = timeAxisMs[:n]
-
-            # Unit conversion: Farads -> pF.
-            if np.nanmax(np.abs(avgCurve)) < 1e-3:
-                avgCurve = avgCurve * 1e12
-
-            cInfIdx = np.argmin(np.abs(tAxis - cInfTargetMs))
-            cInfinity = avgCurve[cInfIdx]
-
-            processedTransients[temp] = {
-                'time_ms': tAxis,
-                'avg_cap_pf': avgCurve,
-                'C_infinity': cInfinity
-            }
-
+            dfAll = pd.read_csv(dataFile, sep=';')
         except Exception as exc:
-            executionErrors.append(f"{temp}°C: {exc}")
+            executionErrors.append(f"failed to read ZI data CSV {os.path.basename(dataFile)}: {exc}")
+            continue
 
+        # Time axis (relative to reverse-bias start at t = 0 ms).
+        timeAxisMs = (ziGridColOffset + np.arange(ziChunkSize) * ziGridColDelta) * 1000.0
+
+        for temp, chunkId in sorted(entries):
+            try:
+                chunkRows = dfAll[dfAll['chunk'] == chunkId]['value'].to_numpy()
+
+                if len(chunkRows) == 0:
+                    executionErrors.append(f"{temp}°C: No data for chunk {chunkId}")
+                    continue
+
+                n = min(len(chunkRows), ziChunkSize)
+                avgCurve = chunkRows[:n].astype(np.float64)
+                tAxis = timeAxisMs[:n]
+
+                # Unit conversion: Farads -> pF.
+                if np.nanmax(np.abs(avgCurve)) < 1e-3:
+                    avgCurve = avgCurve * 1e12
+
+                cInfIdx = np.argmin(np.abs(tAxis - cInfTargetMs))
+                cInfinity = avgCurve[cInfIdx]
+
+                processedTransients[temp] = {
+                    'time_ms': tAxis,
+                    'avg_cap_pf': avgCurve,
+                    'C_infinity': cInfinity
+                }
+
+            except Exception as exc:
+                executionErrors.append(f"{temp}°C: {exc}")
+
+    return processedTransients, executionErrors
+
+def _compute_mixed_transients(ziTemps, legacyTemps, cInfTargetMs, datasetRegistry,
+                              ziParamsByFile, rbDurationMs, samplingRateS):
+    """Dispatch each selected temperature to the ZI or legacy extractor
+    depending on how its own registry entry is tagged, then merge the results.
+    Needed because appending sources of different formats can leave a single
+    selection spanning both -- a single global "ziMode" flag can no longer
+    decide the whole batch's format.
+    """
+    processedTransients = {}
+    executionErrors = []
+    if ziTemps:
+        p, e = _compute_zi_transients(ziTemps, cInfTargetMs, datasetRegistry, ziParamsByFile)
+        processedTransients.update(p)
+        executionErrors.extend(e)
+    if legacyTemps:
+        p, e = _compute_legacy_transients(legacyTemps, rbDurationMs, cInfTargetMs, datasetRegistry, samplingRateS)
+        processedTransients.update(p)
+        executionErrors.extend(e)
     return processedTransients, executionErrors
 
 def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datasetRegistry,
@@ -1041,8 +1278,8 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
     for temp in sorted(selectedTemps):
         targetSource = datasetRegistry[temp]
         try:
-            if isinstance(targetSource, tuple):
-                filePath, chunkId = targetSource
+            if isinstance(targetSource, tuple) and targetSource[0] == 'legacy_chunk':
+                _, filePath, chunkId = targetSource
                 df = pd.read_csv(filePath, sep=';')
 
                 if chunkId is not None:
@@ -1157,6 +1394,8 @@ def _build_manualPlotFrame(parent):
     ioGroup.pack(fill='x', pady=(0, 4))
     dltsc.manual_selectFolderButton = ttk.Button(ioGroup, text='Select Source Folder', command=_browse_manual_folder)
     dltsc.manual_selectFolderButton.pack(fill='x', padx=4, pady=(4, 2))
+    dltsc.manual_appendFolderButton = ttk.Button(ioGroup, text='Append Source Folder', command=_append_manual_folder)
+    dltsc.manual_appendFolderButton.pack(fill='x', padx=4, pady=(0, 2))
     dltsc.manual_folderLabel = ttk.Label(ioGroup, text='Source: (none selected)', wraplength=220, justify='left')
     dltsc.manual_folderLabel.pack(fill='x', padx=4, pady=(0, 4))
 
@@ -1239,11 +1478,12 @@ def construct_livePlotTab():
     tabControl.pack(expand=1, fill="both")
 
     # Allow tab content to expand with the notebook window. The analysis panes get
-    # the expanding row; the run button and the log textbox are fixed-height rows
-    # pinned to the top and bottom respectively.
+    # the expanding row; the run button, run control, and the log textbox are
+    # fixed-height rows pinned to the top and bottom respectively.
     dltsc.livePlotTab.grid_rowconfigure(0, weight=0)
-    dltsc.livePlotTab.grid_rowconfigure(1, weight=1)
-    dltsc.livePlotTab.grid_rowconfigure(2, weight=0)
+    dltsc.livePlotTab.grid_rowconfigure(1, weight=0)
+    dltsc.livePlotTab.grid_rowconfigure(2, weight=1)
+    dltsc.livePlotTab.grid_rowconfigure(3, weight=0)
     dltsc.livePlotTab.grid_columnconfigure(0, weight=1)
 
 
@@ -1264,11 +1504,46 @@ def construct_livePlotTab():
                                  font=('Segoe UI', 14, 'bold'))
     dltsc.run_button.pack(fill='both', expand=True, padx=4, pady=0)
 
+    # --- Run Control: pause/resume the main sequence, or redo/remove & retake
+    # specific already-scanned temperature steps by selecting them below. ---
+    runControlFrame = tk.Frame(dltsc.livePlotTab, highlightbackground="gray",
+                               highlightthickness=1, highlightcolor='gray',
+                               width=860, height=150)
+    runControlFrame.grid(row=1, column=0, padx=10, pady=(0, 2), sticky='nsew')
+    runControlFrame.grid_propagate(False)
+    runControlFrame.grid_columnconfigure(0, weight=0)
+    runControlFrame.grid_columnconfigure(1, weight=1)
+    runControlFrame.grid_rowconfigure(0, weight=1)
+
+    runControlButtons = tk.Frame(runControlFrame)
+    runControlButtons.grid(row=0, column=0, sticky='ns', padx=4, pady=4)
+    dltsc.run_pauseButton = tk.Button(runControlButtons, text="Pause", command=_pause_run, state="disabled")
+    dltsc.run_pauseButton.pack(fill='x', pady=2)
+    dltsc.run_resumeButton = tk.Button(runControlButtons, text="Resume", command=_resume_run, state="disabled")
+    dltsc.run_resumeButton.pack(fill='x', pady=2)
+    dltsc.run_redoButton = tk.Button(runControlButtons, text="Redo Selected", command=_redo_selected_steps,
+                                     state="disabled")
+    dltsc.run_redoButton.pack(fill='x', pady=2)
+    dltsc.run_retakeButton = tk.Button(runControlButtons, text="Remove & Retake Selected",
+                                       command=_retake_selected_steps, state="disabled")
+    dltsc.run_retakeButton.pack(fill='x', pady=2)
+
+    stepListFrame = tk.Frame(runControlFrame)
+    stepListFrame.grid(row=0, column=1, sticky='nsew', padx=4, pady=4)
+    stepListFrame.grid_rowconfigure(0, weight=1)
+    stepListFrame.grid_columnconfigure(0, weight=1)
+    stepListScroll = ttk.Scrollbar(stepListFrame, orient='vertical')
+    dltsc.run_stepListbox = tk.Listbox(stepListFrame, selectmode=tk.MULTIPLE, exportselection=False,
+                                       yscrollcommand=stepListScroll.set)
+    stepListScroll.config(command=dltsc.run_stepListbox.yview)
+    dltsc.run_stepListbox.grid(row=0, column=0, sticky='nsew')
+    stepListScroll.grid(row=0, column=1, sticky='ns')
+
     # Automated/live plot (top) and manual/qualitative analysis (bottom), stacked in
     # a resizable pane so both stay reachable without crowding the tab. The manual
     # pane starts taller since its control column has more to show.
     analysisPanes = tk.PanedWindow(dltsc.livePlotTab, orient=tk.VERTICAL, sashrelief='raised', sashwidth=6)
-    analysisPanes.grid(row=1, column=0, padx=10, pady=(0, 2), sticky='nsew')
+    analysisPanes.grid(row=2, column=0, padx=10, pady=(0, 2), sticky='nsew')
 
     autoPlotFrame = tk.Frame(analysisPanes, highlightbackground="gray",
                              highlightthickness=1, highlightcolor='gray')
@@ -1284,7 +1559,7 @@ def construct_livePlotTab():
                               highlightthickness=1, highlightcolor='gray',
                               width=860, height=90)
 
-    reportLivesFrame.grid(row=2, column=0, padx=10, pady=(0, 10), sticky='ew')
+    reportLivesFrame.grid(row=3, column=0, padx=10, pady=(0, 10), sticky='ew')
     reportLivesFrame.grid_propagate(False)
     reportLivesFrame.grid_columnconfigure(0, weight=1)
     reportLivesFrame.grid_rowconfigure(0, weight=1)

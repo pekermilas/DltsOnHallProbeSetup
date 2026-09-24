@@ -412,7 +412,7 @@ def construct_runParamsTab():
     # -------------------------------------------------------------------------
     dltsc.t_params_vars = dict()
     t_param_list = [('Initial Temperature (C)', '25'), ('Final Temperature (C)', '25'),
-                    ('Number of Temperatures', '1'), ('Temperature Ramp (C/min)', '5'),
+                    ('Temperature Step (C)', '5'), ('Temperature Ramp (C/min)', '5'),
                     ('Stability Delay (s)', '0')]
     dltsc.t_param_inputField = dict(t_param_list)
 

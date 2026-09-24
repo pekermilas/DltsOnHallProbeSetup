@@ -1375,9 +1375,15 @@ class impdData:
             if maxIndex == 1:
                 yRaw = np.array(y, copy=True)
 
-        # 1. Frame the 1D signal into a 2D matrix (Sliding Window)
+        # 1. Frame the 1D signal into a 2D matrix (Sliding Window).
+        # len(yRaw) // 1000 assumes a dense raw signal (thousands of samples);
+        # for a single trimmed emission block (typically hundreds of samples)
+        # it rounds down to 0, which produced zero-width frames and crashed
+        # PCA below -- fall back to a data-length-relative window for smaller
+        # inputs, and always keep at least one row of overlapping frames.
         if window_size is None:
-            window_size = len(yRaw) // 1000
+            window_size = max(2, len(yRaw) // 1000) if len(yRaw) >= 1000 else max(2, len(yRaw) // 20)
+        window_size = min(window_size, max(2, len(yRaw) - 2))
         Y = np.array([yRaw[i : i + window_size] for i in range(len(yRaw) - window_size)])
 
         # 3. Apply PCA and keep only the first principal component
@@ -1435,9 +1441,19 @@ class impdData:
             if maxIndex == 1:
                 yRaw = np.array(y, copy=True)
 
-        # 2. Apply the Savitzky-Golay filter
+        # 2. Apply the Savitzky-Golay filter.
+        # len(yRaw) // 1000 assumes a dense raw signal (thousands of samples);
+        # for a single trimmed emission block (typically hundreds of samples)
+        # it rounds down to 0 (or below polyorder), which savgol_filter
+        # rejects -- fall back to a data-length-relative window for smaller
+        # inputs, and always keep it odd and within (polyorder, len(yRaw)].
         if window_size is None:
-            window_size = len(yRaw) // 1000
+            window_size = max(order + 2, len(yRaw) // 1000) if len(yRaw) >= 1000 else max(order + 2, len(yRaw) // 20)
+        if window_size % 2 == 0:
+            window_size += 1
+        window_size = min(window_size, len(yRaw) if len(yRaw) % 2 == 1 else len(yRaw) - 1)
+        if window_size <= order:
+            window_size = order + 1 if (order + 1) % 2 else order + 2
         yDenoised = savgol_filter(yRaw, window_length=window_size, polyorder=order)
 
         return x, yDenoised, yRaw
@@ -1486,7 +1502,7 @@ class impdData:
 
     @staticmethod
     def _smoothingSpline_peakFinder(signalX = None, signalY = None, smoothingFactor = None,
-                                    nBootstrap = 200, randomState = 0):
+                                    nBootstrap = 200, randomState = 0, signalYErr = None):
         """
         Fit a 1D signal to a smoothing cubic spline and find its extremum.
 
@@ -1512,6 +1528,13 @@ class impdData:
         roughness (a standard, robust noise estimator: Reference: Rice,
         J. (1984), "Bandwidth choice for nonparametric regression"), so it
         self-adapts across very different y-scales rather than assuming one.
+        If `signalYErr` (per-point measurement uncertainty, e.g. from
+        calculate_delC_normalized()'s error propagation) is supplied instead,
+        it is used directly -- both to weight the fit itself (FITPACK's `w`,
+        so noisier points are trusted less) and as scipy's own s ~= m
+        starting recommendation applies exactly once weights normalize
+        residuals to unit variance -- rather than being estimated from the
+        signal's own roughness.
 
         A smoothing spline has no fitted-parameter covariance matrix the way a
         parametric curve fit does, so maxXErr/maxYErr are instead estimated by
@@ -1537,17 +1560,31 @@ class impdData:
             order = np.argsort(signalX)  # UnivariateSpline requires increasing x
             xs, ys = signalX[order], signalY[order]
 
-            if len(ys) >= 5:
-                secondDiff = ys[:-2] - 2 * ys[1:-1] + ys[2:]
-                noiseVar = np.sum(secondDiff ** 2) / (6.0 * len(secondDiff))
+            yErrs = None
+            if signalYErr is not None:
+                yErrs = np.asarray(signalYErr, dtype=float)[order]
+                if not (np.all(np.isfinite(yErrs)) and np.all(yErrs > 0)):
+                    yErrs = None  # fall back to auto-estimated noise below
+
+            weights = None
+            noiseStd = None
+            if yErrs is not None:
+                weights = 1.0 / yErrs
+                if smoothingFactor is None:
+                    # Weights normalize residuals to unit variance, so scipy's
+                    # own s ~= m starting recommendation applies directly here.
+                    smoothingFactor = max(float(len(xs)), 1e-300)
             else:
-                noiseVar = np.var(ys)
-            noiseStd = np.sqrt(noiseVar)
+                if len(ys) >= 5:
+                    secondDiff = ys[:-2] - 2 * ys[1:-1] + ys[2:]
+                    noiseVar = np.sum(secondDiff ** 2) / (6.0 * len(secondDiff))
+                else:
+                    noiseVar = np.var(ys)
+                noiseStd = np.sqrt(noiseVar)
+                if smoothingFactor is None:
+                    smoothingFactor = max(noiseVar * len(xs), 1e-300)
 
-            if smoothingFactor is None:
-                smoothingFactor = max(noiseVar * len(xs), 1e-300)
-
-            spline = UnivariateSpline(xs, ys, k=3, s=smoothingFactor)
+            spline = UnivariateSpline(xs, ys, w=weights, k=3, s=smoothingFactor)
             xf = np.linspace(xs.min(), xs.max(), 100000)
             yf = spline(xf)
 
@@ -1559,7 +1596,9 @@ class impdData:
             maxY = yf[peakIdx]
 
             maxXErr = maxYErr = None
-            if nBootstrap and nBootstrap > 0 and noiseStd > 0 and len(xs) > 3:
+            canBootstrap = (nBootstrap and nBootstrap > 0 and len(xs) > 3
+                            and (yErrs is not None or (noiseStd is not None and noiseStd > 0)))
+            if canBootstrap:
                 rng = np.random.default_rng(randomState)
                 # Coarser grid than the main fit's -- only needed to localize
                 # each resample's peak, not to draw a smooth curve -- so
@@ -1567,9 +1606,10 @@ class impdData:
                 xfBoot = np.linspace(xs.min(), xs.max(), 2000)
                 bootPeaksX, bootPeaksY = [], []
                 for _ in range(nBootstrap):
-                    yBoot = ys + rng.normal(scale=noiseStd, size=ys.shape)
+                    noiseSample = rng.normal(scale=yErrs) if yErrs is not None else rng.normal(scale=noiseStd, size=ys.shape)
+                    yBoot = ys + noiseSample
                     try:
-                        splineBoot = UnivariateSpline(xs, yBoot, k=3, s=smoothingFactor)
+                        splineBoot = UnivariateSpline(xs, yBoot, w=weights, k=3, s=smoothingFactor)
                     except Exception:
                         continue
                     yfBoot = splineBoot(xfBoot)
@@ -1584,9 +1624,16 @@ class impdData:
             return maxX, maxY, xf, yf, maxXErr, maxYErr
 
     @staticmethod
-    def _curveFit_peakFinder(signalX = None, signalY = None, curveType = "pseudoVoigt"):
+    def _curveFit_peakFinder(signalX = None, signalY = None, curveType = "pseudoVoigt", signalYErr = None):
         """
         Fit a 1D signal to a curve (lmfit) and find its extremum.
+
+        `signalYErr` (per-point measurement uncertainty, e.g. from
+        calculate_delC_normalized()'s error propagation), if supplied, weights
+        the fit (lmfit's `weights = 1/signalYErr`) so noisier points are
+        trusted less -- and the fitted-parameter standard errors below then
+        reflect that per-point uncertainty rather than only the residual
+        scatter around an unweighted fit.
 
         Returns (maxX, maxY, xf, yf, maxXErr, maxYErr): maxX/maxY are the
         fitted peak position/height, maxXErr/maxYErr their standard errors as
@@ -1613,8 +1660,14 @@ class impdData:
         signalX = np.asarray(signalX, dtype=float)
         signalY = np.asarray(signalY, dtype=float)
 
+        fitKwargs = {}
+        if signalYErr is not None:
+            yErrs = np.asarray(signalYErr, dtype=float)
+            if np.all(np.isfinite(yErrs)) and np.all(yErrs > 0):
+                fitKwargs['weights'] = 1.0 / yErrs
+
         params = model.guess(signalY, x=signalX)
-        result = model.fit(signalY, params, x=signalX)
+        result = model.fit(signalY, params, x=signalX, **fitKwargs)
 
         xf = np.linspace(np.min(signalX), np.max(signalX), 2000)
         yf = result.eval(x=xf)
@@ -1722,64 +1775,101 @@ class impdData:
         return 0
 
     def calculate_delC_normalized(self, t1=0.003, t2=0.203,
-                                emissionIndex=0, denoiseEmission=False, smoothCapacitance=True,
-                                plot=False):
+                                emissionIndex=-1, denoiseEmission=False, denoiseMethod='pca',
+                                smoothCapacitance=True, plot=False):
+        """
+        Compute the DLTS signal (normalized delta-C) at a double-boxcar rate
+        window (t1, t2) for every temperature, with error propagation.
 
-        # Denoising the Emission is for better estimating the many sample averaged data
-        # Smoothing the Capacitance is for estimating the real value of C right at t1 and/or t2
+        denoiseEmission/denoiseMethod choose whether the DENOISED
+        (filter_emissions()'s yFiltered) or raw (yRaw) emission is used for
+        the central C(t1)/C(t2)/C_infinity values -- denoising is for better
+        estimating the many-sample-averaged data. smoothCapacitance chooses
+        whether C at t1/t2/C_infinity is read off the nearest MEASURED sample
+        (smoothCapacitance=False) or a cubic-spline interpolation of that
+        curve (smoothCapacitance=True) -- smoothing is for estimating the
+        real C value exactly at t1/t2, which generally falls between samples.
 
-        if self.dataEmissions is None:
-            self.selected_emissions(emissionIndex=0, trimHead=10, trimTail=10, plot=False)
+        emissionIndex=-1 (default) uses the ensemble average across every
+        reverse-bias repeat recorded for each temperature (selected_emissions()'s
+        "All Emissions Aligned" set) rather than a single unaveraged pulse
+        (emissionIndex=0): repeat-to-repeat spread is what 'yerr' is built
+        from (see selected_emissions()), so emissionIndex=0 has no meaningful
+        yerr -- a single pulse has nothing to compare itself against -- and
+        every error estimate below would come back zero.
 
-        # if denoiseEmission and 'filterMethod' not in self.dataEmissions[self.dataTemps[0]]:
-        self.filter_emissions(method='pca', emissionIndex=emissionIndex, recalculate=True, interactivePlot=False)
+        Error propagation (via the `uncertainties` package) combines each
+        temperature's C(t1)/C(t2)/C_infinity uncertainty -- yerr, the per-
+        time-point cross-repeat standard deviation, read at t1/t2/t[-1] the
+        same way as the values themselves (nearest sample, or interpolated
+        through a cubic spline of yerr when smoothCapacitance=True) -- into
+        deltaC's and the normalized signal's standard errors.
 
-        # If emission index is -1 and denoiseEmission is False, use ymean and yerr
-        # If emission index is -1 and denoiseEmission is True, use yFiltered and yerr
-        # If emission index is larger than existing indices, use the last emission
-        # If emission index is smaller than -1, use the first emission
-        # If emission index is any of the existing indices, use the index
+        Always rebuilds self.dataEmissions from the requested emissionIndex:
+        it is shared, mutable state on this instance, and a stale build left
+        behind by a different emissionIndex (e.g. the live-plot pipeline's own
+        selected_emissions(emissionIndex=0) calls elsewhere) would otherwise
+        silently feed the wrong data into this calculation.
 
-        delCNormalized = np.zeros((len(self.dataTemps),4))
+        Returns (delCNormalized, delCNormalizedErr):
+          delCNormalized:    (N, 4) array of [T (K), tau (s), deltaC, deltaC/C_infinity]
+          delCNormalizedErr: (N, 2) array of [deltaC_err, (deltaC/C_infinity)_err]
+        both sorted by temperature, matching each other row-for-row.
+        """
+        self.selected_emissions(emissionIndex=emissionIndex, trimHead=10, trimTail=10, plot=False)
+        self.filter_emissions(method=denoiseMethod, emissionIndex=emissionIndex, recalculate=True, interactivePlot=False)
+
+        delCNormalized = np.zeros((len(self.dataTemps), 4))
+        delCNormalizedErr = np.full((len(self.dataTemps), 2), np.nan)
         for i in range(len(self.dataTemps)):
+            t = np.asarray(self.dataEmissions[self.dataTemps[i]]['x'])
+            Cerr = np.asarray(self.dataEmissions[self.dataTemps[i]]['yerr'])
             if denoiseEmission:
-                t = np.asarray(self.dataEmissions[self.dataTemps[i]]['x'])
                 C = np.asarray(self.dataEmissions[self.dataTemps[i]]['yFiltered'])
-                Cerr = np.asarray(self.dataEmissions[self.dataTemps[i]]['yerr'])
-
             else:
-                t = np.asarray(self.dataEmissions[self.dataTemps[i]]['x'])
                 C = np.asarray(self.dataEmissions[self.dataTemps[i]]['yRaw'])
-                Cerr = np.asarray(self.dataEmissions[self.dataTemps[i]]['yerr'])
 
-            if t1 < np.min(t): t1 = np.min(t)
-            if t2 > np.max(t): t2 = np.max(t)
+            t1_i, t2_i = t1, t2
+            if t1_i < np.min(t): t1_i = np.min(t)
+            if t2_i > np.max(t): t2_i = np.max(t)
 
             if smoothCapacitance:
-                # Model C and Cerr values using smoothing cubic spline
+                # Model C and Cerr values using a smoothing cubic spline, and
+                # read the interpolated (t1_i, t2_i, t[-1]) values/errors off it.
                 csC = CubicSpline(t, C)
                 csCerr = CubicSpline(t, Cerr)
-                deltaC = csC(t2) - csC(t1)
-                tau = (t2 - t1) / np.log(t2 / t1)
-                delCNormalized[i] = np.array([self.dataTemps[i], tau, deltaC, deltaC / csC(t[-1])])
+                c1 = ufloat(float(csC(t1_i)), abs(float(csCerr(t1_i))))
+                c2 = ufloat(float(csC(t2_i)), abs(float(csCerr(t2_i))))
+                cInf = ufloat(float(csC(t[-1])), abs(float(csCerr(t[-1]))))
+                tau = (t2_i - t1_i) / np.log(t2_i / t1_i)
             else:
-                nearestIndex1 = self._find_nearest(t, t1)
-                nearestIndex2 = self._find_nearest(t, t2)
-                deltaC = C[nearestIndex2] - C[nearestIndex1]
+                nearestIndex1 = self._find_nearest(t, t1_i)
+                nearestIndex2 = self._find_nearest(t, t2_i)
+                c1 = ufloat(C[nearestIndex1], Cerr[nearestIndex1])
+                c2 = ufloat(C[nearestIndex2], Cerr[nearestIndex2])
+                cInf = ufloat(C[-1], Cerr[-1])
                 tau = (t[nearestIndex2] - t[nearestIndex1]) / np.log(t[nearestIndex2] / t[nearestIndex1])
-                delCNormalized[i] = np.array([self.dataTemps[i], tau, deltaC, deltaC / C[-1]])
 
-        delCNormalized = delCNormalized[delCNormalized[:, 0].argsort()]
+            deltaC_u = c2 - c1
+            normalized_u = deltaC_u / cInf
+
+            delCNormalized[i] = np.array(
+                [self.dataTemps[i], tau, deltaC_u.nominal_value, normalized_u.nominal_value])
+            delCNormalizedErr[i] = np.array([deltaC_u.std_dev, normalized_u.std_dev])
+
+        order = delCNormalized[:, 0].argsort()
+        delCNormalized = delCNormalized[order]
+        delCNormalizedErr = delCNormalizedErr[order]
 
         if plot:
             fig, ax = plt.subplots()
-            ax.plot(delCNormalized[:,0], delCNormalized[:,3],'.-')
+            ax.errorbar(delCNormalized[:, 0], delCNormalized[:, 3], yerr=delCNormalizedErr[:, 1], fmt='.-')
             ax.set_xlabel("Temperature (K)")
             ax.set_ylabel("Normalized Delta C")
             ax.set_title("Normalized Delta C vs Temperature")
             plt.show()
 
-        return delCNormalized
+        return delCNormalized, delCNormalizedErr
 
     def test(self, t1=None, t2=None, plot=True):
         if t1 is None:
@@ -1792,7 +1882,7 @@ class impdData:
         for i in range(len(t1)):
             for j in range(len(t2)):
                 if t2[j] > t1[i]:
-                    temp = self.calculate_delC_normalized(t1=t1[i], t2=t2[j], emissionIndex=0, denoiseEmission=False,
+                    temp, _tempErr = self.calculate_delC_normalized(t1=t1[i], t2=t2[j], emissionIndex=0, denoiseEmission=False,
                                                         smoothCapacitance=False, plot=False)
                     csC = CubicSpline(temp[:,0], temp[:,3])
                     bounds = [(np.min(temp[:,0]), np.max(temp[:,0]))]
