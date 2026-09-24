@@ -33,9 +33,10 @@ DATA_SOURCE_OPTIONS = [DATA_SOURCE_AUTO, DATA_SOURCE_QUALITATIVE, DATA_SOURCE_LI
 # Peak-finding method for each rate-window's DLTS-signal-vs-temperature curve.
 # Deviating from DrKayisScript.py's own inline scipy pseudo-Voigt curve_fit:
 # this reuses impedanceAnalysis_Tools.impdData's shared peak finders instead,
-# with the smoothing spline as the (non-parametric, error-free) default and a
-# choice of lmfit-based curve-fit shapes -- which also report parameter
-# standard errors -- as user-selectable alternatives.
+# with the smoothing spline (non-parametric; its peak error is bootstrap-
+# estimated rather than from a fitted-parameter covariance matrix) as the
+# default, and a choice of lmfit-based curve-fit shapes -- which report
+# parameter standard errors directly -- as user-selectable alternatives.
 PEAK_METHOD_SPLINE = 'Smoothing Spline'
 PEAK_METHOD_PSEUDOVOIGT = 'Curve Fit (Pseudo-Voigt)'
 PEAK_METHOD_GAUSSIAN = 'Curve Fit (Gaussian)'
@@ -354,10 +355,11 @@ def _run_arrhenius_solver():
         dltsc.log_to_textbox("Arrhenius solver: Background Doping (Nd) must be a valid positive number.")
         return
 
-    # Propagate each rate window's T_peak uncertainty (only available when
-    # Rate Window Analysis used the lmfit curve-fit peak method, not the
-    # error-free smoothing spline) into this plot's axes: x = 1000/T so
-    # dx = 1000*dT/T^2; y = ln(e_n/T^2) = ln(e_n) - 2*ln(T) so dy = 2*dT/T.
+    # Propagate each rate window's T_peak uncertainty -- from lmfit's fitted-
+    # parameter covariance for a curve-fit peak method, or from
+    # _smoothingSpline_peakFinder()'s bootstrap estimate for the smoothing
+    # spline -- into this plot's axes: x = 1000/T so dx = 1000*dT/T^2;
+    # y = ln(e_n/T^2) = ln(e_n) - 2*ln(T) so dy = 2*dT/T.
     xInvT, xInvTErr = [], []
     yLnEnT2, yLnEnT2Err = [], []
     signalsMax, signalsMaxErr = [], []

@@ -1485,7 +1485,8 @@ class impdData:
         return x, yDenoised, yRaw
 
     @staticmethod
-    def _smoothingSpline_peakFinder(signalX = None, signalY = None, smoothingFactor = None):
+    def _smoothingSpline_peakFinder(signalX = None, signalY = None, smoothingFactor = None,
+                                    nBootstrap = 200, randomState = 0):
         """
         Fit a 1D signal to a smoothing cubic spline and find its extremum.
 
@@ -1512,10 +1513,20 @@ class impdData:
         J. (1984), "Bandwidth choice for nonparametric regression"), so it
         self-adapts across very different y-scales rather than assuming one.
 
-        Returns (maxX, maxY, xf, yf, maxXErr, maxYErr). Splines carry no fitted-
-        parameter covariance, so maxXErr/maxYErr are always None -- this shape
-        matches _curveFit_peakFinder()'s return so callers can treat the two
-        peak-finding methods interchangeably.
+        A smoothing spline has no fitted-parameter covariance matrix the way a
+        parametric curve fit does, so maxXErr/maxYErr are instead estimated by
+        parametric bootstrap: the same noise level used for smoothingFactor is
+        used to generate `nBootstrap` synthetic resamples of signalY (the
+        original values plus fresh Gaussian noise at that estimated level),
+        each refit with the same smoothing factor and re-peak-found, and the
+        standard deviation of the resulting peak positions/heights across
+        resamples is reported. This is the standard way to quantify
+        uncertainty for a nonparametric fit like a smoothing spline. Set
+        nBootstrap=0 to skip it (maxXErr/maxYErr come back None).
+
+        Returns (maxX, maxY, xf, yf, maxXErr, maxYErr) -- the same shape
+        _curveFit_peakFinder() returns, so callers can treat every peak-finding
+        method interchangeably.
         """
         if signalX is None or signalY is None:
             print("No data found.")
@@ -1526,12 +1537,14 @@ class impdData:
             order = np.argsort(signalX)  # UnivariateSpline requires increasing x
             xs, ys = signalX[order], signalY[order]
 
+            if len(ys) >= 5:
+                secondDiff = ys[:-2] - 2 * ys[1:-1] + ys[2:]
+                noiseVar = np.sum(secondDiff ** 2) / (6.0 * len(secondDiff))
+            else:
+                noiseVar = np.var(ys)
+            noiseStd = np.sqrt(noiseVar)
+
             if smoothingFactor is None:
-                if len(ys) >= 5:
-                    secondDiff = ys[:-2] - 2 * ys[1:-1] + ys[2:]
-                    noiseVar = np.sum(secondDiff ** 2) / (6.0 * len(secondDiff))
-                else:
-                    noiseVar = np.var(ys)
                 smoothingFactor = max(noiseVar * len(xs), 1e-300)
 
             spline = UnivariateSpline(xs, ys, k=3, s=smoothingFactor)
@@ -1545,7 +1558,30 @@ class impdData:
             maxX = xf[peakIdx]
             maxY = yf[peakIdx]
 
-            return maxX, maxY, xf, yf, None, None
+            maxXErr = maxYErr = None
+            if nBootstrap and nBootstrap > 0 and noiseStd > 0 and len(xs) > 3:
+                rng = np.random.default_rng(randomState)
+                # Coarser grid than the main fit's -- only needed to localize
+                # each resample's peak, not to draw a smooth curve -- so
+                # nBootstrap refits stay fast even for many rate windows.
+                xfBoot = np.linspace(xs.min(), xs.max(), 2000)
+                bootPeaksX, bootPeaksY = [], []
+                for _ in range(nBootstrap):
+                    yBoot = ys + rng.normal(scale=noiseStd, size=ys.shape)
+                    try:
+                        splineBoot = UnivariateSpline(xs, yBoot, k=3, s=smoothingFactor)
+                    except Exception:
+                        continue
+                    yfBoot = splineBoot(xfBoot)
+                    idxBoot = np.argmax(np.abs(yfBoot))
+                    bootPeaksX.append(xfBoot[idxBoot])
+                    bootPeaksY.append(yfBoot[idxBoot])
+
+                if len(bootPeaksX) >= max(10, nBootstrap // 4):
+                    maxXErr = float(np.std(bootPeaksX, ddof=1))
+                    maxYErr = float(np.std(bootPeaksY, ddof=1))
+
+            return maxX, maxY, xf, yf, maxXErr, maxYErr
 
     @staticmethod
     def _curveFit_peakFinder(signalX = None, signalY = None, curveType = "pseudoVoigt"):
