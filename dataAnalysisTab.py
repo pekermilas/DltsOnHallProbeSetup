@@ -32,23 +32,32 @@ DATA_SOURCE_OPTIONS = [DATA_SOURCE_AUTO, DATA_SOURCE_QUALITATIVE, DATA_SOURCE_LI
 
 # DLTS signal calculation method: how C(t1)/C(t2)/C_infinity are read off each
 # temperature's transient to build the DLTS-signal-vs-temperature curve.
-# DrKayisScript.py Method matches this app's existing inline calculation
-# (nearest measured sample on the ensemble-averaged transient from whichever
-# Data Source is selected above); Measured C / Smoothed C instead delegate to
-# impedanceAnalysis_Tools.impdData.calculate_delC_normalized() -- which needs
-# a real impdData instance (clustering, per-repeat data), so those two are
-# only available when Data Source resolves to Automated/Live Data (Live or
-# Offline), not Qualitative Analysis (which only stores an already-averaged
-# transient with no instance behind it).
-SIGNAL_METHOD_DRKAYIS = 'DrKayisScript.py Method (nearest sample, ensemble avg)'
-SIGNAL_METHOD_MEASURED = 'Measured C (impdData, nearest sample)'
+#
+# 'DrKayisScript.py Method' and 'Measured C' used to be two separate options
+# here, but they computed the same thing -- ΔC/C∞ from the nearest MEASURED
+# (unsmoothed) sample at t1/t2 -- and only differed in which data structure
+# backed that lookup: DrKayisScript.py Method read off the ensemble-averaged
+# transient from whichever Data Source was selected (works for all three:
+# Qualitative Analysis, Live, Offline), while the old Measured C always went
+# through impedanceAnalysis_Tools.impdData.calculate_delC_normalized()
+# (needs a real impdData instance -- Live/Offline only -- but adds cross-
+# repeat error-bar propagation and the denoise option). They're now merged
+# into one 'Measured C' option that keeps BOTH capabilities: it uses
+# calculate_delC_normalized() when the resolved Data Source has a live
+# impdData instance (Live/Offline), and falls back to the plain nearest-
+# sample lookup (no error bars -- there's no per-repeat data to propagate
+# from) when it doesn't (Qualitative Analysis). See _calculate_rate_windows().
+# Smoothed C is unaffected: it still always requires Live/Offline, since
+# cubic-spline interpolation needs impdData's raw per-repeat samples.
+SIGNAL_METHOD_MEASURED = 'Measured C (nearest sample)'
 SIGNAL_METHOD_SMOOTHED = 'Smoothed C (impdData, spline-interpolated)'
-SIGNAL_METHOD_OPTIONS = [SIGNAL_METHOD_DRKAYIS, SIGNAL_METHOD_MEASURED, SIGNAL_METHOD_SMOOTHED]
+SIGNAL_METHOD_OPTIONS = [SIGNAL_METHOD_MEASURED, SIGNAL_METHOD_SMOOTHED]
 
-# Denoise choice for the Measured C / Smoothed C signal methods (ignored by
-# DrKayisScript.py Method, which has no per-repeat data to denoise). 'None
-# (raw)' uses calculate_delC_normalized()'s raw (yRaw) emission; any other
-# choice uses its denoised (yFiltered) emission via that method.
+# Denoise choice for the Measured C / Smoothed C signal methods, applied only
+# when Measured C is backed by a live impdData instance (Live/Offline) --
+# Qualitative Analysis-backed Measured C has no per-repeat data to denoise.
+# 'None (raw)' uses calculate_delC_normalized()'s raw (yRaw) emission; any
+# other choice uses its denoised (yFiltered) emission via that method.
 DENOISE_NONE = 'None (raw)'
 DENOISE_OPTIONS = [DENOISE_NONE, 'pca', 'wavelet', 'sgolay', 'lowess']
 
@@ -188,7 +197,7 @@ def _get_processed_transients_for_source(source):
 
 def _calculate_rate_windows():
     signalMethod = (dltsc.rateWindow_signalMethodVar.get() if dltsc.rateWindow_signalMethodVar is not None
-                    else SIGNAL_METHOD_DRKAYIS)
+                    else SIGNAL_METHOD_MEASURED)
     source = dltsc.rateWindow_dataSourceVar.get() if dltsc.rateWindow_dataSourceVar is not None else DATA_SOURCE_AUTO
 
     processedTransients = None
@@ -196,20 +205,56 @@ def _calculate_rate_windows():
     temperaturesC = None
     nTemps = 0
 
-    if signalMethod == SIGNAL_METHOD_DRKAYIS:
-        processedTransients, resolvedLabel, errorReason = _get_processed_transients_for_source(source)
-        if not processedTransients:
-            dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
-            if dltsc.rateWindow_statusLabel is not None:
-                dltsc.rateWindow_statusLabel.config(text=errorReason)
-            return
-        temperaturesC = sorted(processedTransients.keys())
-        nTemps = len(temperaturesC)
+    if signalMethod == SIGNAL_METHOD_MEASURED:
+        # Resolve which Data Source to use, then whether it has a live
+        # impdData instance behind it (Live/Offline only -- routes through
+        # calculate_delC_normalized(), with error bars/denoise) or not
+        # (Qualitative Analysis, or Live/Offline with only an averaged
+        # snapshot and no live instance -- the plain nearest-sample lookup on
+        # the ensemble-averaged transient is used instead, with no error
+        # bars). Resolved via instance-availability directly, not through
+        # _get_processed_transients_for_source() first, since an impd-backed
+        # source doesn't need (and may not have) an averaged-snapshot cache.
+        if source in (DATA_SOURCE_QUALITATIVE, DATA_SOURCE_LIVE, DATA_SOURCE_OFFLINE):
+            resolvedLabel = source
+        else:
+            # Auto: Qualitative Analysis first (matches
+            # _get_processed_transients_for_source()'s own Auto priority),
+            # then whichever of Live/Offline has something to offer.
+            if dltsc.manual_processedTransients:
+                resolvedLabel = DATA_SOURCE_QUALITATIVE
+            elif dltsc.livePlot_liveImpdData is not None or dltsc.livePlot_liveAllEmissionsData:
+                resolvedLabel = DATA_SOURCE_LIVE
+            elif dltsc.livePlot_offlineImpdData is not None or dltsc.livePlot_offlineAllEmissionsData:
+                resolvedLabel = DATA_SOURCE_OFFLINE
+            else:
+                resolvedLabel = DATA_SOURCE_AUTO  # nothing available anywhere
+
+        impd, _ = _resolve_impd_for_source(resolvedLabel)
+        if impd is not None:
+            busy = (dltsc.livePlot_liveIngestBusy if resolvedLabel == DATA_SOURCE_LIVE
+                   else dltsc.livePlot_offlineIngestBusy)
+            if busy:
+                errorReason = f"{resolvedLabel} is still loading/ingesting; try again once it finishes."
+                dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
+                if dltsc.rateWindow_statusLabel is not None:
+                    dltsc.rateWindow_statusLabel.config(text=errorReason)
+                return
+            nTemps = len(impd.dataTemps or [])
+        else:
+            processedTransients, resolvedLabel, errorReason = _get_processed_transients_for_source(resolvedLabel)
+            if not processedTransients:
+                dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
+                if dltsc.rateWindow_statusLabel is not None:
+                    dltsc.rateWindow_statusLabel.config(text=errorReason)
+                return
+            temperaturesC = sorted(processedTransients.keys())
+            nTemps = len(temperaturesC)
     else:
         impd, resolvedLabel = _resolve_impd_for_source(source)
         if impd is None:
-            errorReason = ("Measured C / Smoothed C need Automated/Live Data (Live or Offline) as the "
-                           "Data Source -- they read per-repeat instrument data that Qualitative Analysis, "
+            errorReason = ("Smoothed C needs Automated/Live Data (Live or Offline) as the "
+                           "Data Source -- it reads per-repeat instrument data that Qualitative Analysis, "
                            "which only stores an already-averaged transient, doesn't have.")
             dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
             if dltsc.rateWindow_statusLabel is not None:
@@ -249,7 +294,11 @@ def _calculate_rate_windows():
         eN = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
         yErr = None
 
-        if signalMethod == SIGNAL_METHOD_DRKAYIS:
+        if signalMethod == SIGNAL_METHOD_MEASURED and impd is None:
+            # Qualitative Analysis (or Auto resolving to it): no impdData
+            # instance behind it, so read the nearest measured sample
+            # straight off the ensemble-averaged transient -- no error bars,
+            # since there's no per-repeat spread to propagate from.
             dltsProfile = []
             validTempsK = []
             for tC in temperaturesC:
@@ -268,11 +317,13 @@ def _calculate_rate_windows():
             y = np.array(dltsProfile, dtype=np.float64)
             x = np.array(validTempsK, dtype=np.float64)
         else:
-            # emissionIndex=-1: the ensemble average across every reverse-bias
-            # repeat, the same averaging DrKayisScript.py Method (and Extract
-            # & Average Transients) performs -- and the only index with a
-            # meaningful cross-repeat yerr to propagate (see
-            # calculate_delC_normalized()'s docstring).
+            # Measured C backed by a live impdData instance (Live/Offline), or
+            # Smoothed C (always Live/Offline). emissionIndex=-1: the ensemble
+            # average across every reverse-bias repeat, the same averaging the
+            # Qualitative-Analysis-backed branch above (and Extract & Average
+            # Transients) performs -- and the only index with a meaningful
+            # cross-repeat yerr to propagate (see calculate_delC_normalized()'s
+            # docstring).
             try:
                 delC, delCErr = impd.calculate_delC_normalized(
                     t1=t1 / 1000.0, t2=t2 / 1000.0, emissionIndex=-1,
@@ -435,10 +486,11 @@ def _build_rateWindowFrame(parent):
     sigGroup = tk.LabelFrame(topRow, text='DLTS Signal Calculation')
     sigGroup.pack(side='left', fill='both', expand=True, padx=2)
     ttk.Label(sigGroup, text='Method:').pack(anchor='w', padx=4, pady=(4, 0))
-    dltsc.rateWindow_signalMethodVar = tk.StringVar(value=SIGNAL_METHOD_DRKAYIS)
+    dltsc.rateWindow_signalMethodVar = tk.StringVar(value=SIGNAL_METHOD_MEASURED)
     ttk.Combobox(sigGroup, textvariable=dltsc.rateWindow_signalMethodVar, values=SIGNAL_METHOD_OPTIONS,
                 state='readonly', width=24).pack(fill='x', padx=4, pady=(0, 4))
-    ttk.Label(sigGroup, text='Denoise (Measured C / Smoothed C only):').pack(anchor='w', padx=4, pady=(0, 0))
+    ttk.Label(sigGroup, text='Denoise (Live/Offline-backed Measured C, or Smoothed C, only):').pack(
+        anchor='w', padx=4, pady=(0, 0))
     dltsc.rateWindow_denoiseVar = tk.StringVar(value=DENOISE_NONE)
     ttk.Combobox(sigGroup, textvariable=dltsc.rateWindow_denoiseVar, values=DENOISE_OPTIONS,
                 state='readonly', width=24).pack(fill='x', padx=4, pady=(0, 4))
@@ -699,7 +751,7 @@ def _build_arrheniusFrame(parent):
 def construct_dataAnalysisTab():
     tabControl = dltsc.tabControl
 
-    tabControl.add(dltsc.dataAnalysisTab, text='Data Analysis')
+    tabControl.add(dltsc.dataAnalysisTab, text='Quick Analysis')
     tabControl.pack(expand=1, fill="both")
 
     dltsc.dataAnalysisTab.grid_rowconfigure(0, weight=1)

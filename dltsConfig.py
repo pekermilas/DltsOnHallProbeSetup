@@ -19,6 +19,7 @@ maxTextLineCount = None
 runParamsTab = None
 livePlotTab = None
 dataAnalysisTab = None
+detailedAnalysisTab = None
 postprocessingTab = None
 
 ##---------------------RUNTIME-------------------------
@@ -136,7 +137,7 @@ manual_statusLabel = None
 rateWindow_dataSourceVar = None   # tk.StringVar: which processed-transients source to analyze
                                    # (Qualitative Analysis / Automated Live / Automated Offline / Auto)
 rateWindow_statusLabel = None     # shows which data source actually got used and how many temperatures
-rateWindow_signalMethodVar = None # tk.StringVar: DrKayisScript.py Method (default) / Measured C / Smoothed C
+rateWindow_signalMethodVar = None # tk.StringVar: Measured C (default) / Smoothed C
 rateWindow_denoiseVar = None      # tk.StringVar: 'None (raw)' (default) / pca / wavelet / sgolay / lowess --
                                    # only applies to the Measured C / Smoothed C signal methods
 rateWindow_denoisedEmissions = None  # last impdData.calculate_delC_normalized() call's denoised/raw
@@ -159,6 +160,65 @@ arrhenius_figure = None
 arrhenius_ax = None
 arrhenius_canvas = None
 
+##---------------------DETAILED ANALYSIS (PORTED FROM DLTS_APP.py)-------------------------
+# Multi-window ZI MFIA temperature-sweep analysis: many logspace-swept rate
+# windows (not just 4) plus the 5 "standard" windows, an Arrhenius panel, an
+# optional DLTS spectra panel, a 2D ΔC/C0(t,T) transient map, and a
+# Rate-Window Analysis (Nt/Nd) map. Self-contained: its own data folder format
+# (one subfolder per temperature) and its own analysis pipeline, independent
+# of Qualitative Analysis / Automated Live Data / Quick Analysis's registries.
+detailed_data = None          # tempC -> (t_ms array, cap array (pF), C_infinity)
+detailed_temps = None         # sorted list of tempC (float, Celsius)
+detailed_figure = None        # current matplotlib Figure (rebuilt each run)
+detailed_canvas = None        # current FigureCanvasTkAgg embedding detailed_figure
+detailed_figFrame = None      # frame the canvas/toolbar are packed into (cleared before each rebuild)
+detailed_ax1 = None           # Arrhenius panel (always present after a run)
+detailed_ax2 = None           # DLTS Spectra panel (optional)
+detailed_ax3 = None           # 2D Transient Map panel (optional)
+detailed_ax4 = None           # Rate-Window Analysis map panel (optional)
+detailed_leg1 = None
+detailed_leg2 = None
+detailed_legM = None
+detailed_legRW = None
+detailed_annBox = None        # draggable Arrhenius results annotation
+detailed_lastResMw = None     # last multi-window compute_arrhenius() result dict
+detailed_lastResStd = None    # last standard-windows compute_arrhenius() result dict
+detailed_lastNt = None
+detailed_loadingBusy = None   # True while _detailed_load_data_async's background worker is running
+detailedProcessingBusy = None # True while _detailed_run_analysis's background worker is running
+
+# Control variables (tk.StringVar/DoubleVar/IntVar/BooleanVar), seeded in
+# construct_detailedAnalysisTab().
+detailed_baseVar = None
+detailed_gridOffVar = None
+detailed_gridDtVar = None
+detailed_chunkSizeVar = None
+detailed_rbMsVar = None
+detailed_cinfLoVar = None
+detailed_cinfHiVar = None
+detailed_gammaVar = None
+detailed_ndVar = None
+detailed_tpeakLoVar = None
+detailed_tpeakHiVar = None
+detailed_nWinVar = None
+detailed_t1MinVar = None
+detailed_t1MaxVar = None
+detailed_ratioVar = None
+detailed_stdWinsVar = None
+detailed_stdEntries = None    # list of 5 (t1Var, t2Var) DoubleVar pairs, the "standard windows"
+detailed_showSpectraVar = None
+detailed_nSpectraVar = None
+detailed_showTmapVar = None
+detailed_showTauVar = None
+detailed_showRwmVar = None
+
+# Widgets referenced outside their construction function.
+detailed_loadButton = None
+detailed_runButton = None
+detailed_loadInfoLabel = None
+detailed_statusLabel = None
+detailed_resultsText = None
+
 
 def init():
     ##---------------------GUI-------------------------
@@ -174,6 +234,7 @@ def init():
     global runParamsTab
     global livePlotTab
     global dataAnalysisTab
+    global detailedAnalysisTab
     global postprocessingTab
 
     ##---------------------RUNTIME-------------------------
@@ -290,6 +351,54 @@ def init():
     global arrhenius_ax
     global arrhenius_canvas
 
+    ##---------------------DETAILED ANALYSIS (PORTED FROM DLTS_APP.py)-------------------------
+    global detailed_data
+    global detailed_temps
+    global detailed_figure
+    global detailed_canvas
+    global detailed_figFrame
+    global detailed_ax1
+    global detailed_ax2
+    global detailed_ax3
+    global detailed_ax4
+    global detailed_leg1
+    global detailed_leg2
+    global detailed_legM
+    global detailed_legRW
+    global detailed_annBox
+    global detailed_lastResMw
+    global detailed_lastResStd
+    global detailed_lastNt
+    global detailed_loadingBusy
+    global detailedProcessingBusy
+    global detailed_baseVar
+    global detailed_gridOffVar
+    global detailed_gridDtVar
+    global detailed_chunkSizeVar
+    global detailed_rbMsVar
+    global detailed_cinfLoVar
+    global detailed_cinfHiVar
+    global detailed_gammaVar
+    global detailed_ndVar
+    global detailed_tpeakLoVar
+    global detailed_tpeakHiVar
+    global detailed_nWinVar
+    global detailed_t1MinVar
+    global detailed_t1MaxVar
+    global detailed_ratioVar
+    global detailed_stdWinsVar
+    global detailed_stdEntries
+    global detailed_showSpectraVar
+    global detailed_nSpectraVar
+    global detailed_showTmapVar
+    global detailed_showTauVar
+    global detailed_showRwmVar
+    global detailed_loadButton
+    global detailed_runButton
+    global detailed_loadInfoLabel
+    global detailed_statusLabel
+    global detailed_resultsText
+
     z_params_vars = dict()
     z_params_for_push = dict()
     t_params_vars = dict()
@@ -319,6 +428,10 @@ def init():
     manual_paramVars = dict()
     rateWindow_signals = dict()
     rateWindow_extractedPeaks = dict()
+    detailed_data = dict()
+    detailed_temps = list()
+    detailed_loadingBusy = False
+    detailedProcessingBusy = False
 
 #-----------------------Global Functions--------------------------------#
 def log_to_textbox(message):

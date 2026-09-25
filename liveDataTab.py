@@ -771,6 +771,44 @@ def _set_manual_buttons_state(state):
     if dltsc.manual_extractButton is not None:
         dltsc.manual_extractButton.config(state=state)
 
+def _describe_folder_contents(dir_path, max_entries=12):
+    """One-line, synchronous preview of a folder someone just picked in a file
+    dialog: entry count + first few names + a quick format guess (ZI single-
+    file / ZI subfolder-per-temperature / legacy per-temperature /
+    unrecognized). This app supports three different on-disk data layouts and
+    the OS folder-picker dialog shows nothing about a folder's CONTENTS (only
+    its name), so without this, picking the wrong one of several similarly-
+    named data folders is only discovered after waiting on the full
+    background scan. Cheap enough (one os.listdir(), no file reads) to run
+    synchronously right when the dialog closes, logged immediately via
+    dltsc.log_to_textbox() by every folder-browse call site.
+    """
+    try:
+        entries = sorted(os.listdir(dir_path))
+    except Exception as exc:
+        return f"cannot list folder: {exc}"
+
+    if not entries:
+        return "folder is empty"
+
+    shown = entries[:max_entries]
+    listing = ", ".join(shown)
+    if len(entries) > max_entries:
+        listing += f", ... ({len(entries) - max_entries} more)"
+
+    zi_headers = [f for f in entries
+                 if re.search(r'imps_0_sample_param1_avg_header', f, re.IGNORECASE) and f.endswith('.csv')]
+    if zi_headers:
+        guess = "looks like ZI single-file format (one combined multi-chunk CSV)"
+    elif any(_ZI_SUBFOLDER_PATTERN.match(e) and os.path.isdir(os.path.join(dir_path, e)) for e in entries):
+        guess = "looks like ZI subfolder-per-temperature format"
+    elif any(_LEGACY_FILENAME_PATTERN.search(e) for e in entries):
+        guess = "looks like legacy per-temperature files"
+    else:
+        guess = "format not recognized from filenames -- will be reported after scanning"
+
+    return f"{len(entries)} item(s): {listing}  —  {guess}"
+
 def _browse_manual_folder():
     if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
         return
@@ -779,6 +817,7 @@ def _browse_manual_folder():
         initialdir=dltsc.manual_dataDirectory or os.getcwd()
     )
     if dir_path:
+        dltsc.log_to_textbox(f"Manual analysis: selected {dir_path} -- {_describe_folder_contents(dir_path)}")
         _scan_manual_directory_async(dir_path, isAppend=False)
 
 def _append_manual_folder():
@@ -797,13 +836,20 @@ def _append_manual_folder():
         initialdir=dltsc.manual_dataDirectory or os.getcwd()
     )
     if dir_path:
+        dltsc.log_to_textbox(f"Manual analysis: selected {dir_path} -- {_describe_folder_contents(dir_path)}")
         _scan_manual_directory_async(dir_path, isAppend=True)
+
+# Both are ZI MFIA CSV exports -- 'zi' is one combined multi-chunk file (a
+# whole sweep in one CSV, temperatures told apart by chunk number), 'zi_subfolder'
+# is one subfolder per temperature (the DLTS_APP.py / Detailed Analysis tab
+# convention), each with its own single-chunk CSV.
+_ZI_REGISTRY_TAGS = ('zi', 'zi_subfolder')
 
 def _registry_format_label(registry):
     """'ZI' / 'Legacy' / 'Mixed', describing the formats present in registry --
     once appending is possible, a combined dataset can span both."""
-    hasZi = any(isinstance(v, tuple) and v[0] == 'zi' for v in registry.values())
-    hasLegacy = any(not (isinstance(v, tuple) and v[0] == 'zi') for v in registry.values())
+    hasZi = any(isinstance(v, tuple) and v[0] in _ZI_REGISTRY_TAGS for v in registry.values())
+    hasLegacy = any(not (isinstance(v, tuple) and v[0] in _ZI_REGISTRY_TAGS) for v in registry.values())
     if hasZi and hasLegacy:
         return "Mixed"
     return "ZI" if hasZi else "Legacy"
@@ -833,9 +879,14 @@ def _scan_manual_directory_async(dir_path, isAppend):
         registry = {}
         ziDetected = False
         ziInfo = None
+        ziSubfolderParams = None
         try:
-            # Detect Zurich Instruments format: a header CSV matching
-            # *imps_0_sample_param1_avg_header*.csv
+            # Detect format, in order: a single combined ZI export (a header
+            # CSV matching *imps_0_sample_param1_avg_header*.csv directly in
+            # dir_path) -> a subfolder-per-temperature ZI export (the
+            # DLTS_APP.py / Detailed Analysis tab convention: dir_path holds
+            # one subdirectory per temperature, e.g. '0C'/'n10C'/'120C_000',
+            # each with its own such CSV) -> legacy per-temperature files.
             zi_headers = [f for f in os.listdir(dir_path)
                           if re.search(r'imps_0_sample_param1_avg_header', f, re.IGNORECASE)
                           and f.endswith('.csv')]
@@ -843,7 +894,11 @@ def _scan_manual_directory_async(dir_path, isAppend):
                 ziDetected = True
                 registry, ziInfo = _compute_zi_dataset(dir_path, zi_headers[0], errorMsgs)
             else:
-                registry = _compute_legacy_dataset(dir_path, errorMsgs)
+                registry, ziSubfolderParams = _compute_zi_subfolder_dataset(dir_path, errorMsgs)
+                if registry:
+                    ziDetected = True
+                else:
+                    registry = _compute_legacy_dataset(dir_path, errorMsgs)
         except Exception as exc:
             errorMsgs.append(f"error scanning folder: {exc}")
 
@@ -872,7 +927,7 @@ def _scan_manual_directory_async(dir_path, isAppend):
                 if dltsc.manual_folderLabel is not None:
                     dltsc.manual_folderLabel.config(text=f"Source: {os.path.basename(dir_path)}")
 
-            if ziDetected and ziInfo is not None:
+            if ziInfo is not None:
                 ziParams = {'gridColOffset': ziInfo['gridColOffset'], 'gridColDelta': ziInfo['gridColDelta'],
                             'chunkSize': ziInfo['chunkSize']}
                 dltsc.manual_ziParamsByFile[ziInfo['dataFile']] = ziParams
@@ -886,6 +941,25 @@ def _scan_manual_directory_async(dir_path, isAppend):
                     if ziInfo.get('rbMs') is not None:
                         dltsc.manual_paramVars['rb_ms'].set(ziInfo['rbMs'])
                         dltsc.manual_paramVars['slice_end'].set(ziInfo['sliceEnd'])
+            elif ziSubfolderParams:
+                # One params entry per temperature's own file (each subfolder
+                # carries its own header CSV) rather than a single shared one.
+                dltsc.manual_ziParamsByFile.update(ziSubfolderParams)
+                firstFile, firstParams = next(iter(ziSubfolderParams.items()))
+                dltsc.manual_ziDataFile = firstFile
+                dltsc.manual_ziGridColOffset = firstParams['gridColOffset']
+                dltsc.manual_ziGridColDelta = firstParams['gridColDelta']
+                dltsc.manual_ziChunkSize = firstParams['chunkSize']
+                if not isAppend:
+                    folder_name = os.path.basename(dir_path)
+                    fp_match = re.search(r'FP\w+?(\d+(?:\.\d+)?)ms', folder_name, re.IGNORECASE)
+                    rb_match = re.search(r'RB[\w\+\-]+?(\d+(?:\.\d+)?)ms', folder_name, re.IGNORECASE)
+                    if fp_match:
+                        dltsc.manual_paramVars['fp_ms'].set(fp_match.group(1))
+                    if rb_match:
+                        rb_ms = float(rb_match.group(1))
+                        dltsc.manual_paramVars['rb_ms'].set(str(rb_ms))
+                        dltsc.manual_paramVars['slice_end'].set(str(rb_ms * 0.98))
 
             dltsc.manual_ziMode = _registry_format_label(dltsc.manual_datasetRegistry)
 
@@ -980,6 +1054,79 @@ def _compute_zi_dataset(dir_path, header_filename, errorMsgs):
         ziInfo['sliceEnd'] = str(rb_ms * 0.98)
 
     return registry, ziInfo
+
+# Matches a per-temperature ZI export subfolder name: '0C', '100C', 'n10C'
+# (n prefix = negative), '120C_000' (trailing run-id suffix). Same convention
+# DLTS_APP.py / detailedAnalysisTab.py use for their own folder-per-temperature scan.
+_ZI_SUBFOLDER_PATTERN = re.compile(r'^(n?)(\d+)C(?:_\d+)?$', re.IGNORECASE)
+
+def _compute_zi_subfolder_dataset(dir_path, errorMsgs):
+    """Parse a subfolder-per-temperature ZI export: dir_path holds one
+    subdirectory per temperature step (matching _ZI_SUBFOLDER_PATTERN), each
+    containing its own dev*_imps_0_sample_param1_avg_*.csv (+ a matching
+    _header_*.csv for that temperature's own acquisition grid params) --
+    the DLTS_APP.py / Detailed Analysis tab's own export convention, distinct
+    from the single-combined-CSV 'zi' format _compute_zi_dataset() handles
+    (which instead tells temperatures apart by chunk number within one file).
+
+    Pure computation (no Tk calls), safe on a background thread. Returns
+    (registry, ziParamsByFile): registry[tempC] = ('zi_subfolder', dataFile,
+    None) (no chunk id -- each temperature already has its own file), and
+    ziParamsByFile maps each such dataFile to its own {'gridColOffset',
+    'gridColDelta', 'chunkSize'} (defaulted from the standard ZI MFIA grid if
+    that subfolder's header CSV can't be read).
+    """
+    registry = {}
+    ziParamsByFile = {}
+    try:
+        entries = sorted(os.listdir(dir_path))
+    except Exception as exc:
+        errorMsgs.append(f"cannot list folder: {exc}")
+        return registry, ziParamsByFile
+
+    for entry in entries:
+        sub = os.path.join(dir_path, entry)
+        if not os.path.isdir(sub):
+            continue
+        m = _ZI_SUBFOLDER_PATTERN.match(entry)
+        if not m:
+            continue
+        tempC = float(m.group(2))
+        if m.group(1).lower() == 'n':
+            tempC = -tempC
+
+        try:
+            subFiles = os.listdir(sub)
+        except Exception as exc:
+            errorMsgs.append(f"{entry}: cannot list subfolder: {exc}")
+            continue
+
+        dataCandidates = [f for f in subFiles
+                          if re.search(r'imps_0_sample_param1_avg_\d+\.csv$', f, re.IGNORECASE)
+                          and 'header' not in f.lower()]
+        if not dataCandidates:
+            errorMsgs.append(f"{entry}: no ZI capacitance data CSV found")
+            continue
+        dataFile = os.path.join(sub, dataCandidates[0])
+
+        params = {'gridColOffset': -0.001, 'gridColDelta': 1.86667e-05, 'chunkSize': 32768}
+        headerCandidates = [f for f in subFiles
+                            if re.search(r'imps_0_sample_param1_avg_header', f, re.IGNORECASE)
+                            and f.endswith('.csv')]
+        if headerCandidates:
+            try:
+                hdr = pd.read_csv(os.path.join(sub, headerCandidates[0]), sep=';')
+                row0 = hdr.iloc[0]
+                params['gridColOffset'] = float(row0.get('grid_col_offset', params['gridColOffset']))
+                params['gridColDelta'] = float(row0.get('grid_col_delta', params['gridColDelta']))
+                params['chunkSize'] = int(row0.get('chunk_size', params['chunkSize']))
+            except Exception:
+                pass  # keep defaults
+
+        registry[tempC] = ('zi_subfolder', dataFile, None)
+        ziParamsByFile[dataFile] = params
+
+    return registry, ziParamsByFile
 
 def _compute_legacy_dataset(dir_path, errorMsgs):
     """Legacy per-temperature file loader (original DrKayisScript.py logic, unchanged).
@@ -1129,7 +1276,9 @@ def _process_raw_transients():
     datasetRegistry = dict(dltsc.manual_datasetRegistry)
     ziTemps = [t for t in selectedTemps
               if isinstance(datasetRegistry.get(t), tuple) and datasetRegistry[t][0] == 'zi']
-    legacyTemps = [t for t in selectedTemps if t not in ziTemps]
+    ziSubfolderTemps = [t for t in selectedTemps
+                        if isinstance(datasetRegistry.get(t), tuple) and datasetRegistry[t][0] == 'zi_subfolder']
+    legacyTemps = [t for t in selectedTemps if t not in ziTemps and t not in ziSubfolderTemps]
     ziParamsByFile = dict(dltsc.manual_ziParamsByFile or {})
     samplingRateS = dltsc.manual_samplingRate or 1.8666666666666665e-05
 
@@ -1137,7 +1286,8 @@ def _process_raw_transients():
         try:
             executor = _get_transient_executor()
             future = executor.submit(_compute_mixed_transients, ziTemps, legacyTemps, cInfTargetMs,
-                                     datasetRegistry, ziParamsByFile, rbDurationMs, samplingRateS)
+                                     datasetRegistry, ziParamsByFile, rbDurationMs, samplingRateS,
+                                     ziSubfolderTemps=ziSubfolderTemps)
             processedTransients, executionErrors = future.result()
         except Exception as exc:
             processedTransients, executionErrors = {}, [f"extraction process failed: {exc}"]
@@ -1242,18 +1392,73 @@ def _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziParam
 
     return processedTransients, executionErrors
 
+def _compute_zi_subfolder_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziParamsByFile):
+    """Read each selected temperature's own per-subfolder ZI CSV directly (one
+    file per temp, filtered to chunk==0) -- for the 'zi_subfolder' registry tag,
+    the DLTS_APP.py / Detailed Analysis tab's own per-temperature-folder ZI
+    export convention, distinct from the single-combined-CSV 'zi' format
+    _compute_zi_transients() handles.
+
+    Pure computation (no Tk/matplotlib calls), run in a separate OS process
+    (see _process_raw_transients) so it can never contend with the Tk main
+    thread for the GIL. Returns (processedTransients, executionErrors) since a
+    separate process can't mutate the caller's objects by reference.
+    """
+    processedTransients = {}
+    executionErrors = []
+    for temp in sorted(selectedTemps):
+        _, dataFile, _ = datasetRegistry[temp]
+        params = ziParamsByFile.get(dataFile, {})
+        gridColOffset = params.get('gridColOffset', -0.001)
+        gridColDelta = params.get('gridColDelta', 1.86667e-05)
+        chunkSize = params.get('chunkSize', 32768)
+
+        try:
+            df = pd.read_csv(dataFile, sep=';', header=0, names=['chunk', 'timestamp', 'value'])
+            rows = df[df['chunk'] == 0]
+            if len(rows) < 2:
+                executionErrors.append(f"{temp}°C: no chunk-0 rows in {os.path.basename(dataFile)}")
+                continue
+
+            avgCurve = rows['value'].to_numpy(dtype=np.float64)
+            n = min(len(avgCurve), chunkSize)
+            avgCurve = avgCurve[:n]
+            timeAxisMs = (gridColOffset + np.arange(n) * gridColDelta) * 1000.0
+
+            # Unit conversion: Farads -> pF.
+            if np.nanmax(np.abs(avgCurve)) < 1e-3:
+                avgCurve = avgCurve * 1e12
+
+            cInfIdx = np.argmin(np.abs(timeAxisMs - cInfTargetMs))
+            cInfinity = avgCurve[cInfIdx]
+
+            processedTransients[temp] = {
+                'time_ms': timeAxisMs,
+                'avg_cap_pf': avgCurve,
+                'C_infinity': cInfinity
+            }
+
+        except Exception as exc:
+            executionErrors.append(f"{temp}°C: {exc}")
+
+    return processedTransients, executionErrors
+
 def _compute_mixed_transients(ziTemps, legacyTemps, cInfTargetMs, datasetRegistry,
-                              ziParamsByFile, rbDurationMs, samplingRateS):
-    """Dispatch each selected temperature to the ZI or legacy extractor
-    depending on how its own registry entry is tagged, then merge the results.
-    Needed because appending sources of different formats can leave a single
-    selection spanning both -- a single global "ziMode" flag can no longer
-    decide the whole batch's format.
+                              ziParamsByFile, rbDurationMs, samplingRateS, ziSubfolderTemps=None):
+    """Dispatch each selected temperature to the ZI, ZI-subfolder, or legacy
+    extractor depending on how its own registry entry is tagged, then merge
+    the results. Needed because appending sources of different formats can
+    leave a single selection spanning several -- a single global "ziMode"
+    flag can no longer decide the whole batch's format.
     """
     processedTransients = {}
     executionErrors = []
     if ziTemps:
         p, e = _compute_zi_transients(ziTemps, cInfTargetMs, datasetRegistry, ziParamsByFile)
+        processedTransients.update(p)
+        executionErrors.extend(e)
+    if ziSubfolderTemps:
+        p, e = _compute_zi_subfolder_transients(ziSubfolderTemps, cInfTargetMs, datasetRegistry, ziParamsByFile)
         processedTransients.update(p)
         executionErrors.extend(e)
     if legacyTemps:

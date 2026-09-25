@@ -9,6 +9,7 @@ import dltsConfig as dltsc
 import runParamsTab as rpT
 import liveDataTab as ldT
 import dataAnalysisTab as daT
+import detailedAnalysisTab as deT
 
 
 # Qualitative Analysis' transient extraction runs in a separate process (see
@@ -59,6 +60,9 @@ if __name__ == '__main__':
 
     dltsc.dataAnalysisTab = ttk.Frame(dltsc.tabControl)
     daT.construct_dataAnalysisTab()
+
+    dltsc.detailedAnalysisTab = ttk.Frame(dltsc.tabControl)
+    deT.construct_detailedAnalysisTab()
 
     dltsc.postprocessingTab = ttk.Frame(dltsc.tabControl)
     # ppT.construct_postprocessingTab()

@@ -12,9 +12,6 @@ from PIL import Image, ImageTk
 from datetime import datetime
 from pathlib import Path
 
-from bokeh.colors.groups import purple
-from param.ipython import blue
-
 import dltsConfig as dltsc
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
@@ -226,6 +223,25 @@ def browse_root_folder():
         selected_path = filedialog.askdirectory()
         if selected_path:
             dltsc.d_params_vars['Data Root Folder'].set(selected_path)
+            # The OS folder picker only shows folder NAMES, not what's already
+            # inside one -- log a quick contents preview so picking the wrong
+            # (possibly non-empty, about-to-be-overwritten) folder is obvious
+            # right away instead of only surfacing once the run starts.
+            try:
+                entries = sorted(os.listdir(selected_path))
+            except Exception as exc:
+                entries = None
+                dltsc.log_to_textbox(f"Data Root Folder: selected {selected_path} -- cannot list contents: {exc}")
+            if entries is not None:
+                if entries:
+                    shown = ", ".join(entries[:12])
+                    if len(entries) > 12:
+                        shown += f", ... ({len(entries) - 12} more)"
+                    dltsc.log_to_textbox(
+                        f"Data Root Folder: selected {selected_path} -- already contains {len(entries)} "
+                        f"item(s): {shown}")
+                else:
+                    dltsc.log_to_textbox(f"Data Root Folder: selected {selected_path} -- empty folder.")
         else:
             pass
 
@@ -367,8 +383,6 @@ def construct_runParamsTab():
     }
 
     dltsc.z_params_vars = {}
-    # Legacy dynamic device-param editor is not rendered; keep dict for push/load helpers.
-    device_param_vars = {}
     # lay out parameters starting at row 2 below impedance inputs
 
     dltsc.z_param_inputField = dict()
