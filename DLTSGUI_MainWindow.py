@@ -87,6 +87,12 @@ if __name__ == '__main__':
         except Exception:
             pass
 
+        try:
+            if dltsc.detailed_executor is not None:
+                dltsc.detailed_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+
         dltsc.root.destroy()  # Manually close the window
 
     dltsc.root.protocol("WM_DELETE_WINDOW", on_closing)

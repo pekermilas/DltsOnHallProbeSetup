@@ -1,14 +1,16 @@
 import os
 import re
 import threading
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 
 import tkinter as tk
 from tkinter import ttk, filedialog
 
 import numpy as np
 import pandas as pd
-from scipy.stats import linregress
 from scipy.interpolate import griddata
+from lmfit.models import LinearModel, QuadraticModel
 
 import matplotlib.pyplot as plt   # only for the plt.cm.* colormaps below -- never used to create a Figure (see _detailed_plot)
 import matplotlib.ticker as mticker
@@ -24,9 +26,9 @@ import liveDataTab as ldT   # reuses its data-folder format detection/extraction
 # Ported from the standalone DLTS_APP.py ("DLTS Multiwindow Analysis" tool)
 # into a tab of this app, following its conventions: module-level functions
 # instead of a DLTSApp class, all state as dltsc.detailed_* globals instead of
-# self.* instance attributes, heavy folder-scan/analysis work on a background
-# thread (matching every other tab's loaders) instead of blocking the main
-# thread, and dltsc.log_to_textbox() + status labels instead of messagebox
+# self.* instance attributes, heavy folder-scan/analysis work off the main
+# thread in this tab's own worker process (see _get_detailed_executor) instead
+# of blocking the main thread, and dltsc.log_to_textbox() + status labels instead of messagebox
 # popups (this app never uses modal dialogs for errors/status elsewhere).
 # This tab keeps DLTS_APP.py's own data-folder convention (one subfolder per
 # temperature, each holding a ZI imps_0_sample_param1_avg CSV) and its own
@@ -68,19 +70,51 @@ def _cap_at(t_ms, cap, tv_ms):
     return float(np.interp(tv_ms, t_ms, cap))
 
 def _find_peak_parabolic(T_arr, S_arr, hw=2):
+    """Sub-grid peak temperature from a parabola fitted (lmfit QuadraticModel)
+    to the 2*hw+1 points around the raw maximum. Returns (Tp, Tp_err), where
+    Tp_err is the vertex's 1-sigma uncertainty propagated from the fit's a/b
+    covariance, or None when it can't be estimated (no residual degrees of
+    freedom, singular covariance, or a fallback to the raw grid maximum).
+    """
     ip = int(np.argmax(S_arr))
     lo, hi = max(ip - hw, 0), min(ip + hw + 1, len(T_arr))
     T_c, S_c = T_arr[lo:hi], S_arr[lo:hi]
+    T_ref = float(T_arr[ip])
     if len(T_c) < 3:
-        return float(T_arr[ip])
-    cf = np.polyfit(T_c, S_c, 2)
-    if cf[0] < 0:
-        Tp = -cf[1] / (2.0 * cf[0])
+        return T_ref, None
+    # Fit in x = T - T_ref: the same parabola/vertex as fitting in T directly
+    # (what np.polyfit did before), but far better conditioned since T ~ 300 K
+    # would otherwise make the T^2 term swamp a/b/c's covariance.
+    x = T_c - T_ref
+    model = QuadraticModel()
+    try:
+        result = model.fit(S_c, model.guess(S_c, x=x), x=x)
+    except Exception:
+        return T_ref, None
+    a = result.params['a'].value
+    b = result.params['b'].value
+    if a < 0:
+        Tp = T_ref - b / (2.0 * a)
         lo_b = T_arr[max(ip - hw, 0)]
         hi_b = T_arr[min(ip + hw, len(T_arr) - 1)]
         if lo_b <= Tp <= hi_b:
-            return float(Tp)
-    return float(T_arr[ip])
+            return float(Tp), _vertex_stderr(result, a, b)
+    return T_ref, None
+
+def _vertex_stderr(result, a, b):
+    """1-sigma error on the parabola vertex -b/(2a), propagated from the fit's
+    (a, b) covariance: J = d(vertex)/d(a, b) = (b/(2a^2), -1/(2a))."""
+    if result.covar is None or result.nfree < 1:
+        return None
+    ia, ib = result.var_names.index('a'), result.var_names.index('b')
+    cov = result.covar[np.ix_([ia, ib], [ia, ib])]
+    J = np.array([b / (2.0 * a * a), -1.0 / (2.0 * a)])
+    var = float(J @ cov @ J)
+    return float(np.sqrt(var)) if np.isfinite(var) and var >= 0 else None
+
+def _fmt_pm(val, err, fmt, sep=' ± '):
+    """'val ± err' formatted with fmt (e.g. '.3f'), or just 'val' when err is None."""
+    return f'{val:{fmt}}{sep}{err:{fmt}}' if err is not None else f'{val:{fmt}}'
 
 def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cinf_hi):
     """Load every available temperature under base, auto-detecting which of
@@ -155,7 +189,7 @@ def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_m
     mask = (T_K >= t_peak_lo) & (T_K <= t_peak_hi)
     T_m  = T_K[mask]
 
-    en_list, Tp_list, Sp_list = [], [], []
+    en_list, Tp_list, Tp_err_list, Sp_list = [], [], [], []
     rows_detail = []
 
     for (t1, t2) in windows:
@@ -169,28 +203,198 @@ def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_m
         peak_val = np.max(S_m)
         if peak_val <= peak_min_frac * np.max(np.abs(S_full)):
             continue
-        Tp = _find_peak_parabolic(T_m, S_m)
+        Tp, Tp_err = _find_peak_parabolic(T_m, S_m)
         en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
         en_list.append(en); Tp_list.append(Tp); Sp_list.append(peak_val)
-        rows_detail.append((t1, t2, en, Tp - 273.15, peak_val))
+        Tp_err_list.append(np.nan if Tp_err is None else Tp_err)
+        rows_detail.append((t1, t2, en, Tp - 273.15, Tp_err, peak_val))
 
     en_arr = np.array(en_list)
     Tp_arr = np.array(Tp_list)
+    Tp_err_arr = np.array(Tp_err_list)   # K, NaN where the peak fit gave no error
     Sp_arr = np.array(Sp_list)
     if len(en_arr) < 2:
         return None
 
     x = 1000.0 / Tp_arr
     y = np.log(en_arr / Tp_arr**2)
-    sl, ic, r, _, se = linregress(x, y)
-    kB    = 8.617333e-5
-    Et    = -sl * 1000.0 * kB
-    Et_se = se  * 1000.0 * kB
-    sigma = np.exp(ic) / gamma
-    R2    = r**2
-    return dict(en_arr=en_arr, Tp_arr=Tp_arr, Sp_arr=Sp_arr,
-                Et=Et, Et_se=Et_se, sigma=sigma, R2=R2, N=len(en_arr),
-                slope=sl, intercept=ic, x=x, y=y, detail=rows_detail)
+    # Unweighted lmfit LinearModel: same slope/intercept/stderr as the
+    # scipy linregress this replaced, plus the intercept's stderr (for σ).
+    # stderr is only meaningful with residual degrees of freedom, so a
+    # 2-point line reports no error rather than a misleading ~0.
+    linModel = LinearModel()
+    linResult = linModel.fit(y, linModel.guess(y, x=x), x=x)
+    sl, sl_se = linResult.params['slope'].value, linResult.params['slope'].stderr
+    ic, ic_se = linResult.params['intercept'].value, linResult.params['intercept'].stderr
+    if len(x) < 3:
+        sl_se = ic_se = None
+    kB       = 8.617333e-5
+    Et       = -sl * 1000.0 * kB
+    Et_se    = sl_se * 1000.0 * kB if sl_se is not None else None
+    sigma    = np.exp(ic) / gamma
+    sigma_se = sigma * ic_se if ic_se is not None else None   # dσ = σ·d(intercept)
+    R2       = float(linResult.rsquared)
+    return dict(en_arr=en_arr, Tp_arr=Tp_arr, Tp_err_arr=Tp_err_arr, Sp_arr=Sp_arr,
+                Et=Et, Et_se=Et_se, sigma=sigma, sigma_se=sigma_se, R2=R2, N=len(en_arr),
+                slope=sl, slope_se=sl_se, intercept=ic, intercept_se=ic_se,
+                x=x, y=y, detail=rows_detail)
+
+def _prepare_spectra(mw, temps, data, n_spectra):
+    """DLTS spectra for n_spectra of the multi-windows: list of (k, t1, t2, en, S*1e3)."""
+    idx_show = np.round(np.linspace(0, len(mw) - 1, min(n_spectra, len(mw)))).astype(int)
+    spectra = []
+    for k in idx_show:
+        t1, t2 = mw[k]
+        S = np.array([
+            (_cap_at(data[tc][0], data[tc][1], t2) - _cap_at(data[tc][0], data[tc][1], t1)) / data[tc][2] * 1e3
+            for tc in temps
+        ])
+        en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+        spectra.append((int(k), t1, t2, en, S))
+    return spectra
+
+def _prepare_transient_map(temps, data, rb_ms):
+    """ΔC/C0(t, T) grid for the transient map on a log-spaced time axis.
+    Returns dict(t_s, Z_disp, levels), or None if there are too few time points."""
+    t_ms_ref = data[temps[0]][0]          # full axis in ms
+    t_lo_ms  = max(2.0, t_ms_ref[1])      # skip pre-pulse / first point
+    t_hi_ms  = rb_ms * 0.95
+
+    mask_t    = (t_ms_ref >= t_lo_ms) & (t_ms_ref <= t_hi_ms)
+    t_ms_full = t_ms_ref[mask_t]
+    if len(t_ms_full) < 10:
+        return None
+
+    n_t   = min(250, len(t_ms_full))
+    idx_l = np.unique(np.round(np.logspace(0, np.log10(len(t_ms_full) - 1), n_t)).astype(int))
+    idx_l = np.clip(idx_l, 0, len(t_ms_full) - 1)
+    t_ms  = t_ms_full[idx_l]
+    t_s   = t_ms * 1e-3                    # seconds
+
+    Z = np.empty((len(t_ms), len(temps)))
+    for j, tc in enumerate(temps):
+        t_j, cap_j, cinf_j = data[tc]
+        if abs(cinf_j) < 1e-30:
+            Z[:, j] = 0.0
+            continue
+        cap_interp = np.interp(t_ms, t_j, cap_j)
+        Z[:, j] = (cap_interp - cinf_j) / cinf_j
+
+    Z_disp = Z * 1e5
+
+    vlo = float(np.nanpercentile(Z_disp, 1))
+    vhi = float(np.nanpercentile(Z_disp, 99))
+    if vhi <= vlo:
+        vlo, vhi = -1e-4, 1e-4
+    levels = np.linspace(vlo, vhi, 64)
+    return dict(t_s=t_s, Z_disp=Z_disp, levels=levels)
+
+def _prepare_rate_window_map(temps, data, t1_min, t1_max, ratio):
+    """Nt/Nd sampled over (1/kT, T^2/en) and interpolated onto a 220x220 grid
+    for the Rate-Window Analysis map. Returns dict(Xi, Yi, Zi, z_lo, z_hi,
+    x_min, x_max), or None if there are too few points to interpolate."""
+    kB     = 8.617333e-5   # eV/K
+    n_map  = 100
+    t1_arr = np.logspace(np.log10(t1_min), np.log10(t1_max), n_map)
+    T_K    = np.array([tc + 273.15 for tc in temps])
+
+    x_pts, y_pts, z_pts = [], [], []
+    for t1 in t1_arr:
+        t2 = ratio * t1
+        en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+        for j, tc in enumerate(temps):
+            T = T_K[j]
+            t_ms, cap, cinf = data[tc]
+            if abs(cinf) < 1e-30:
+                continue
+            S = (np.interp(t2, t_ms, cap) - np.interp(t1, t_ms, cap)) / cinf
+            nt_nd = 2.0 * abs(S)
+            if nt_nd < 1e-8:
+                continue
+            x_pts.append(1.0 / (kB * T))          # eV^-1
+            y_pts.append(T ** 2 / en)               # K^2 s
+            z_pts.append(nt_nd)
+
+    if len(x_pts) < 6:
+        return None
+
+    x_pts = np.array(x_pts)
+    y_pts = np.array(y_pts)
+    z_pts = np.array(z_pts)
+
+    z_lo = max(float(np.nanpercentile(z_pts, 2)), 1e-8)
+    z_hi = max(float(np.nanpercentile(z_pts, 98)), z_lo * 10)
+
+    xi = np.linspace(x_pts.min(), x_pts.max(), 220)
+    log_y_min = np.log10(max(y_pts.min(), 1e-20))
+    log_y_max = np.log10(y_pts.max())
+    yi_log = np.linspace(log_y_min, log_y_max, 220)
+    Xi, Yi_log = np.meshgrid(xi, yi_log)
+    Yi = 10.0 ** Yi_log
+
+    Zi = griddata((x_pts, np.log10(y_pts)), z_pts, (Xi, Yi_log), method='linear')
+    Zi = np.ma.masked_invalid(Zi)
+    Zi = np.ma.masked_less_equal(Zi, 0.0)
+    return dict(Xi=Xi, Yi=Yi, Zi=Zi, z_lo=z_lo, z_hi=z_hi, x_min=float(x_pts.min()), x_max=float(x_pts.max()))
+
+def _compute_detailed_analysis(data, temps, p):
+    """Everything Run Analysis needs short of creating matplotlib artists:
+    both Arrhenius fits, Nt, and the (optional) spectra / transient-map /
+    rate-window-map arrays. p is the parameter snapshot taken by
+    _detailed_run_analysis. Runs in this tab's worker process (see
+    _get_detailed_executor), so it must stay a pure, picklable top-level
+    function with no Tk/dltsc access. Raises ValueError on unusable input.
+    """
+    t1Arr = np.logspace(np.log10(p['t1Min']), np.log10(p['t1Max']), p['nWin'])
+    mw = [(float(t1), float(p['ratio'] * t1)) for t1 in t1Arr]
+
+    resMw = _compute_arrhenius(mw, temps, data, p['gamma'], p['tpLo'], p['tpHi'])
+    resStd = _compute_arrhenius(p['stdWins'], temps, data, p['gamma'], p['tpLo'], p['tpHi'])
+    if resMw is None:
+        raise ValueError('Multi-window: no peaks found. Check t1 range and temperature bounds.')
+
+    T_K = np.array([tc + 273.15 for tc in temps])
+    S_ref = np.array([
+        (_cap_at(data[tc][0], data[tc][1], p['rbMs']) - _cap_at(data[tc][0], data[tc][1], 2.0)) / data[tc][2]
+        for tc in temps
+    ])
+    Nt = 2.0 * float(np.nanmax(np.abs(S_ref))) * p['nd']
+
+    return dict(
+        resMw=resMw, resStd=resStd, mw=mw, T_K=T_K, Nt=Nt,
+        spectra=_prepare_spectra(mw, temps, data, p['nSpectra']) if p['showSpectra'] else None,
+        tmap=_prepare_transient_map(temps, data, p['rbMs']) if p['showTmap'] else None,
+        rwm=(_prepare_rate_window_map(temps, data, p['t1Min'], p['t1Max'], p['ratio'])
+             if p['showRwm'] else None))
+
+
+#---------------------WORKER PROCESS-------------------------#
+def _get_detailed_executor():
+    """Return this tab's own single-worker ProcessPoolExecutor, creating it on
+    first use. Load and Run both do their number crunching there rather than
+    on a plain background thread: a thread still shares the GIL with the Tk
+    main thread, so pure-Python-heavy work (the per-file parsing inside
+    ldT._compute_mixed_transients, per-window lmfit fits, the rate-window map
+    sampling loop) would still make tab switches and redraws lag -- the same
+    finding that moved Qualitative Analysis' extraction into a process (see
+    ldT._process_raw_transients). A separate process has its own GIL, and
+    being this tab's OWN executor (not ldT's shared one) means Detailed
+    Analysis jobs never queue behind, or hold up, the other tabs' work.
+    The caller's background thread only blocks on future.result().
+    """
+    if dltsc.detailed_executor is None:
+        dltsc.detailed_executor = ProcessPoolExecutor(max_workers=1)
+    return dltsc.detailed_executor
+
+def _run_in_detailed_process(fn, *args):
+    """Submit fn(*args) to the worker process and block (on a background
+    thread only) for its result. If the worker process died, drop the broken
+    executor so the next Load/Run starts a fresh one instead of failing forever."""
+    try:
+        return _get_detailed_executor().submit(fn, *args).result()
+    except BrokenProcessPool:
+        dltsc.detailed_executor = None
+        raise
 
 
 #---------------------DATA LOADING-------------------------#
@@ -213,9 +417,9 @@ def _detailed_browse_folder():
         dltsc.log_to_textbox(f"Detailed analysis: selected {path} -- {ldT._describe_folder_contents(path)}")
 
 def _detailed_load_data():
-    """Scan the selected folder's temperature subfolders on a background
-    thread, like every other folder loader in this app, so a large sweep
-    never freezes the GUI.
+    """Scan the selected folder's temperature subfolders in this tab's worker
+    process (waited on from a background thread), so a large sweep never
+    freezes the GUI or slows the other tabs.
     """
     if dltsc.detailed_loadingBusy or dltsc.detailedProcessingBusy:
         return
@@ -240,7 +444,8 @@ def _detailed_load_data():
         errorMsg = None
         data, temps, loadErrors = {}, [], []
         try:
-            data, temps, loadErrors = _load_detailed_data(base, gridOff, gridDt, chunkSize, rbMs, cinfLo, cinfHi)
+            data, temps, loadErrors = _run_in_detailed_process(
+                _load_detailed_data, base, gridOff, gridDt, chunkSize, rbMs, cinfLo, cinfHi)
             if not temps:
                 errorMsg = "No recognizable data found (checked ZI single-file, ZI subfolder-per-temperature, and legacy per-temperature formats)."
         except Exception as exc:
@@ -286,42 +491,35 @@ def _detailed_run_analysis():
     if dltsc.detailed_statusLabel is not None:
         dltsc.detailed_statusLabel.config(text='Running analysis...')
 
-    # Snapshot everything the worker needs so it never touches Tk widgets/variables.
+    # Snapshot everything the worker (and the plot built from its result)
+    # needs, so neither touches Tk variables later and the plot always
+    # matches the parameters the analysis actually ran with.
     data = dltsc.detailed_data
     temps = dltsc.detailed_temps
-    nWin = dltsc.detailed_nWinVar.get()
-    t1Min = dltsc.detailed_t1MinVar.get()
-    t1Max = dltsc.detailed_t1MaxVar.get()
-    ratio = dltsc.detailed_ratioVar.get()
-    stdWins = [(v1.get(), v2.get()) for v1, v2 in dltsc.detailed_stdEntries]
-    gamma = dltsc.detailed_gammaVar.get()
-    nd = dltsc.detailed_ndVar.get()
-    tpLo = dltsc.detailed_tpeakLoVar.get()
-    tpHi = dltsc.detailed_tpeakHiVar.get()
-    rbMs = dltsc.detailed_rbMsVar.get()
+    params = dict(
+        nWin=dltsc.detailed_nWinVar.get(),
+        t1Min=dltsc.detailed_t1MinVar.get(),
+        t1Max=dltsc.detailed_t1MaxVar.get(),
+        ratio=dltsc.detailed_ratioVar.get(),
+        stdWins=[(v1.get(), v2.get()) for v1, v2 in dltsc.detailed_stdEntries],
+        gamma=dltsc.detailed_gammaVar.get(),
+        nd=dltsc.detailed_ndVar.get(),
+        tpLo=dltsc.detailed_tpeakLoVar.get(),
+        tpHi=dltsc.detailed_tpeakHiVar.get(),
+        rbMs=dltsc.detailed_rbMsVar.get(),
+        showStd=dltsc.detailed_stdWinsVar.get(),
+        showSpectra=dltsc.detailed_showSpectraVar.get(),
+        nSpectra=dltsc.detailed_nSpectraVar.get(),
+        showTmap=dltsc.detailed_showTmapVar.get(),
+        showTau=dltsc.detailed_showTauVar.get(),
+        showRwm=dltsc.detailed_showRwmVar.get(),
+    )
 
     def worker():
         errorMsg = None
-        resMw = resStd = None
-        mw = []
-        T_K = None
-        Nt = None
+        out = None
         try:
-            t1Arr = np.logspace(np.log10(t1Min), np.log10(t1Max), nWin)
-            mw = [(float(t1), float(ratio * t1)) for t1 in t1Arr]
-
-            resMw = _compute_arrhenius(mw, temps, data, gamma, tpLo, tpHi)
-            resStd = _compute_arrhenius(stdWins, temps, data, gamma, tpLo, tpHi)
-
-            if resMw is None:
-                raise ValueError('Multi-window: no peaks found. Check t1 range and temperature bounds.')
-
-            T_K = np.array([tc + 273.15 for tc in temps])
-            S_ref = np.array([
-                (_cap_at(data[tc][0], data[tc][1], rbMs) - _cap_at(data[tc][0], data[tc][1], 2.0)) / data[tc][2]
-                for tc in temps
-            ])
-            Nt = 2.0 * float(np.nanmax(np.abs(S_ref))) * nd
+            out = _run_in_detailed_process(_compute_detailed_analysis, data, temps, params)
         except Exception as exc:
             errorMsg = str(exc)
 
@@ -334,17 +532,18 @@ def _detailed_run_analysis():
                     dltsc.detailed_statusLabel.config(text=f'Error: {errorMsg}')
                 return
 
-            # Plotting itself must happen on the main thread (matplotlib/Tk
-            # artists aren't thread-safe); only the number-crunching above ran
-            # on the worker.
-            _detailed_plot(resMw, resStd, mw, stdWins, T_K, Nt)
+            # Only artist creation + one draw happen here on the main thread
+            # (matplotlib/Tk aren't thread-safe); every array the plot needs
+            # was already computed in the worker process.
+            resMw, resStd, Nt = out['resMw'], out['resStd'], out['Nt']
+            _detailed_plot(out, params)
             _detailed_write_results(resMw, resStd, Nt)
 
             dltsc.detailed_lastResMw = resMw
             dltsc.detailed_lastResStd = resStd
             dltsc.detailed_lastNt = Nt
 
-            statusMsg = (f'Done.  Et = {resMw["Et"]:.3f} ± {resMw["Et_se"]:.3f} eV  '
+            statusMsg = (f'Done.  Et = {_fmt_pm(resMw["Et"], resMw["Et_se"], ".3f")} eV  '
                         f'Nt = {Nt:.2e} cm⁻³')
             if dltsc.detailed_statusLabel is not None:
                 dltsc.detailed_statusLabel.config(text=statusMsg)
@@ -356,13 +555,14 @@ def _detailed_run_analysis():
 
 
 #---------------------PLOTTING-------------------------#
-def _detailed_plot(res_mw, res_std, mw, std_wins, T_K, Nt):
-    show_spectra = dltsc.detailed_showSpectraVar.get()
-    show_tmap    = dltsc.detailed_showTmapVar.get()
-    show_rwm     = dltsc.detailed_showRwmVar.get()
-    n_spectra    = dltsc.detailed_nSpectraVar.get()
-    data  = dltsc.detailed_data
-    temps = dltsc.detailed_temps
+def _detailed_plot(out, params):
+    """Build the figure from _compute_detailed_analysis' result `out` using the
+    Run-time parameter snapshot `params`. Artist creation only -- no heavy
+    math -- so the main thread is busy for as little time as possible."""
+    res_mw, res_std, mw, T_K, Nt = out['resMw'], out['resStd'], out['mw'], out['T_K'], out['Nt']
+    show_spectra = params['showSpectra']
+    show_tmap    = params['showTmap']
+    show_rwm     = params['showRwm']
 
     # Clear previous canvas
     for w in dltsc.detailed_figFrame.winfo_children():
@@ -447,14 +647,16 @@ def _detailed_plot(res_mw, res_std, mw, std_wins, T_K, Nt):
     half = 2.0 * se_y * np.sqrt(1 / n_mw + (x_line - xb) ** 2 / Sxx)
     ax1.fill_between(x_line, y_lm - half, y_lm + half, color=C0, alpha=0.13, zorder=1)
     ax1.plot(x_line, y_lm, color=C0, lw=2.0, zorder=3,
-             label=(f'Multi ({res_mw["N"]} win)  Et={res_mw["Et"]:.3f}±{res_mw["Et_se"]:.3f} eV  '
+             label=(f'Multi ({res_mw["N"]} win)  Et={_fmt_pm(res_mw["Et"], res_mw["Et_se"], ".3f")} eV  '
                     f'R²={res_mw["R2"]:.4f}'))
+    _detailed_arrhenius_errorbars(ax1, res_mw, C0)
 
-    if res_std and dltsc.detailed_stdWinsVar.get():
+    if res_std and params['showStd']:
         y_ls = res_std['slope'] * x_line + res_std['intercept']
         ax1.plot(x_line, y_ls, color=C1, lw=1.5, ls='--', zorder=3,
-                 label=(f'Standard ({res_std["N"]} win)  Et={res_std["Et"]:.3f}±{res_std["Et_se"]:.3f} eV  '
+                 label=(f'Standard ({res_std["N"]} win)  Et={_fmt_pm(res_std["Et"], res_std["Et_se"], ".3f")} eV  '
                         f'R²={res_std["R2"]:.4f}'))
+        _detailed_arrhenius_errorbars(ax1, res_std, C1)
         ax1.scatter(res_std['x'], res_std['y'], color=C1, s=100, zorder=5, marker='D',
                     edgecolors=TEXT_PRI, lw=0.7, label='Standard windows')
 
@@ -469,8 +671,8 @@ def _detailed_plot(res_mw, res_std, mw, std_wins, T_K, Nt):
 
     res_txt = (
         f'Multi-window  ({res_mw["N"]} pts)\n'
-        f'Et = {res_mw["Et"]:.3f} ± {res_mw["Et_se"]:.3f} eV\n'
-        f'σⁿ = {res_mw["sigma"]:.2e} cm²\n'
+        f'Et = {_fmt_pm(res_mw["Et"], res_mw["Et_se"], ".3f")} eV\n'
+        f'σⁿ = {_fmt_pm(res_mw["sigma"], res_mw["sigma_se"], ".2e")} cm²\n'
         f'Nt = {Nt:.2e} cm⁻³\n'
         f'R² = {res_mw["R2"]:.4f}'
     )
@@ -507,18 +709,11 @@ def _detailed_plot(res_mw, res_std, mw, std_wins, T_K, Nt):
 
     # ── DLTS spectra panel ────────────────────────────────────────────────
     if ax2 is not None:
-        idx_show = np.round(np.linspace(0, len(mw) - 1, min(n_spectra, len(mw)))).astype(int)
         cmap_w = plt.cm.cool
         norm_w = Normalize(0, len(mw) - 1)
         ax2.axhline(0, color=BASELINE, lw=0.7)
 
-        for k in idx_show:
-            t1, t2 = mw[k]
-            S = np.array([
-                (_cap_at(data[tc][0], data[tc][1], t2) - _cap_at(data[tc][0], data[tc][1], t1)) / data[tc][2] * 1e3
-                for tc in temps
-            ])
-            en  = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+        for k, t1, t2, en, S in out['spectra']:
             col = cmap_w(norm_w(k))
             ax2.plot(T_K - 273.15, S, color=col, lw=1.4,
                      label=f't={t1:.0f}/{t2:.0f} ms  eₙ={en:.1f} s⁻¹')
@@ -542,14 +737,14 @@ def _detailed_plot(res_mw, res_std, mw, std_wins, T_K, Nt):
 
     # ── 2D transient map ──────────────────────────────────────────────────
     if ax3 is not None:
-        leg_m = _detailed_plot_transient_map(ax3, res_mw, T_K)
+        leg_m = _detailed_plot_transient_map(ax3, res_mw, T_K, out['tmap'], params)
         if leg_m is not None:
             dltsc.detailed_legM = leg_m
             _pending_drags.append(('legend', leg_m))
 
     # ── Rate-Window Analysis map ───────────────────────────────────────────
     if ax4 is not None:
-        leg_rw = _detailed_plot_rate_window_map(ax4, res_mw)
+        leg_rw = _detailed_plot_rate_window_map(ax4, res_mw, out['rwm'], params)
         if leg_rw is not None:
             dltsc.detailed_legRW = leg_rw
             _pending_drags.append(('legend', leg_rw))
@@ -557,11 +752,19 @@ def _detailed_plot(res_mw, res_std, mw, std_wins, T_K, Nt):
     fig.suptitle('DLTS Multiwindow Analysis', fontsize=12, color=TEXT_PRI, fontweight='bold', y=1.001)
 
     # Embed in tkinter FIRST -- this connects fig.canvas, which draggable needs.
+    # A full draw of this figure costs ~0.25 s of main-thread time, so it is
+    # drawn exactly once: packing the canvas fires a resize, whose draw_idle
+    # does the only render. (Previously an explicit draw() before packing,
+    # the resize redraw, and a delayed re-draw for the drag setup rendered it
+    # 3-4 times per run.)
     dltsc.detailed_canvas = FigureCanvasTkAgg(fig, master=dltsc.detailed_figFrame)
-    dltsc.detailed_canvas.draw()
     toolbar = NavigationToolbar2Tk(dltsc.detailed_canvas, dltsc.detailed_figFrame, pack_toolbar=False)
     toolbar.update()
     toolbar.pack(side='bottom', fill='x')
+    # Tiny requested size: the Tk canvas otherwise asks for the full figsize
+    # in pixels (e.g. 1400x1100), forcing an extra geometry pass -- and an
+    # extra full redraw -- before settling at the frame's fill size.
+    dltsc.detailed_canvas.get_tk_widget().config(width=1, height=1)
     dltsc.detailed_canvas.get_tk_widget().pack(fill='both', expand=True)
 
     # ── Drag installation ─────────────────────────────────────────────────
@@ -569,20 +772,36 @@ def _detailed_plot(res_mw, res_std, mw, std_wins, T_K, Nt):
     # legendPatch.contains() to use an up-to-date renderer transform. After
     # pack(fill='both'), tkinter resizes the canvas and the transform is
     # stale. Bypass the built-in draggable system entirely: wire
-    # button_press/motion/release events directly so we re-fetch the artist
-    # bbox at click time (see _detailed_install_drag()).
-    _drag_snapshot = list(_pending_drags)
+    # button_press/motion/release events directly and hit-test at click time
+    # (see _detailed_install_drag()). Transforms are only stale between a
+    # resize and the redraw it schedules, so track that with
+    # dltsc.detailed_hitTestStale instead of redrawing on every click.
+    dltsc.detailed_hitTestStale = True
 
-    def _apply_draggable():
-        if dltsc.detailed_canvas is None:
-            return
-        dltsc.detailed_canvas.draw()
-        canvas_ = dltsc.detailed_canvas
-        fig_ = fig
-        for kind, obj in _drag_snapshot:
-            _detailed_install_drag(canvas_, fig_, obj, kind)
+    def _mark_stale(evt):
+        dltsc.detailed_hitTestStale = True
 
-    dltsc.root.after(300, _apply_draggable)
+    def _mark_fresh(evt):
+        dltsc.detailed_hitTestStale = False
+
+    dltsc.detailed_canvas.mpl_connect('resize_event', _mark_stale)
+    dltsc.detailed_canvas.mpl_connect('draw_event', _mark_fresh)
+    for kind, obj in _pending_drags:
+        _detailed_install_drag(dltsc.detailed_canvas, fig, obj, kind)
+    # No explicit draw here: it would render at the pre-layout figsize and be
+    # thrown away. The pack() above always resizes the (1x1-requested) canvas
+    # to its fill size, and that resize's draw_idle is the one real render.
+
+def _detailed_arrhenius_errorbars(ax, res, color):
+    """Error bars on the Arrhenius points from each window's peak-fit Tp
+    error: x = 1000/T so dx = 1000·dT/T²; y = ln(en/T²) so dy = 2·dT/T.
+    Only windows whose peak fit produced an error get a bar."""
+    ok = np.isfinite(res['Tp_err_arr'])
+    if not ok.any():
+        return
+    Tp, dT = res['Tp_arr'][ok], res['Tp_err_arr'][ok]
+    ax.errorbar(res['x'][ok], res['y'][ok], xerr=1000.0 * dT / Tp**2, yerr=2.0 * dT / Tp,
+                fmt='none', ecolor=color, elinewidth=0.8, capsize=2, alpha=0.6, zorder=3.5)
 
 
 #---------------------DRAGGABLE LEGENDS / ANNOTATIONS-------------------------#
@@ -601,7 +820,12 @@ def _detailed_install_drag(canvas, fig, artist, kind):
     def _on_press(evt):
         if evt.button != 1:
             return
-        canvas.draw()   # refresh transforms before hit-testing
+        # Refresh transforms before hit-testing, but only if a resize has
+        # made them stale: every legend/annotation has its own press handler,
+        # so an unconditional draw() here re-rendered the whole figure once
+        # per draggable artist (5x, ~1 s frozen GUI) on every single click.
+        if dltsc.detailed_hitTestStale:
+            canvas.draw()
         try:
             hit, _ = artist.contains(evt)
         except Exception:
@@ -649,48 +873,15 @@ def _detailed_install_drag(canvas, fig, artist, kind):
 
 
 #---------------------2D TRANSIENT MAP-------------------------#
-def _detailed_plot_transient_map(ax, res_mw, T_K):
-    """Filled contour plot: ΔC/C0(t, T) on log-time y-axis.
+def _detailed_plot_transient_map(ax, res_mw, T_K, tmap, params):
+    """Filled contour plot: ΔC/C0(t, T) on log-time y-axis, from the grid
+    _prepare_transient_map computed in the worker process.
     Returns the legend object (or None) so the caller can make it draggable."""
-    rb_ms = dltsc.detailed_rbMsVar.get()
-    temps = dltsc.detailed_temps
-    data  = dltsc.detailed_data
-
-    t_ms_ref = data[temps[0]][0]          # full axis in ms
-    t_lo_ms  = max(2.0, t_ms_ref[1])      # skip pre-pulse / first point
-    t_hi_ms  = rb_ms * 0.95
-
-    mask_t    = (t_ms_ref >= t_lo_ms) & (t_ms_ref <= t_hi_ms)
-    t_ms_full = t_ms_ref[mask_t]
-
-    if len(t_ms_full) < 10:
+    if tmap is None:
         ax.text(0.5, 0.5, 'Not enough time points', transform=ax.transAxes, ha='center', fontsize=11, color=TEXT_MUT)
         return None
 
-    n_t   = min(250, len(t_ms_full))
-    idx_l = np.unique(np.round(np.logspace(0, np.log10(len(t_ms_full) - 1), n_t)).astype(int))
-    idx_l = np.clip(idx_l, 0, len(t_ms_full) - 1)
-    t_ms  = t_ms_full[idx_l]
-    t_s   = t_ms * 1e-3                    # seconds
-
-    Z = np.empty((len(t_ms), len(temps)))
-    for j, tc in enumerate(temps):
-        t_j, cap_j, cinf_j = data[tc]
-        if abs(cinf_j) < 1e-30:
-            Z[:, j] = 0.0
-            continue
-        cap_interp = np.interp(t_ms, t_j, cap_j)
-        Z[:, j] = (cap_interp - cinf_j) / cinf_j
-
-    Z_disp = Z * 1e5
-
-    vlo = float(np.nanpercentile(Z_disp, 1))
-    vhi = float(np.nanpercentile(Z_disp, 99))
-    if vhi <= vlo:
-        vlo, vhi = -1e-4, 1e-4
-    n_lev  = 64
-    levels = np.linspace(vlo, vhi, n_lev)
-
+    t_s, Z_disp, levels = tmap['t_s'], tmap['Z_disp'], tmap['levels']
     Tm, tm = np.meshgrid(T_K, t_s)
 
     cf = ax.contourf(Tm, tm, Z_disp, levels=levels, cmap='jet', extend='both')
@@ -710,9 +901,9 @@ def _detailed_plot_transient_map(ax, res_mw, T_K):
     cbar.outline.set_edgecolor(BASELINE)
 
     # ── τ(T) = 1/eₙ(T) overlay ───────────────────────────────────────────
-    if dltsc.detailed_showTauVar.get() and res_mw is not None:
+    if params['showTau'] and res_mw is not None:
         kB    = 8.617333e-5
-        gamma = dltsc.detailed_gammaVar.get()
+        gamma = params['gamma']
         Et    = res_mw['Et']
         sigma = res_mw['sigma']
 
@@ -755,67 +946,25 @@ def _detailed_plot_transient_map(ax, res_mw, T_K):
 
 
 #---------------------RATE-WINDOW ANALYSIS MAP-------------------------#
-def _detailed_plot_rate_window_map(ax, res_mw):
-    """Plot Nt/Nd in (1/kT [eV^-1], T^2/en [K^2 s]) space. Color = 2|ΔC/C0|
-    on a log scale. Black background. Overlays the Arrhenius line and a Z1/2 marker.
+def _detailed_plot_rate_window_map(ax, res_mw, rwm, params):
+    """Plot Nt/Nd in (1/kT [eV^-1], T^2/en [K^2 s]) space, from the grid
+    _prepare_rate_window_map interpolated in the worker process. Color =
+    2|ΔC/C0| on a log scale. Black background. Overlays the Arrhenius line
+    and a Z1/2 marker.
     """
-    kB    = 8.617333e-5   # eV/K
-    gamma = dltsc.detailed_gammaVar.get()
-    nd    = dltsc.detailed_ndVar.get()
-    temps = dltsc.detailed_temps
-    data  = dltsc.detailed_data
-    ratio = dltsc.detailed_ratioVar.get()
-
-    t1_min = dltsc.detailed_t1MinVar.get()
-    t1_max = dltsc.detailed_t1MaxVar.get()
-    n_map  = 100
-    t1_arr = np.logspace(np.log10(t1_min), np.log10(t1_max), n_map)
-
-    T_K = np.array([tc + 273.15 for tc in temps])
-
-    x_pts, y_pts, z_pts = [], [], []
-
-    for t1 in t1_arr:
-        t2 = ratio * t1
-        en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
-        for j, tc in enumerate(temps):
-            T = T_K[j]
-            t_ms, cap, cinf = data[tc]
-            if abs(cinf) < 1e-30:
-                continue
-            S = (np.interp(t2, t_ms, cap) - np.interp(t1, t_ms, cap)) / cinf
-            nt_nd = 2.0 * abs(S)
-            if nt_nd < 1e-8:
-                continue
-            x_pts.append(1.0 / (kB * T))          # eV^-1
-            y_pts.append(T ** 2 / en)               # K^2 s
-            z_pts.append(nt_nd)
+    gamma = params['gamma']
 
     ax.set_facecolor('black')
 
-    if len(x_pts) < 6:
+    if rwm is None:
         ax.text(0.5, 0.5, 'Insufficient data for Rate-Window map', transform=ax.transAxes, ha='center',
                color='white', fontsize=10)
         _detailed_style_rwm_axes(ax)
         return None
 
-    x_pts = np.array(x_pts)
-    y_pts = np.array(y_pts)
-    z_pts = np.array(z_pts)
-
-    z_lo = max(float(np.nanpercentile(z_pts, 2)), 1e-8)
-    z_hi = max(float(np.nanpercentile(z_pts, 98)), z_lo * 10)
-
-    xi = np.linspace(x_pts.min(), x_pts.max(), 220)
-    log_y_min = np.log10(max(y_pts.min(), 1e-20))
-    log_y_max = np.log10(y_pts.max())
-    yi_log = np.linspace(log_y_min, log_y_max, 220)
-    Xi, Yi_log = np.meshgrid(xi, yi_log)
-    Yi = 10.0 ** Yi_log
-
-    Zi = griddata((x_pts, np.log10(y_pts)), z_pts, (Xi, Yi_log), method='linear')
-    Zi = np.ma.masked_invalid(Zi)
-    Zi = np.ma.masked_less_equal(Zi, 0.0)
+    Xi, Yi, Zi = rwm['Xi'], rwm['Yi'], rwm['Zi']
+    z_lo, z_hi = rwm['z_lo'], rwm['z_hi']
+    x_min, x_max = rwm['x_min'], rwm['x_max']
 
     pm = ax.pcolormesh(Xi, Yi, Zi, cmap='jet', norm=LogNorm(vmin=z_lo, vmax=z_hi), shading='auto', zorder=2)
     ax.set_yscale('log')
@@ -834,7 +983,7 @@ def _detailed_plot_rate_window_map(ax, res_mw):
         Et    = res_mw['Et']
         sigma = res_mw['sigma']
 
-        x_line = np.linspace(x_pts.min() * 0.97, x_pts.max() * 1.03, 400)
+        x_line = np.linspace(x_min * 0.97, x_max * 1.03, 400)
         y_line = (1.0 / (gamma * sigma)) * np.exp(Et * x_line)
         vis    = (y_line >= Yi.min() * 0.2) & (y_line <= Yi.max() * 5.0)
         if vis.any():
@@ -842,7 +991,7 @@ def _detailed_plot_rate_window_map(ax, res_mw):
                     label=f'Arrhenius  Eₜ={Et:.3f} eV')
 
         n_circles = 22
-        x_circ = np.linspace(x_pts.min() * 0.98, x_pts.max() * 1.02, n_circles)
+        x_circ = np.linspace(x_min * 0.98, x_max * 1.02, n_circles)
         y_circ = (1.0 / (gamma * sigma)) * np.exp(Et * x_circ)
         vis_c  = ((y_circ >= Yi.min() * 0.5) & (y_circ <= Yi.max() * 2.0))
         if vis_c.any():
@@ -990,26 +1139,33 @@ def _detailed_write_results(res_mw, res_std, Nt):
     lines.append('  DLTS Multiwindow Analysis  —  Results')
     lines.append('=' * 60)
     lines.append('')
+    # All +/- values are 1-sigma standard errors from the lmfit fits
+    # (Arrhenius line: slope -> Et, intercept -> sn; per-window parabolic
+    # peak fit -> Tpeak). Omitted where a fit had no residual degrees of freedom.
+    def fit_block(res):
+        return [f'    Et   = {_fmt_pm(res["Et"], res["Et_se"], ".4f", " +/- ")} eV',
+                f'    sn   = {_fmt_pm(res["sigma"], res["sigma_se"], ".3e", " +/- ")} cm2',
+                f'    slope     = {_fmt_pm(res["slope"], res["slope_se"], ".4f", " +/- ")} K',
+                f'    intercept = {_fmt_pm(res["intercept"], res["intercept_se"], ".4f", " +/- ")}',
+                f'    R2   = {res["R2"]:.5f}']
+
     lines.append(f'  Multi-window  ({res_mw["N"]} windows)')
-    lines.append(f'    Et   = {res_mw["Et"]:.4f} +/- {res_mw["Et_se"]:.4f} eV')
-    lines.append(f'    sn   = {res_mw["sigma"]:.3e} cm2')
-    lines.append(f'    R2   = {res_mw["R2"]:.5f}')
+    lines.extend(fit_block(res_mw))
     lines.append(f'    Nt   ~ {Nt:.3e} cm-3')
     if res_std:
         lines.append('')
         lines.append(f'  Standard  ({res_std["N"]} windows)')
-        lines.append(f'    Et   = {res_std["Et"]:.4f} +/- {res_std["Et_se"]:.4f} eV')
-        lines.append(f'    sn   = {res_std["sigma"]:.3e} cm2')
-        lines.append(f'    R2   = {res_std["R2"]:.5f}')
-        if res_std['Et_se'] > 0:
+        lines.extend(fit_block(res_std))
+        if res_std['Et_se'] and res_mw['Et_se']:
             impr = res_std['Et_se'] / res_mw['Et_se']
             lines.append(f'    Et uncertainty improvement: {impr:.1f}x')
     lines.append('')
     lines.append('  Window detail  (multi):')
-    lines.append(f'  {"t1(ms)":>8}  {"t2(ms)":>8}  {"en(s-1)":>10}  {"Tpeak(C)":>10}')
-    lines.append('  ' + '-' * 44)
-    for t1, t2, en, tp, sp in res_mw['detail']:
-        lines.append(f'  {t1:8.1f}  {t2:8.1f}  {en:10.2f}  {tp:10.2f}')
+    lines.append(f'  {"t1(ms)":>8}  {"t2(ms)":>8}  {"en(s-1)":>10}  {"Tpeak(C)":>10}  {"+/-(K)":>7}')
+    lines.append('  ' + '-' * 53)
+    for t1, t2, en, tp, tp_err, sp in res_mw['detail']:
+        err_txt = f'{tp_err:7.2f}' if tp_err is not None else f'{"n/a":>7}'
+        lines.append(f'  {t1:8.1f}  {t2:8.1f}  {en:10.2f}  {tp:10.2f}  {err_txt}')
 
     text = '\n'.join(lines)
     if dltsc.detailed_resultsText is not None:

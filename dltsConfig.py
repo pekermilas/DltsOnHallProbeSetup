@@ -186,6 +186,10 @@ detailed_lastResStd = None    # last standard-windows compute_arrhenius() result
 detailed_lastNt = None
 detailed_loadingBusy = None   # True while _detailed_load_data_async's background worker is running
 detailedProcessingBusy = None # True while _detailed_run_analysis's background worker is running
+detailed_executor = None      # this tab's own single-worker ProcessPoolExecutor: Load/Run math runs
+                               # there (own GIL) so it never stalls the Tk main thread or other tabs
+detailed_hitTestStale = None  # True between a canvas resize and its redraw, i.e. while legend/annotation
+                               # hit-test transforms are stale; the drag press handler redraws only then
 
 # Control variables (tk.StringVar/DoubleVar/IntVar/BooleanVar), seeded in
 # construct_detailedAnalysisTab().
@@ -371,6 +375,8 @@ def init():
     global detailed_lastNt
     global detailed_loadingBusy
     global detailedProcessingBusy
+    global detailed_executor
+    global detailed_hitTestStale
     global detailed_baseVar
     global detailed_gridOffVar
     global detailed_gridDtVar
@@ -432,6 +438,8 @@ def init():
     detailed_temps = list()
     detailed_loadingBusy = False
     detailedProcessingBusy = False
+    detailed_executor = None
+    detailed_hitTestStale = True
 
 #-----------------------Global Functions--------------------------------#
 def log_to_textbox(message):
