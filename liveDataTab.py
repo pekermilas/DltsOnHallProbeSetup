@@ -696,12 +696,15 @@ def _build_autoPlotFrame(parent):
         if getattr(dltsc, attr) is None:
             setattr(dltsc, attr, dict())
 
+    # Header controls across the top; Run Control column on the left (same
+    # layout as the Qualitative Analysis frame below it); plots fill the rest.
     parent.grid_rowconfigure(0, weight=0)
     parent.grid_rowconfigure(1, weight=1)
-    parent.grid_columnconfigure(0, weight=1)
+    parent.grid_columnconfigure(0, weight=0)
+    parent.grid_columnconfigure(1, weight=1)
 
     controlsFrame = tk.Frame(parent)
-    controlsFrame.grid(row=0, column=0, sticky='ew', padx=4, pady=4)
+    controlsFrame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=4, pady=4)
 
     ttk.Label(controlsFrame, text='Automated / Live Data', font=('Segoe UI', 10, 'bold')).pack(side='left', padx=(0, 10))
 
@@ -731,8 +734,10 @@ def _build_autoPlotFrame(parent):
     dltsc.livePlot_statusLabel = ttk.Label(controlsFrame, text='Waiting for data...')
     dltsc.livePlot_statusLabel.pack(side='left', padx=(10, 4))
 
+    _build_runControlPanel(parent)
+
     plotHolder = tk.Frame(parent)
-    plotHolder.grid(row=1, column=0, sticky='nsew', padx=4, pady=4)
+    plotHolder.grid(row=1, column=1, sticky='nsew', padx=4, pady=4)
     plotHolder.grid_rowconfigure(0, weight=0)
     plotHolder.grid_rowconfigure(1, weight=1)
     plotHolder.grid_columnconfigure(0, weight=1)
@@ -752,6 +757,45 @@ def _build_autoPlotFrame(parent):
     dltsc.livePlot_canvas.get_tk_widget().grid(row=1, column=0, sticky='nsew')
 
     _reset_auto_plot_placeholder()
+
+def _build_runControlPanel(parent):
+    """Run Control column (left side of the Automated / Live Data frame):
+    pause/resume the main sequence, or redo/remove & retake specific
+    already-scanned temperature steps by selecting them in the list. Same
+    width as the Qualitative Analysis frame's left column so the two plot
+    areas line up."""
+    runControlFrame = tk.LabelFrame(parent, text='Run Control', width=250)
+    runControlFrame.grid(row=1, column=0, sticky='ns', padx=4, pady=4)
+    runControlFrame.grid_propagate(False)
+    runControlFrame.grid_columnconfigure(0, weight=1)
+    runControlFrame.grid_rowconfigure(1, weight=1)
+
+    runControlButtons = tk.Frame(runControlFrame)
+    runControlButtons.grid(row=0, column=0, sticky='ew', padx=4, pady=(4, 2))
+    runControlButtons.grid_columnconfigure(0, weight=1, uniform='runctl')
+    runControlButtons.grid_columnconfigure(1, weight=1, uniform='runctl')
+    dltsc.run_pauseButton = tk.Button(runControlButtons, text="Pause", command=_pause_run, state="disabled")
+    dltsc.run_pauseButton.grid(row=0, column=0, sticky='ew', padx=(0, 2), pady=2)
+    dltsc.run_resumeButton = tk.Button(runControlButtons, text="Resume", command=_resume_run, state="disabled")
+    dltsc.run_resumeButton.grid(row=0, column=1, sticky='ew', padx=(2, 0), pady=2)
+    dltsc.run_redoButton = tk.Button(runControlButtons, text="Redo Selected", command=_redo_selected_steps,
+                                     state="disabled")
+    dltsc.run_redoButton.grid(row=1, column=0, columnspan=2, sticky='ew', pady=2)
+    dltsc.run_retakeButton = tk.Button(runControlButtons, text="Remove & Retake Selected",
+                                       command=_retake_selected_steps, state="disabled")
+    dltsc.run_retakeButton.grid(row=2, column=0, columnspan=2, sticky='ew', pady=2)
+
+    # Temperature-step list fills the rest of the column's height.
+    stepListFrame = tk.Frame(runControlFrame)
+    stepListFrame.grid(row=1, column=0, sticky='nsew', padx=4, pady=(2, 4))
+    stepListFrame.grid_rowconfigure(0, weight=1)
+    stepListFrame.grid_columnconfigure(0, weight=1)
+    stepListScroll = ttk.Scrollbar(stepListFrame, orient='vertical')
+    dltsc.run_stepListbox = tk.Listbox(stepListFrame, selectmode=tk.MULTIPLE, exportselection=False,
+                                       width=1, height=1, yscrollcommand=stepListScroll.set)
+    stepListScroll.config(command=dltsc.run_stepListbox.yview)
+    dltsc.run_stepListbox.grid(row=0, column=0, sticky='nsew')
+    stepListScroll.grid(row=0, column=1, sticky='ns')
 
 
 #---------------------MANUAL / QUALITATIVE ANALYSIS-------------------------#
@@ -1683,12 +1727,11 @@ def construct_livePlotTab():
     tabControl.pack(expand=1, fill="both")
 
     # Allow tab content to expand with the notebook window. The analysis panes get
-    # the expanding row; the run button, run control, and the log textbox are
-    # fixed-height rows pinned to the top and bottom respectively.
+    # the expanding row; the run button is a fixed-height row pinned to the top.
+    # (Run Control lives inside the Automated / Live Data frame's left column --
+    # see _build_runControlPanel() -- so the plots get that height instead.)
     dltsc.livePlotTab.grid_rowconfigure(0, weight=0)
-    dltsc.livePlotTab.grid_rowconfigure(1, weight=0)
-    dltsc.livePlotTab.grid_rowconfigure(2, weight=1)
-    dltsc.livePlotTab.grid_rowconfigure(3, weight=0)
+    dltsc.livePlotTab.grid_rowconfigure(1, weight=1)
     dltsc.livePlotTab.grid_columnconfigure(0, weight=1)
 
 
@@ -1709,46 +1752,11 @@ def construct_livePlotTab():
                                  font=('Segoe UI', 14, 'bold'))
     dltsc.run_button.pack(fill='both', expand=True, padx=4, pady=0)
 
-    # --- Run Control: pause/resume the main sequence, or redo/remove & retake
-    # specific already-scanned temperature steps by selecting them below. ---
-    runControlFrame = tk.Frame(dltsc.livePlotTab, highlightbackground="gray",
-                               highlightthickness=1, highlightcolor='gray',
-                               width=860, height=150)
-    runControlFrame.grid(row=1, column=0, padx=10, pady=(0, 2), sticky='nsew')
-    runControlFrame.grid_propagate(False)
-    runControlFrame.grid_columnconfigure(0, weight=0)
-    runControlFrame.grid_columnconfigure(1, weight=1)
-    runControlFrame.grid_rowconfigure(0, weight=1)
-
-    runControlButtons = tk.Frame(runControlFrame)
-    runControlButtons.grid(row=0, column=0, sticky='ns', padx=4, pady=4)
-    dltsc.run_pauseButton = tk.Button(runControlButtons, text="Pause", command=_pause_run, state="disabled")
-    dltsc.run_pauseButton.pack(fill='x', pady=2)
-    dltsc.run_resumeButton = tk.Button(runControlButtons, text="Resume", command=_resume_run, state="disabled")
-    dltsc.run_resumeButton.pack(fill='x', pady=2)
-    dltsc.run_redoButton = tk.Button(runControlButtons, text="Redo Selected", command=_redo_selected_steps,
-                                     state="disabled")
-    dltsc.run_redoButton.pack(fill='x', pady=2)
-    dltsc.run_retakeButton = tk.Button(runControlButtons, text="Remove & Retake Selected",
-                                       command=_retake_selected_steps, state="disabled")
-    dltsc.run_retakeButton.pack(fill='x', pady=2)
-
-    stepListFrame = tk.Frame(runControlFrame)
-    stepListFrame.grid(row=0, column=1, sticky='nsew', padx=4, pady=4)
-    stepListFrame.grid_rowconfigure(0, weight=1)
-    stepListFrame.grid_columnconfigure(0, weight=1)
-    stepListScroll = ttk.Scrollbar(stepListFrame, orient='vertical')
-    dltsc.run_stepListbox = tk.Listbox(stepListFrame, selectmode=tk.MULTIPLE, exportselection=False,
-                                       yscrollcommand=stepListScroll.set)
-    stepListScroll.config(command=dltsc.run_stepListbox.yview)
-    dltsc.run_stepListbox.grid(row=0, column=0, sticky='nsew')
-    stepListScroll.grid(row=0, column=1, sticky='ns')
-
     # Automated/live plot (top) and manual/qualitative analysis (bottom), stacked in
-    # a resizable pane so both stay reachable without crowding the tab. The manual
-    # pane starts taller since its control column has more to show.
+    # a resizable pane so both stay reachable without crowding the tab; equal
+    # initial heights, both stretching to share the full remaining tab height.
     analysisPanes = tk.PanedWindow(dltsc.livePlotTab, orient=tk.VERTICAL, sashrelief='raised', sashwidth=6)
-    analysisPanes.grid(row=2, column=0, padx=10, pady=(0, 2), sticky='nsew')
+    analysisPanes.grid(row=1, column=0, padx=10, pady=(0, 10), sticky='nsew')
 
     autoPlotFrame = tk.Frame(analysisPanes, highlightbackground="gray",
                              highlightthickness=1, highlightcolor='gray')
@@ -1759,20 +1767,5 @@ def construct_livePlotTab():
 
     _build_autoPlotFrame(autoPlotFrame)
     _build_manualPlotFrame(manualPlotFrame)
-
-    reportLivesFrame = tk.Frame(dltsc.livePlotTab, highlightbackground="gray",
-                              highlightthickness=1, highlightcolor='gray',
-                              width=860, height=90)
-
-    reportLivesFrame.grid(row=3, column=0, padx=10, pady=(0, 10), sticky='ew')
-    reportLivesFrame.grid_propagate(False)
-    reportLivesFrame.grid_columnconfigure(0, weight=1)
-    reportLivesFrame.grid_rowconfigure(0, weight=1)
-    reportLivesFrame.config()
-
-    dltsc.textbox = tk.Text(reportLivesFrame, wrap='none', width=1, height=5)
-    dltsc.textbox.grid(row=0, column=0, sticky='nsew', padx=4, pady=4)
-    if not hasattr(dltsc, 'textboxes') or dltsc.textboxes is None:
-        dltsc.textboxes = []
-    if dltsc.textbox not in dltsc.textboxes:
-        dltsc.textboxes.append(dltsc.textbox)
+    # No log textbox on this tab: the Input Parameters tab's textbox is the
+    # app's single log (dltsc.log_to_textbox writes to dltsc.textboxes).

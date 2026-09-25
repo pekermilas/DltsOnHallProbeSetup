@@ -14,6 +14,13 @@ import impedanceAnalysis_Tools as iaT
 K_BOLTZMANN = 8.617333262145e-5   # eV / K
 C_CONSTANT_SI = 3.256e21          # Pre-factor mapping T^2 emission tracking for Si
 
+# Requested height (px) of the scrollable controls area under BOTH plots.
+# Shared so the two side-by-side frames request identical heights and, with
+# identical row weights, split the tab height identically -- otherwise each
+# frame's controls request their own natural height and the plots end up
+# at different sizes.
+QUICK_CONTROLS_HEIGHT = 260
+
 DEFAULT_RATE_WINDOWS = [
     ('10.0', '50.0'),
     ('20.0', '100.0'),
@@ -416,6 +423,8 @@ def _build_rateWindowFrame(parent):
     # weight (not a weight=0 fixed-height bottom row) so the controls section
     # actually grows on a taller/maximized window instead of staying pinned to
     # one small size and forcing a scroll regardless of how much room there is.
+    # The Arrhenius frame beside this one uses the same weights and controls
+    # height (QUICK_CONTROLS_HEIGHT) so the two plots come out equally tall.
     parent.grid_rowconfigure(0, weight=0)
     parent.grid_rowconfigure(1, weight=3)
     parent.grid_rowconfigure(2, weight=2)
@@ -451,7 +460,7 @@ def _build_rateWindowFrame(parent):
     bottomContainer = tk.Frame(parent)
     bottomContainer.grid(row=2, column=0, sticky='nsew', padx=4, pady=(0, 4))
 
-    bottomCanvas = tk.Canvas(bottomContainer, highlightthickness=0)
+    bottomCanvas = tk.Canvas(bottomContainer, highlightthickness=0, height=QUICK_CONTROLS_HEIGHT)
     bottomScroll = ttk.Scrollbar(bottomContainer, orient='vertical', command=bottomCanvas.yview)
     bottomCanvas.configure(yscrollcommand=bottomScroll.set)
     bottomCanvas.pack(side='left', fill='both', expand=True)
@@ -655,10 +664,12 @@ def _run_arrhenius_solver():
 
 def _build_arrheniusFrame(parent):
     # Plot on top, parameter/control fields below it -- see _build_rateWindowFrame()
-    # for why (the frames now sit side by side rather than top/bottom).
+    # for why (the frames now sit side by side rather than top/bottom). Row
+    # weights and the controls' requested height (QUICK_CONTROLS_HEIGHT) must
+    # match _build_rateWindowFrame()'s exactly so both plots get equal heights.
     parent.grid_rowconfigure(0, weight=0)
     parent.grid_rowconfigure(1, weight=3)
-    parent.grid_rowconfigure(2, weight=1)
+    parent.grid_rowconfigure(2, weight=2)
     parent.grid_columnconfigure(0, weight=1)
 
     headerFrame = tk.Frame(parent)
@@ -691,7 +702,7 @@ def _build_arrheniusFrame(parent):
     bottomContainer = tk.Frame(parent)
     bottomContainer.grid(row=2, column=0, sticky='nsew', padx=4, pady=(0, 4))
 
-    bottomCanvas = tk.Canvas(bottomContainer, highlightthickness=0)
+    bottomCanvas = tk.Canvas(bottomContainer, highlightthickness=0, height=QUICK_CONTROLS_HEIGHT)
     bottomScroll = ttk.Scrollbar(bottomContainer, orient='vertical', command=bottomCanvas.yview)
     bottomCanvas.configure(yscrollcommand=bottomScroll.set)
     bottomCanvas.pack(side='left', fill='both', expand=True)

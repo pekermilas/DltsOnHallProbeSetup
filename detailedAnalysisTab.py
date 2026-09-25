@@ -9,7 +9,7 @@ from tkinter import ttk, filedialog
 
 import numpy as np
 import pandas as pd
-from scipy.interpolate import griddata
+from scipy.interpolate import griddata, CubicSpline
 from lmfit.models import LinearModel, QuadraticModel
 
 import matplotlib.pyplot as plt   # only for the plt.cm.* colormaps below -- never used to create a Figure (see _detailed_plot)
@@ -22,6 +22,7 @@ from matplotlib.transforms import BboxTransformFrom
 
 import dltsConfig as dltsc
 import liveDataTab as ldT   # reuses its data-folder format detection/extraction -- see _load_detailed_data
+import impedanceAnalysis_Tools as iaT   # smoothing-spline peak finder shared with Quick Analysis
 
 # Ported from the standalone DLTS_APP.py ("DLTS Multiwindow Analysis" tool)
 # into a tab of this app, following its conventions: module-level functions
@@ -66,15 +67,126 @@ def _folder_to_tempC(name):
     tc = float(m.group(2))
     return -tc if m.group(1).lower() == 'n' else tc
 
-def _cap_at(t_ms, cap, tv_ms):
-    return float(np.interp(tv_ms, t_ms, cap))
+# DLTS signal calculation options, mirroring Quick Analysis' "DLTS Signal
+# Calculation" group (dataAnalysisTab.SIGNAL_METHOD_* / DENOISE_*). There they
+# go through impdData.calculate_delC_normalized(), which needs per-repeat
+# instrument data; this tab only has each temperature's averaged transient,
+# so the same two read-off methods and the same four denoise filters (same
+# settings as impdData.filter_emissions()) are applied to that curve directly.
+SIGNAL_METHOD_MEASURED = 'Measured C (nearest sample)'
+SIGNAL_METHOD_SMOOTHED = 'Smoothed C (spline-interpolated)'
+SIGNAL_METHOD_OPTIONS = [SIGNAL_METHOD_MEASURED, SIGNAL_METHOD_SMOOTHED]
 
-def _find_peak_parabolic(T_arr, S_arr, hw=2):
-    """Sub-grid peak temperature from a parabola fitted (lmfit QuadraticModel)
-    to the 2*hw+1 points around the raw maximum. Returns (Tp, Tp_err), where
-    Tp_err is the vertex's 1-sigma uncertainty propagated from the fit's a/b
-    covariance, or None when it can't be estimated (no residual degrees of
-    freedom, singular covariance, or a fallback to the raw grid maximum).
+DENOISE_NONE = 'None (raw)'
+DENOISE_OPTIONS = [DENOISE_NONE, 'pca', 'wavelet', 'sgolay', 'lowess']
+
+def _denoise_transient(t_ms, cap, method):
+    """Denoised copy of one averaged transient, via the same impdData filters
+    and settings Quick Analysis' denoise option uses (impdData.filter_emissions)."""
+    signal = {'x': t_ms, 'y': cap, 'ymean': cap}
+    if method == 'pca':
+        _, y, _ = iaT.impdData._pca_denoise(signal, index=-1, window_size=100)
+    elif method == 'wavelet':
+        _, y, _ = iaT.impdData._wavelet_denoise(signal, index=-1, wavelet='db4', level=4, mode='soft')
+    elif method == 'sgolay':
+        _, y, _ = iaT.impdData._savitzkyGolay_denoise(signal, index=-1, window_size=None, order=2)
+    elif method == 'lowess':
+        _, y, _ = iaT.impdData._lowess_denoise(signal, index=-1, fraction=None)
+    else:
+        return cap
+    return np.asarray(y, dtype=float)[:len(cap)]
+
+def _prepare_signal_data(data, temps, signal_method, denoise):
+    """Per-temperature record every C(t) read-off in the worker goes through:
+    tc -> (t_ms, cap_used, c_inf, cap_raw, spline). cap_used is the denoised
+    transient (or the raw one for 'None (raw)'); spline is a CubicSpline
+    through cap_used for Smoothed C (None for Measured C / nearest sample),
+    built once here rather than per read-off. cap_raw is kept for the error
+    estimate (see _cap_noise_at)."""
+    out = {}
+    for tc in temps:
+        t_ms, cap, c_inf = data[tc]
+        cap_used = _denoise_transient(t_ms, cap, denoise) if denoise != DENOISE_NONE else cap
+        spline = CubicSpline(t_ms, cap_used) if signal_method == SIGNAL_METHOD_SMOOTHED else None
+        out[tc] = (t_ms, cap_used, c_inf, cap, spline)
+    return out
+
+def _cap_at(rec, tv_ms):
+    """C at time(s) tv_ms from a _prepare_signal_data record: the spline value
+    (Smoothed C), or the nearest measured sample (Measured C). Scalar in,
+    float out; array in, array out."""
+    t_ms, cap, _, _, spline = rec
+    if spline is not None:
+        v = spline(tv_ms)
+    else:
+        i = np.clip(np.searchsorted(t_ms, tv_ms), 1, len(t_ms) - 1)
+        i = np.where(np.abs(t_ms[i - 1] - tv_ms) <= np.abs(t_ms[i] - tv_ms), i - 1, i)
+        v = cap[i]
+    return float(v) if np.ndim(v) == 0 else v
+
+def _cap_noise_at(t_ms, cap, tv_ms, hw=25):
+    """1-sigma sample noise of cap around time tv_ms: the Rice (1984)
+    second-difference estimator over the ±hw samples nearest tv_ms (the same
+    robust estimator _smoothingSpline_peakFinder uses), which ignores the
+    transient's own smooth decay so only the sample-to-sample scatter counts.
+    Always evaluated on the RAW transient, even when a denoised one is used
+    for the values -- the same choice Quick Analysis makes (its yerr is the
+    raw cross-repeat spread regardless of denoising) -- since the residual
+    scatter of an already-smoothed curve would badly understate the error
+    and over-weight the peak and Arrhenius fits."""
+    i = int(np.clip(np.searchsorted(t_ms, tv_ms), 0, len(t_ms) - 1))
+    seg = cap[max(i - hw, 0):i + hw + 1]
+    if len(seg) < 5:
+        return np.nan
+    d2 = seg[:-2] - 2.0 * seg[1:-1] + seg[2:]
+    return float(np.sqrt(np.sum(d2 ** 2) / (6.0 * len(d2))))
+
+def _rate_window_signal(temps, data, t1, t2):
+    """Double-boxcar signal S(T) = (C(t2) - C(t1)) / C_inf for every
+    temperature (data: _prepare_signal_data records), plus its per-point
+    1-sigma error propagated from the raw sample noise at t1 and t2 (C_inf is
+    a many-sample mean, so its error is negligible)."""
+    S, S_err = [], []
+    for tc in temps:
+        rec = data[tc]
+        t_ms, _, c_inf, cap_raw, _ = rec
+        S.append((_cap_at(rec, t2) - _cap_at(rec, t1)) / c_inf)
+        S_err.append(np.hypot(_cap_noise_at(t_ms, cap_raw, t1), _cap_noise_at(t_ms, cap_raw, t2)) / abs(c_inf))
+    return np.array(S), np.array(S_err)
+
+def _valid_errors(err):
+    """err if every entry is a usable (finite, > 0) 1-sigma error, else None."""
+    return err if err is not None and np.all(np.isfinite(err)) and np.all(err > 0) else None
+
+PEAK_METHOD_PARABOLIC = 'Parabolic fit (lmfit)'
+PEAK_METHOD_SPLINE = 'Smoothing Spline (bootstrap)'
+PEAK_METHOD_OPTIONS = [PEAK_METHOD_PARABOLIC, PEAK_METHOD_SPLINE]
+
+def _find_peak(T_arr, S_arr, S_err, method):
+    """Peak temperature and its 1-sigma error, (Tp, Tp_err), by `method`."""
+    if method == PEAK_METHOD_SPLINE:
+        return _find_peak_spline(T_arr, S_arr, S_err)
+    return _find_peak_parabolic(T_arr, S_arr, S_err)
+
+def _find_peak_spline(T_arr, S_arr, S_err):
+    """Peak of a weighted smoothing cubic spline over the whole search range,
+    via Quick Analysis' own iaT.impdData._smoothingSpline_peakFinder, whose
+    Tp error is a parametric-bootstrap estimate (a spline has no parameter
+    covariance). Falls back to the raw grid maximum (no error) if it fails."""
+    try:
+        Tp, _, _, _, Tp_err, _ = iaT.impdData._smoothingSpline_peakFinder(
+            T_arr, S_arr, signalYErr=_valid_errors(S_err))
+    except Exception:
+        return float(T_arr[int(np.argmax(S_arr))]), None
+    return float(Tp), Tp_err
+
+def _find_peak_parabolic(T_arr, S_arr, S_err=None, hw=2):
+    """Sub-grid peak temperature from a parabola fitted (lmfit QuadraticModel,
+    weighted by 1/S_err when per-point errors are available) to the 2*hw+1
+    points around the raw maximum. Returns (Tp, Tp_err), where Tp_err is the
+    vertex's 1-sigma uncertainty propagated from the fit's a/b covariance, or
+    None when it can't be estimated (no residual degrees of freedom, singular
+    covariance, or a fallback to the raw grid maximum).
     """
     ip = int(np.argmax(S_arr))
     lo, hi = max(ip - hw, 0), min(ip + hw + 1, len(T_arr))
@@ -86,9 +198,13 @@ def _find_peak_parabolic(T_arr, S_arr, hw=2):
     # (what np.polyfit did before), but far better conditioned since T ~ 300 K
     # would otherwise make the T^2 term swamp a/b/c's covariance.
     x = T_c - T_ref
+    fitKwargs = {}
+    err_c = _valid_errors(S_err[lo:hi]) if S_err is not None else None
+    if err_c is not None:
+        fitKwargs['weights'] = 1.0 / err_c
     model = QuadraticModel()
     try:
-        result = model.fit(S_c, model.guess(S_c, x=x), x=x)
+        result = model.fit(S_c, model.guess(S_c, x=x), x=x, **fitKwargs)
     except Exception:
         return T_ref, None
     a = result.params['a'].value
@@ -184,7 +300,32 @@ def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cin
 
     return data, sorted(data.keys()), errorMsgs
 
-def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_min_frac=0.05):
+def _fit_arrhenius_line(x, y, Tp, Tp_err):
+    """Error-weighted lmfit LinearModel fit of y = ln(en/T²) vs x = 1000/T.
+
+    Both x and y derive from the same peak temperature Tp, so each point's
+    Tp error moves it along a line rather than purely vertically. That is
+    handled by the effective-variance method: the residual r = y - (m·x + b)
+    changes with T at dr/dT = dy/dT - m·dx/dT = -2/T + 1000·m/T², so each
+    point's effective y error is |dr/dT|·σ_T. It depends on the slope, so the
+    fit is iterated from an unweighted start until the slope settles.
+    Returns (lmfit ModelResult, weighted?) -- unweighted only when the points
+    carry no usable Tp errors (errors then come from the scatter alone).
+    """
+    model = LinearModel()
+    result = model.fit(y, model.guess(y, x=x), x=x)
+    if _valid_errors(Tp_err) is None:
+        return result, False
+    for _ in range(10):
+        m = result.params['slope'].value
+        sig_eff = np.abs(-2.0 / Tp + 1000.0 * m / Tp**2) * Tp_err
+        result = model.fit(y, result.params, x=x, weights=1.0 / sig_eff)
+        if abs(result.params['slope'].value - m) <= 1e-9 * max(abs(m), 1.0):
+            break
+    return result, True
+
+def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_method=PEAK_METHOD_SPLINE,
+                       peak_min_frac=0.05):
     T_K  = np.array([tc + 273.15 for tc in temps])
     mask = (T_K >= t_peak_lo) & (T_K <= t_peak_hi)
     T_m  = T_K[mask]
@@ -193,17 +334,14 @@ def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_m
     rows_detail = []
 
     for (t1, t2) in windows:
-        S_full = np.array([
-            (_cap_at(data[tc][0], data[tc][1], t2) - _cap_at(data[tc][0], data[tc][1], t1)) / data[tc][2]
-            for tc in temps
-        ])
-        S_m = S_full[mask]
+        S_full, S_err_full = _rate_window_signal(temps, data, t1, t2)
+        S_m, S_err_m = S_full[mask], S_err_full[mask]
         if np.max(S_m) < abs(np.min(S_m)):
             S_m = -S_m
         peak_val = np.max(S_m)
         if peak_val <= peak_min_frac * np.max(np.abs(S_full)):
             continue
-        Tp, Tp_err = _find_peak_parabolic(T_m, S_m)
+        Tp, Tp_err = _find_peak(T_m, S_m, S_err_m, peak_method)
         en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
         en_list.append(en); Tp_list.append(Tp); Sp_list.append(peak_val)
         Tp_err_list.append(np.nan if Tp_err is None else Tp_err)
@@ -213,21 +351,29 @@ def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_m
     Tp_arr = np.array(Tp_list)
     Tp_err_arr = np.array(Tp_err_list)   # K, NaN where the peak fit gave no error
     Sp_arr = np.array(Sp_list)
-    if len(en_arr) < 2:
+
+    # Windows whose peak has no error estimate (the peak fell on the edge of
+    # the search range, so only the raw grid maximum is known) can't be
+    # weighted and aren't real sub-grid peak estimates, so they are left out
+    # of the weighted fit (still plotted and listed, marked as excluded) --
+    # unless too few points with errors remain, in which case every point is
+    # fitted unweighted.
+    fit_mask = np.isfinite(Tp_err_arr)
+    if fit_mask.sum() < 3:
+        fit_mask = np.ones(len(en_arr), dtype=bool)
+    if fit_mask.sum() < 2:
         return None
 
     x = 1000.0 / Tp_arr
     y = np.log(en_arr / Tp_arr**2)
-    # Unweighted lmfit LinearModel: same slope/intercept/stderr as the
-    # scipy linregress this replaced, plus the intercept's stderr (for σ).
-    # stderr is only meaningful with residual degrees of freedom, so a
-    # 2-point line reports no error rather than a misleading ~0.
-    linModel = LinearModel()
-    linResult = linModel.fit(y, linModel.guess(y, x=x), x=x)
+    linResult, weighted = _fit_arrhenius_line(x[fit_mask], y[fit_mask], Tp_arr[fit_mask], Tp_err_arr[fit_mask])
     sl, sl_se = linResult.params['slope'].value, linResult.params['slope'].stderr
     ic, ic_se = linResult.params['intercept'].value, linResult.params['intercept'].stderr
-    if len(x) < 3:
-        sl_se = ic_se = None
+    covar = linResult.covar   # [slope, intercept] order, for the plot's confidence band
+    # stderr is only meaningful with residual degrees of freedom, so a
+    # 2-point line reports no error rather than a misleading ~0.
+    if fit_mask.sum() < 3:
+        sl_se = ic_se = covar = None
     kB       = 8.617333e-5
     Et       = -sl * 1000.0 * kB
     Et_se    = sl_se * 1000.0 * kB if sl_se is not None else None
@@ -235,8 +381,10 @@ def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_m
     sigma_se = sigma * ic_se if ic_se is not None else None   # dσ = σ·d(intercept)
     R2       = float(linResult.rsquared)
     return dict(en_arr=en_arr, Tp_arr=Tp_arr, Tp_err_arr=Tp_err_arr, Sp_arr=Sp_arr,
-                Et=Et, Et_se=Et_se, sigma=sigma, sigma_se=sigma_se, R2=R2, N=len(en_arr),
-                slope=sl, slope_se=sl_se, intercept=ic, intercept_se=ic_se,
+                Et=Et, Et_se=Et_se, sigma=sigma, sigma_se=sigma_se, R2=R2,
+                N=int(fit_mask.sum()), N_excluded=int((~fit_mask).sum()), fit_mask=fit_mask,
+                weighted=weighted, redchi=float(linResult.redchi), peak_method=peak_method,
+                slope=sl, slope_se=sl_se, intercept=ic, intercept_se=ic_se, covar=covar,
                 x=x, y=y, detail=rows_detail)
 
 def _prepare_spectra(mw, temps, data, n_spectra):
@@ -245,10 +393,7 @@ def _prepare_spectra(mw, temps, data, n_spectra):
     spectra = []
     for k in idx_show:
         t1, t2 = mw[k]
-        S = np.array([
-            (_cap_at(data[tc][0], data[tc][1], t2) - _cap_at(data[tc][0], data[tc][1], t1)) / data[tc][2] * 1e3
-            for tc in temps
-        ])
+        S = np.array([(_cap_at(data[tc], t2) - _cap_at(data[tc], t1)) / data[tc][2] * 1e3 for tc in temps])
         en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
         spectra.append((int(k), t1, t2, en, S))
     return spectra
@@ -273,12 +418,11 @@ def _prepare_transient_map(temps, data, rb_ms):
 
     Z = np.empty((len(t_ms), len(temps)))
     for j, tc in enumerate(temps):
-        t_j, cap_j, cinf_j = data[tc]
+        cinf_j = data[tc][2]
         if abs(cinf_j) < 1e-30:
             Z[:, j] = 0.0
             continue
-        cap_interp = np.interp(t_ms, t_j, cap_j)
-        Z[:, j] = (cap_interp - cinf_j) / cinf_j
+        Z[:, j] = (_cap_at(data[tc], t_ms) - cinf_j) / cinf_j
 
     Z_disp = Z * 1e5
 
@@ -304,10 +448,10 @@ def _prepare_rate_window_map(temps, data, t1_min, t1_max, ratio):
         en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
         for j, tc in enumerate(temps):
             T = T_K[j]
-            t_ms, cap, cinf = data[tc]
+            cinf = data[tc][2]
             if abs(cinf) < 1e-30:
                 continue
-            S = (np.interp(t2, t_ms, cap) - np.interp(t1, t_ms, cap)) / cinf
+            S = (_cap_at(data[tc], t2) - _cap_at(data[tc], t1)) / cinf
             nt_nd = 2.0 * abs(S)
             if nt_nd < 1e-8:
                 continue
@@ -345,19 +489,20 @@ def _compute_detailed_analysis(data, temps, p):
     _get_detailed_executor), so it must stay a pure, picklable top-level
     function with no Tk/dltsc access. Raises ValueError on unusable input.
     """
+    # Denoise / read-off method applied once, up front, so every downstream
+    # quantity (peaks, spectra, both maps, Nt) sees the same C(t).
+    data = _prepare_signal_data(data, temps, p['signalMethod'], p['denoise'])
+
     t1Arr = np.logspace(np.log10(p['t1Min']), np.log10(p['t1Max']), p['nWin'])
     mw = [(float(t1), float(p['ratio'] * t1)) for t1 in t1Arr]
 
-    resMw = _compute_arrhenius(mw, temps, data, p['gamma'], p['tpLo'], p['tpHi'])
-    resStd = _compute_arrhenius(p['stdWins'], temps, data, p['gamma'], p['tpLo'], p['tpHi'])
+    resMw = _compute_arrhenius(mw, temps, data, p['gamma'], p['tpLo'], p['tpHi'], p['peakMethod'])
+    resStd = _compute_arrhenius(p['stdWins'], temps, data, p['gamma'], p['tpLo'], p['tpHi'], p['peakMethod'])
     if resMw is None:
         raise ValueError('Multi-window: no peaks found. Check t1 range and temperature bounds.')
 
     T_K = np.array([tc + 273.15 for tc in temps])
-    S_ref = np.array([
-        (_cap_at(data[tc][0], data[tc][1], p['rbMs']) - _cap_at(data[tc][0], data[tc][1], 2.0)) / data[tc][2]
-        for tc in temps
-    ])
+    S_ref = np.array([(_cap_at(data[tc], p['rbMs']) - _cap_at(data[tc], 2.0)) / data[tc][2] for tc in temps])
     Nt = 2.0 * float(np.nanmax(np.abs(S_ref))) * p['nd']
 
     return dict(
@@ -506,6 +651,9 @@ def _detailed_run_analysis():
         nd=dltsc.detailed_ndVar.get(),
         tpLo=dltsc.detailed_tpeakLoVar.get(),
         tpHi=dltsc.detailed_tpeakHiVar.get(),
+        peakMethod=dltsc.detailed_peakMethodVar.get(),
+        signalMethod=dltsc.detailed_signalMethodVar.get(),
+        denoise=dltsc.detailed_denoiseVar.get(),
         rbMs=dltsc.detailed_rbMsVar.get(),
         showStd=dltsc.detailed_stdWinsVar.get(),
         showSpectra=dltsc.detailed_showSpectraVar.get(),
@@ -537,7 +685,7 @@ def _detailed_run_analysis():
             # was already computed in the worker process.
             resMw, resStd, Nt = out['resMw'], out['resStd'], out['Nt']
             _detailed_plot(out, params)
-            _detailed_write_results(resMw, resStd, Nt)
+            _detailed_write_results(resMw, resStd, Nt, params)
 
             dltsc.detailed_lastResMw = resMw
             dltsc.detailed_lastResStd = resStd
@@ -632,6 +780,10 @@ def _detailed_plot(out, params):
     dltsc.detailed_ax3 = ax3; dltsc.detailed_ax4 = ax4
     for ax in filter(None, [ax1, ax2, ax3]):
         ax.set_facecolor(SURFACE)
+    # Square-ish panels regardless of the canvas' aspect (constrained layout
+    # centers each box in its cell); twin axes such as ax1's °C axis follow.
+    for ax in filter(None, [ax1, ax2, ax3, ax4]):
+        ax.set_box_aspect(0.9)
 
     # ── Arrhenius panel ───────────────────────────────────────────────────
     x_all = np.concatenate([res_mw['x'], res_std['x'] if res_std else res_mw['x']])
@@ -639,13 +791,13 @@ def _detailed_plot(out, params):
     x_hi  = x_all.max() * 1.03
     x_line = np.linspace(x_lo, x_hi, 400)
 
+    # 2-sigma confidence band of the (weighted) fit line, straight from its
+    # slope/intercept covariance: var(y) = var_m·x² + var_b + 2·x·cov_mb.
     y_lm = res_mw['slope'] * x_line + res_mw['intercept']
-    xmw  = res_mw['x']; n_mw = len(xmw); xb = xmw.mean()
-    Sxx  = ((xmw - xb) ** 2).sum()
-    ss   = np.sum((res_mw['y'] - (res_mw['slope'] * xmw + res_mw['intercept'])) ** 2)
-    se_y = np.sqrt(ss / max(n_mw - 2, 1))
-    half = 2.0 * se_y * np.sqrt(1 / n_mw + (x_line - xb) ** 2 / Sxx)
-    ax1.fill_between(x_line, y_lm - half, y_lm + half, color=C0, alpha=0.13, zorder=1)
+    cv = res_mw['covar']
+    if cv is not None:
+        half = 2.0 * np.sqrt(np.maximum(cv[0, 0] * x_line**2 + cv[1, 1] + 2.0 * cv[0, 1] * x_line, 0.0))
+        ax1.fill_between(x_line, y_lm - half, y_lm + half, color=C0, alpha=0.13, zorder=1)
     ax1.plot(x_line, y_lm, color=C0, lw=2.0, zorder=3,
              label=(f'Multi ({res_mw["N"]} win)  Et={_fmt_pm(res_mw["Et"], res_mw["Et_se"], ".3f")} eV  '
                     f'R²={res_mw["R2"]:.4f}'))
@@ -662,23 +814,30 @@ def _detailed_plot(out, params):
 
     cmap_arr = plt.cm.plasma
     norm_arr = Normalize(np.log10(res_mw['en_arr'].min()), np.log10(res_mw['en_arr'].max()))
-    sc = ax1.scatter(res_mw['x'], res_mw['y'], c=np.log10(res_mw['en_arr']),
+    fm = res_mw['fit_mask']
+    sc = ax1.scatter(res_mw['x'][fm], res_mw['y'][fm], c=np.log10(res_mw['en_arr'][fm]),
                      cmap=cmap_arr, norm=norm_arr, s=55, zorder=4, edgecolors=C0, lw=0.5)
+    if (~fm).any():
+        ax1.scatter(res_mw['x'][~fm], res_mw['y'][~fm], marker='x', s=45, color=TEXT_MUT, lw=1.2, zorder=4,
+                    label='Excluded (peak at range edge, no Tp error)')
     cb = fig.colorbar(sc, ax=ax1, pad=0.01, fraction=0.025, aspect=28)
     cb.set_label('log₁₀ eₙ  (s⁻¹)', fontsize=8, color=TEXT_SEC)
     cb.ax.tick_params(labelsize=7.5, colors=TEXT_MUT)
     cb.outline.set_edgecolor(BASELINE)
 
     res_txt = (
-        f'Multi-window  ({res_mw["N"]} pts)\n'
+        f'Multi-window  ({res_mw["N"]} pts, {"Tp-error weighted" if res_mw["weighted"] else "unweighted"})\n'
         f'Et = {_fmt_pm(res_mw["Et"], res_mw["Et_se"], ".3f")} eV\n'
         f'σⁿ = {_fmt_pm(res_mw["sigma"], res_mw["sigma_se"], ".2e")} cm²\n'
         f'Nt = {Nt:.2e} cm⁻³\n'
         f'R² = {res_mw["R2"]:.4f}'
+        + (f'   χ²ᵣ = {res_mw["redchi"]:.2f}' if res_mw['weighted'] else '')
     )
+    # Lower-left: the Arrhenius line runs top-left to bottom-right, so this
+    # corner stays clear of both the data and the upper-right legend.
     ann_box = ax1.annotate(
-        res_txt, xy=(0.42, 0.98), xycoords='axes fraction', xytext=(0.42, 0.98), textcoords='axes fraction',
-        fontsize=8, va='top', ha='left', color=TEXT_PRI, fontfamily='monospace', annotation_clip=False,
+        res_txt, xy=(0.02, 0.02), xycoords='axes fraction', xytext=(0.02, 0.02), textcoords='axes fraction',
+        fontsize=8, va='bottom', ha='left', color=TEXT_PRI, fontfamily='monospace', annotation_clip=False,
         bbox=dict(boxstyle='round,pad=0.45', facecolor='#fffbe6', edgecolor=GRIDLINE, alpha=0.96))
     dltsc.detailed_annBox = ann_box
     _pending_drags.append(('annot', ann_box))
@@ -796,7 +955,7 @@ def _detailed_arrhenius_errorbars(ax, res, color):
     """Error bars on the Arrhenius points from each window's peak-fit Tp
     error: x = 1000/T so dx = 1000·dT/T²; y = ln(en/T²) so dy = 2·dT/T.
     Only windows whose peak fit produced an error get a bar."""
-    ok = np.isfinite(res['Tp_err_arr'])
+    ok = np.isfinite(res['Tp_err_arr']) & res['fit_mask']
     if not ok.any():
         return
     Tp, dT = res['Tp_arr'][ok], res['Tp_err_arr'][ok]
@@ -1008,7 +1167,8 @@ def _detailed_style_rwm_axes(ax):
     """Apply black-background axis styling for the Rate-Window map."""
     ax.set_xlabel('1/kT  (eV⁻¹)', fontsize=10, labelpad=12)
     ax.set_ylabel('T²/eₙ  (K²s)', fontsize=10, labelpad=14)
-    ax.set_title('Rate-Window Analysis Map', fontsize=11, color='white', fontweight='bold', pad=8)
+    # Title sits outside the black axes, on the light figure background.
+    ax.set_title('Rate-Window Analysis Map', fontsize=11, color=TEXT_PRI, fontweight='bold', pad=8)
     ax.xaxis.label.set_color('white')
     ax.yaxis.label.set_color('white')
     ax.tick_params(axis='both', which='both', colors='white', labelcolor='white',
@@ -1133,22 +1293,33 @@ def _detailed_open_label_editor():
 
 
 #---------------------RESULTS TEXT-------------------------#
-def _detailed_write_results(res_mw, res_std, Nt):
+def _detailed_write_results(res_mw, res_std, Nt, params):
     lines = []
-    lines.append('=' * 60)
+    lines.append('=' * 55)
     lines.append('  DLTS Multiwindow Analysis  —  Results')
-    lines.append('=' * 60)
+    lines.append('=' * 55)
     lines.append('')
-    # All +/- values are 1-sigma standard errors from the lmfit fits
-    # (Arrhenius line: slope -> Et, intercept -> sn; per-window parabolic
-    # peak fit -> Tpeak). Omitted where a fit had no residual degrees of freedom.
+    # All +/- values are 1-sigma standard errors: Tpeak from the per-window
+    # peak fit (parabola covariance, or spline bootstrap), weighted by each
+    # point's sample-noise error; Et/sn from the Arrhenius line fit weighted
+    # by those Tpeak errors (effective variance). Omitted where a fit had no
+    # residual degrees of freedom.
     def fit_block(res):
-        return [f'    Et   = {_fmt_pm(res["Et"], res["Et_se"], ".4f", " +/- ")} eV',
-                f'    sn   = {_fmt_pm(res["sigma"], res["sigma_se"], ".3e", " +/- ")} cm2',
-                f'    slope     = {_fmt_pm(res["slope"], res["slope_se"], ".4f", " +/- ")} K',
-                f'    intercept = {_fmt_pm(res["intercept"], res["intercept_se"], ".4f", " +/- ")}',
-                f'    R2   = {res["R2"]:.5f}']
+        lines_ = [f'    fit  : {"weighted by Tpeak errors" if res["weighted"] else "UNWEIGHTED (no Tpeak errors)"}'
+                  + (f', {res["N_excluded"]} window(s) excluded' if res['N_excluded'] else ''),
+                  f'    Et   = {_fmt_pm(res["Et"], res["Et_se"], ".4f", " +/- ")} eV',
+                  f'    sn   = {_fmt_pm(res["sigma"], res["sigma_se"], ".3e", " +/- ")} cm2',
+                  f'    slope     = {_fmt_pm(res["slope"], res["slope_se"], ".4f", " +/- ")} K',
+                  f'    intercept = {_fmt_pm(res["intercept"], res["intercept_se"], ".4f", " +/- ")}',
+                  f'    R2   = {res["R2"]:.5f}']
+        if res['weighted']:
+            lines_.append(f'    red. chi2 = {res["redchi"]:.3f}')
+        return lines_
 
+    lines.append(f'  Signal     : {params["signalMethod"]}')
+    lines.append(f'  Denoise    : {params["denoise"]}')
+    lines.append(f'  Peak method: {res_mw["peak_method"]}')
+    lines.append('')
     lines.append(f'  Multi-window  ({res_mw["N"]} windows)')
     lines.extend(fit_block(res_mw))
     lines.append(f'    Nt   ~ {Nt:.3e} cm-3')
@@ -1163,9 +1334,9 @@ def _detailed_write_results(res_mw, res_std, Nt):
     lines.append('  Window detail  (multi):')
     lines.append(f'  {"t1(ms)":>8}  {"t2(ms)":>8}  {"en(s-1)":>10}  {"Tpeak(C)":>10}  {"+/-(K)":>7}')
     lines.append('  ' + '-' * 53)
-    for t1, t2, en, tp, tp_err, sp in res_mw['detail']:
+    for (t1, t2, en, tp, tp_err, sp), used in zip(res_mw['detail'], res_mw['fit_mask']):
         err_txt = f'{tp_err:7.2f}' if tp_err is not None else f'{"n/a":>7}'
-        lines.append(f'  {t1:8.1f}  {t2:8.1f}  {en:10.2f}  {tp:10.2f}  {err_txt}')
+        lines.append(f'  {t1:8.1f}  {t2:8.1f}  {en:10.2f}  {tp:10.2f}  {err_txt}' + ('' if used else '  excl.'))
 
     text = '\n'.join(lines)
     if dltsc.detailed_resultsText is not None:
@@ -1252,50 +1423,61 @@ def construct_detailedAnalysisTab():
     ttk.Label(headerFrame, text='  (DLTS Multiwindow Analysis — ZI MFIA temperature sweep)',
              foreground=TEXT_SEC).pack(side='left')
 
-    # Main paned window: scrollable control column (left) + figure/results (right),
-    # matching DLTS_APP.py's own layout.
+    # Main paned window: narrow scrollable control column (left), figure
+    # (middle, gets all extra width), results text (right) -- results beside
+    # rather than under the figure so the figure keeps the full tab height,
+    # which is what lets its panels stay close to square.
     paned = ttk.PanedWindow(parent, orient='horizontal')
     paned.grid(row=1, column=0, sticky='nsew', padx=4, pady=(0, 4))
 
-    ctrl_outer = tk.Frame(paned, bg=CTRL_BG, width=310)
+    ctrl_outer = tk.Frame(paned, bg=CTRL_BG, width=295)
     ctrl_outer.pack_propagate(False)
     paned.add(ctrl_outer, weight=0)
 
-    canvas_ctrl = tk.Canvas(ctrl_outer, bg=CTRL_BG, highlightthickness=0, width=300)
+    canvas_ctrl = tk.Canvas(ctrl_outer, bg=CTRL_BG, highlightthickness=0, width=278)
     vscroll = ttk.Scrollbar(ctrl_outer, orient='vertical', command=canvas_ctrl.yview)
     canvas_ctrl.configure(yscrollcommand=vscroll.set)
     vscroll.pack(side='right', fill='y')
     canvas_ctrl.pack(side='left', fill='both', expand=True)
 
     ctrl = tk.Frame(canvas_ctrl, bg=CTRL_BG, padx=10, pady=8)
-    canvas_ctrl.create_window((0, 0), window=ctrl, anchor='nw')
+    ctrl_window = canvas_ctrl.create_window((0, 0), window=ctrl, anchor='nw')
     ctrl.bind('<Configure>', lambda e: canvas_ctrl.configure(scrollregion=canvas_ctrl.bbox('all')))
+    # Stretch the controls to the column's full width (entries/spinboxes fill
+    # the extra room) instead of staying at their natural, narrower width.
+    canvas_ctrl.bind('<Configure>', lambda e: canvas_ctrl.itemconfigure(ctrl_window, width=e.width))
     canvas_ctrl.bind('<Enter>', lambda e: canvas_ctrl.bind_all(
         '<MouseWheel>', lambda ev: canvas_ctrl.yview_scroll(int(-1 * (ev.delta / 120)), 'units')))
     canvas_ctrl.bind('<Leave>', lambda e: canvas_ctrl.unbind_all('<MouseWheel>'))
 
-    right = tk.Frame(paned, bg=CTRL_BG)
-    paned.add(right, weight=1)
+    middle = tk.Frame(paned, bg=CTRL_BG)
+    paned.add(middle, weight=1)
 
-    dltsc.detailed_figFrame = tk.Frame(right, bg=CTRL_BG)
+    dltsc.detailed_statusLabel = ttk.Label(middle, text='Load a data folder to begin.')
+    dltsc.detailed_statusLabel.pack(side='bottom', fill='x', padx=6, pady=(0, 4))
+
+    dltsc.detailed_figFrame = tk.Frame(middle, bg=CTRL_BG)
     dltsc.detailed_figFrame.pack(fill='both', expand=True)
 
-    results_frame = tk.LabelFrame(right, text=' Results ', bg=CTRL_BG, fg=TEXT_SEC, font=('Consolas', 9))
-    results_frame.pack(fill='x', padx=6, pady=(0, 4))
+    # Results column: sized for the window-detail table (only the trailing
+    # 'excl.' marker of an excluded row needs the horizontal scroll), no
+    # wrapping so table columns stay aligned.
+    results_frame = tk.LabelFrame(paned, text=' Results ', bg=CTRL_BG, fg=TEXT_SEC, font=('Consolas', 9))
+    paned.add(results_frame, weight=0)
     resultsInner = tk.Frame(results_frame, bg=CTRL_BG)
     resultsInner.pack(fill='both', expand=True, padx=4, pady=4)
     resultsScroll = ttk.Scrollbar(resultsInner, orient='vertical')
+    resultsXScroll = ttk.Scrollbar(resultsInner, orient='horizontal')
     dltsc.detailed_resultsText = tk.Text(
-        resultsInner, height=8, font=('Consolas', 9),
+        resultsInner, width=57, font=('Consolas', 9),
         bg='#1e1e2e', fg='#cdd6f4', insertbackground='white',
-        state='disabled', wrap='word', relief='flat',
-        yscrollcommand=resultsScroll.set)
+        state='disabled', wrap='none', relief='flat',
+        yscrollcommand=resultsScroll.set, xscrollcommand=resultsXScroll.set)
     resultsScroll.config(command=dltsc.detailed_resultsText.yview)
-    dltsc.detailed_resultsText.pack(side='left', fill='both', expand=True)
+    resultsXScroll.config(command=dltsc.detailed_resultsText.xview)
+    resultsXScroll.pack(side='bottom', fill='x')
     resultsScroll.pack(side='right', fill='y')
-
-    dltsc.detailed_statusLabel = ttk.Label(right, text='Load a data folder to begin.')
-    dltsc.detailed_statusLabel.pack(fill='x', padx=6, pady=(0, 4))
+    dltsc.detailed_resultsText.pack(side='left', fill='both', expand=True)
 
     # ── local UI-building helpers (construction-time only, mirrors DLTS_APP.py's
     # DLTSApp._section/_row/_spinbox, now closures over `ctrl` instead of methods) ──
@@ -1306,7 +1488,7 @@ def construct_detailedAnalysisTab():
     def row(label, widget_factory, **kw):
         f = tk.Frame(ctrl, bg=CTRL_BG)
         f.pack(fill='x', pady=2)
-        tk.Label(f, text=label, bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9), width=18, anchor='w').pack(side='left')
+        tk.Label(f, text=label, bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9), width=15, anchor='w').pack(side='left')
         w = widget_factory(f, **kw)
         w.pack(side='left', fill='x', expand=True)
         return w
@@ -1359,6 +1541,17 @@ def construct_detailedAnalysisTab():
         lambda p, **k: spinbox(p, dltsc.detailed_gammaVar, 1e20, 1e22, 1e20, '%.2e'))
     row('Nᵈ (cm⁻³)', lambda p, **k: spinbox(p, dltsc.detailed_ndVar, 1e12, 1e17, 1e13, '%.2e'))
 
+    # ── DLTS signal calculation (same options as Quick Analysis) ──────────
+    section('DLTS Signal Calculation')
+    dltsc.detailed_signalMethodVar = tk.StringVar(value=SIGNAL_METHOD_MEASURED)
+    tk.Label(ctrl, text='Method:', bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9), anchor='w').pack(fill='x')
+    ttk.Combobox(ctrl, textvariable=dltsc.detailed_signalMethodVar, values=SIGNAL_METHOD_OPTIONS,
+                 state='readonly', font=('Segoe UI', 9)).pack(fill='x', pady=2)
+    dltsc.detailed_denoiseVar = tk.StringVar(value=DENOISE_NONE)
+    tk.Label(ctrl, text='Denoise:', bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9), anchor='w').pack(fill='x')
+    ttk.Combobox(ctrl, textvariable=dltsc.detailed_denoiseVar, values=DENOISE_OPTIONS,
+                 state='readonly', font=('Segoe UI', 9)).pack(fill='x', pady=2)
+
     # ── Peak search range ─────────────────────────────────────────────────
     section('Peak Search Range')
     dltsc.detailed_tpeakLoVar = tk.DoubleVar(value=250.0)
@@ -1366,6 +1559,17 @@ def construct_detailedAnalysisTab():
 
     row('T min (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakLoVar, 100, 350, 5))
     row('T max (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakHiVar, 200, 600, 5))
+
+    # Both methods give each window's Tpeak a 1-sigma error (parabola
+    # covariance / spline bootstrap), which then weights the Arrhenius fit.
+    # Spline is the default: checked against synthetic sweeps with a known
+    # Et over repeated noise realizations, its Et errors matched the actual
+    # scatter (pull RMS ~0.9), while the 5-point parabola's (only 2 residual
+    # degrees of freedom per window) underestimated it ~2.5x (pull RMS ~2.8).
+    dltsc.detailed_peakMethodVar = tk.StringVar(value=PEAK_METHOD_SPLINE)
+    tk.Label(ctrl, text='Peak method:', bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9), anchor='w').pack(fill='x')
+    ttk.Combobox(ctrl, textvariable=dltsc.detailed_peakMethodVar, values=PEAK_METHOD_OPTIONS,
+                 state='readonly', font=('Segoe UI', 9)).pack(fill='x', pady=2)
 
     # ── Multi-window parameters ───────────────────────────────────────────
     section('Multi-Window Parameters')

@@ -204,6 +204,9 @@ detailed_gammaVar = None
 detailed_ndVar = None
 detailed_tpeakLoVar = None
 detailed_tpeakHiVar = None
+detailed_peakMethodVar = None # tk.StringVar: per-window peak finder -- lmfit parabola or smoothing spline
+detailed_signalMethodVar = None # tk.StringVar: C(t) read-off -- nearest measured sample / spline-interpolated
+detailed_denoiseVar = None    # tk.StringVar: 'None (raw)' / pca / wavelet / sgolay / lowess, applied per transient
 detailed_nWinVar = None
 detailed_t1MinVar = None
 detailed_t1MaxVar = None
@@ -388,6 +391,9 @@ def init():
     global detailed_ndVar
     global detailed_tpeakLoVar
     global detailed_tpeakHiVar
+    global detailed_peakMethodVar
+    global detailed_signalMethodVar
+    global detailed_denoiseVar
     global detailed_nWinVar
     global detailed_t1MinVar
     global detailed_t1MaxVar
