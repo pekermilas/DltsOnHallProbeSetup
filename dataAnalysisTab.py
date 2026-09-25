@@ -3,16 +3,24 @@ import tkinter as tk
 from tkinter import ttk
 
 import numpy as np
-from lmfit.models import LinearModel
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 import dltsConfig as dltsc
 import impedanceAnalysis_Tools as iaT
+import detailedAnalysisTab as dA   # shares its raw-transient noise estimate and Arrhenius line fit
 
 # Physical constants for defect property conversions, ported from DrKayisScript.py.
 K_BOLTZMANN = 8.617333262145e-5   # eV / K
-C_CONSTANT_SI = 3.256e21          # Pre-factor mapping T^2 emission tracking for Si
+# Default emission pre-factor gamma (cm^-2 s^-1 K^-2) for sigma = exp(intercept)/gamma.
+# Was fixed at DrKayisScript.py's silicon value (3.256e21); now a user input,
+# defaulting to the SiC value Detailed Analysis also uses.
+DEFAULT_GAMMA = '1.66e21'
+
+# Default peak-search temperature bounds (K), matching Detailed Analysis'
+# own defaults. Blank = no bound on that side.
+DEFAULT_TPEAK_LO = '250.0'
+DEFAULT_TPEAK_HI = '400.0'
 
 # Requested height (px) of the scrollable controls area under BOTH plots.
 # Shared so the two side-by-side frames request identical heights and, with
@@ -280,6 +288,21 @@ def _calculate_rate_windows():
     denoiseChoice = dltsc.rateWindow_denoiseVar.get() if dltsc.rateWindow_denoiseVar is not None else DENOISE_NONE
     peakMethod = dltsc.rateWindow_peakMethodVar.get() if dltsc.rateWindow_peakMethodVar is not None else PEAK_METHOD_SPLINE
 
+    # Peak-search temperature range (K). Features outside it (other traps,
+    # the sweep's edges) otherwise pull the spline/curve fit away from the
+    # peak of interest. Blank = unbounded on that side.
+    try:
+        tpLoText = dltsc.rateWindow_tpLoVar.get().strip() if dltsc.rateWindow_tpLoVar is not None else ''
+        tpHiText = dltsc.rateWindow_tpHiVar.get().strip() if dltsc.rateWindow_tpHiVar is not None else ''
+        tpLo = float(tpLoText) if tpLoText else -np.inf
+        tpHi = float(tpHiText) if tpHiText else np.inf
+    except ValueError:
+        dltsc.log_to_textbox("Rate window analysis: Tp search range bounds must be numeric (or blank).")
+        return
+    if tpHi <= tpLo:
+        dltsc.log_to_textbox("Rate window analysis: Tp search range upper bound must exceed the lower bound.")
+        return
+
     dltsc.rateWindow_ax.clear()
     dltsc.rateWindow_signals = dict()
     dltsc.rateWindow_extractedPeaks = dict()
@@ -304,9 +327,17 @@ def _calculate_rate_windows():
         if signalMethod == SIGNAL_METHOD_MEASURED and impd is None:
             # Qualitative Analysis (or Auto resolving to it): no impdData
             # instance behind it, so read the nearest measured sample
-            # straight off the ensemble-averaged transient -- no error bars,
-            # since there's no per-repeat spread to propagate from.
-            dltsProfile = []
+            # straight off the ensemble-averaged transient. There's no
+            # per-repeat spread to propagate, so each point's error is the
+            # averaged transient's own sample noise around t1 and t2 (Rice
+            # second-difference estimate, via Detailed Analysis'
+            # _cap_noise_at). Without it the peak finders fell back to
+            # estimating noise from S(T)'s roughness across temperature --
+            # which on a ~5 K grid mostly measures the peak's own curvature,
+            # overestimating the noise ~10x, so the spline oversmoothed and
+            # biased T_peak by up to ~2 K (see the Quick vs Detailed
+            # Arrhenius comparison).
+            dltsProfile, dltsProfileErr = [], []
             validTempsK = []
             for tC in temperaturesC:
                 data = processedTransients[tC]
@@ -319,10 +350,13 @@ def _calculate_rate_windows():
 
                 signal = (cAxis[idx2] - cAxis[idx1]) / cInf
                 dltsProfile.append(signal)
+                dltsProfileErr.append(np.hypot(dA._cap_noise_at(tAxis, cAxis, t1),
+                                               dA._cap_noise_at(tAxis, cAxis, t2)) / abs(cInf))
                 validTempsK.append(tC + 273.15)
 
             y = np.array(dltsProfile, dtype=np.float64)
             x = np.array(validTempsK, dtype=np.float64)
+            yErr = dA._valid_errors(np.array(dltsProfileErr, dtype=np.float64))
         else:
             # Measured C backed by a live impdData instance (Live/Offline), or
             # Smoothed C (always Live/Offline). emissionIndex=-1: the ensemble
@@ -352,21 +386,31 @@ def _calculate_rate_windows():
             # inside impd.dataEmissions.
             dltsc.rateWindow_denoisedEmissions = {T: dict(rec) for T, rec in impd.dataEmissions.items()}
 
-        maxIdx = int(np.argmax(np.abs(y)))
+        # Peak finding only sees the points inside the Tp search range; the
+        # full curve is still stored and plotted.
+        inRange = (x >= tpLo) & (x <= tpHi)
+        if inRange.sum() < 4:
+            dltsc.log_to_textbox(
+                f"Rate window analysis: Window Set {i + 1}: fewer than 4 temperatures inside the "
+                f"Tp search range; widen it.")
+            return
+        xPk, yPk = x[inRange], y[inRange]
+        yErrPk = yErr[inRange] if yErr is not None else None
+        maxIdx = int(np.argmax(np.abs(yPk)))
 
         try:
             curveType = PEAK_METHOD_CURVETYPE.get(peakMethod)
             if curveType is not None:
-                result = iaT.impdData._curveFit_peakFinder(x, y, curveType=curveType, signalYErr=yErr)
+                result = iaT.impdData._curveFit_peakFinder(xPk, yPk, curveType=curveType, signalYErr=yErrPk)
             else:
-                result = iaT.impdData._smoothingSpline_peakFinder(x, y, signalYErr=yErr)
+                result = iaT.impdData._smoothingSpline_peakFinder(xPk, yPk, signalYErr=yErrPk)
             if result == -1:
                 raise ValueError("peak finder reported no data")
             tPeak, sPeak, xFit, yFit, tPeakErr, sPeakErr = result
             dltsc.rateWindow_ax.plot(xFit, yFit, '--', alpha=0.5, label=f'Fit {i + 1}')
         except Exception as exc:
             dltsc.log_to_textbox(f"Rate window analysis: Window Set {i + 1} fit failed ({exc}); using raw extremum.")
-            tPeak, sPeak = x[maxIdx], y[maxIdx]
+            tPeak, sPeak = xPk[maxIdx], yPk[maxIdx]
             tPeakErr = sPeakErr = None
 
         dltsc.rateWindow_signals[i] = {'T_k': x, 'Signal': y, 'Signal_err': yErr}
@@ -390,6 +434,9 @@ def _calculate_rate_windows():
         else:
             dltsc.rateWindow_ax.plot(tPeak, sPeak, 'kx', markersize=10)
 
+    for bound in (tpLo, tpHi):
+        if np.isfinite(bound):
+            dltsc.rateWindow_ax.axvline(bound, color='gray', linestyle=':', linewidth=1.0)
     dltsc.rateWindow_ax.set_xlabel('Temperature (K)')
     dltsc.rateWindow_ax.set_ylabel('DLTS Signal (ΔC / C∞)')
     dltsc.rateWindow_ax.set_title(f'Multi-Window DLTS Signal Spectrum ({peakMethod})')
@@ -510,6 +557,14 @@ def _build_rateWindowFrame(parent):
     dltsc.rateWindow_peakMethodVar = tk.StringVar(value=PEAK_METHOD_SPLINE)
     ttk.Combobox(methodGroup, textvariable=dltsc.rateWindow_peakMethodVar, values=PEAK_METHOD_OPTIONS,
                 state='readonly', width=24).pack(fill='x', padx=4, pady=4)
+    ttk.Label(methodGroup, text='Tp search range (K, blank = no bound):').pack(anchor='w', padx=4, pady=(0, 0))
+    rangeFrame = tk.Frame(methodGroup)
+    rangeFrame.pack(fill='x', padx=4, pady=(0, 4))
+    dltsc.rateWindow_tpLoVar = tk.StringVar(value=DEFAULT_TPEAK_LO)
+    dltsc.rateWindow_tpHiVar = tk.StringVar(value=DEFAULT_TPEAK_HI)
+    ttk.Entry(rangeFrame, textvariable=dltsc.rateWindow_tpLoVar, width=8).pack(side='left')
+    ttk.Label(rangeFrame, text=' to ').pack(side='left')
+    ttk.Entry(rangeFrame, textvariable=dltsc.rateWindow_tpHiVar, width=8).pack(side='left')
 
     # --- Configure Rate Windows (Double Boxcar) ---
     # 2 sets per row (not one set per row) -- halves this group's height, which
@@ -572,6 +627,14 @@ def _run_arrhenius_solver():
         dltsc.log_to_textbox("Arrhenius solver: Background Doping (Nd) must be a valid positive number.")
         return
 
+    try:
+        gamma = float(dltsc.arrhenius_gammaVar.get().strip())
+        if gamma <= 0:
+            raise ValueError()
+    except ValueError:
+        dltsc.log_to_textbox("Arrhenius solver: Emission pre-factor γ must be a valid positive number.")
+        return
+
     # Propagate each rate window's T_peak uncertainty -- from lmfit's fitted-
     # parameter covariance for a curve-fit peak method, or from
     # _smoothingSpline_peakFinder()'s bootstrap estimate for the smoothing
@@ -579,12 +642,15 @@ def _run_arrhenius_solver():
     # y = ln(e_n/T^2) = ln(e_n) - 2*ln(T) so dy = 2*dT/T.
     xInvT, xInvTErr = [], []
     yLnEnT2, yLnEnT2Err = [], []
+    tPeaks, tPeakErrs = [], []
     signalsMax, signalsMaxErr = [], []
     for i in sorted(dltsc.rateWindow_extractedPeaks.keys()):
         peak = dltsc.rateWindow_extractedPeaks[i]
         tK = peak['T_peak']
         eN = peak['e_n']
         tKErr = peak.get('T_peak_err')
+        tPeaks.append(tK)
+        tPeakErrs.append(tKErr if tKErr is not None else np.nan)
 
         xInvT.append(1000.0 / tK)
         yLnEnT2.append(np.log(eN / (tK ** 2)))
@@ -600,29 +666,31 @@ def _run_arrhenius_solver():
     xInvTErrArr = np.array(xInvTErr, dtype=np.float64) if haveXErr else None
     yLnEnT2ErrArr = np.array(yLnEnT2Err, dtype=np.float64) if haveYErr else None
 
-    # Deviating from DrKayisScript.py's scipy curve_fit: lmfit's LinearModel is
-    # used here (and for the rate-window curve-fit peak method above), which
-    # also reports standard errors on slope/intercept from the fit's
-    # covariance -- available even when the individual points carry no error
-    # of their own (e.g. the smoothing-spline peak method).
-    linModel = LinearModel()
-    linParams = linModel.guess(yLnEnT2, x=xInvT)
-    fitKwargs = {}
-    if haveYErr and np.all(yLnEnT2ErrArr > 0) and np.all(np.isfinite(yLnEnT2ErrArr)):
-        fitKwargs['weights'] = 1.0 / yLnEnT2ErrArr
+    # Deviating from DrKayisScript.py's scipy curve_fit: an lmfit LinearModel
+    # fit, via Detailed Analysis' _fit_arrhenius_line so both tabs weight the
+    # same way. x and y both derive from T_peak, so a T_peak error moves a
+    # point along a line rather than purely vertically; that fit handles it
+    # by the effective-variance method (iterated with the slope), instead of
+    # weighting by the y-projection 2*dT/T alone as this tab used to. Falls
+    # back to an unweighted fit when any window lacks a T_peak error.
     try:
-        linResult = linModel.fit(yLnEnT2, linParams, x=xInvT, **fitKwargs)
+        linResult, weighted = dA._fit_arrhenius_line(
+            xInvT, yLnEnT2, np.array(tPeaks, dtype=np.float64), np.array(tPeakErrs, dtype=np.float64))
     except Exception as exc:
         dltsc.log_to_textbox(f"Arrhenius solver: linear fitting matrix criteria failed: {exc}")
         return
 
     slope, slopeErr = linResult.params['slope'].value, linResult.params['slope'].stderr
     intercept, interceptErr = linResult.params['intercept'].value, linResult.params['intercept'].stderr
+    # stderr needs residual degrees of freedom -- a 2-point line would report
+    # a misleading ~0, so report none instead (as Detailed Analysis does).
+    if len(xInvT) < 3:
+        slopeErr = interceptErr = None
 
     activationEnergyEv = -slope * 1000.0 * K_BOLTZMANN
     activationEnergyErrEv = 1000.0 * K_BOLTZMANN * slopeErr if slopeErr is not None else None
 
-    apparentSigmaCm2 = np.exp(intercept) / C_CONSTANT_SI
+    apparentSigmaCm2 = np.exp(intercept) / gamma
     apparentSigmaErrCm2 = apparentSigmaCm2 * interceptErr if interceptErr is not None else None
 
     maxIdx = int(np.argmax(signalsMax))
@@ -660,7 +728,9 @@ def _run_arrhenius_solver():
     dltsc.arrhenius_figure.tight_layout(pad=2.0)
     dltsc.arrhenius_canvas.draw()
 
-    dltsc.log_to_textbox(f"Arrhenius solver: Et={energyText}, sigma={captureText}, Nt={densityText}.")
+    dltsc.log_to_textbox(
+        f"Arrhenius solver ({'T_peak-error weighted' if weighted else 'unweighted'}, {len(xInvT)} windows): "
+        f"Et={energyText}, sigma={captureText} (γ={gamma:.3g}), Nt={densityText}.")
 
 def _build_arrheniusFrame(parent):
     # Plot on top, parameter/control fields below it -- see _build_rateWindowFrame()
@@ -731,6 +801,13 @@ def _build_arrheniusFrame(parent):
         row=0, column=0, sticky='w', padx=4, pady=2)
     ttk.Entry(matGroup, textvariable=dltsc.arrhenius_ndVar, width=12).grid(
         row=0, column=1, sticky='ew', padx=4, pady=2)
+    dltsc.arrhenius_gammaVar = tk.StringVar(value=DEFAULT_GAMMA)
+    ttk.Label(matGroup, text='Pre-factor γ (cm⁻² s⁻¹ K⁻²):').grid(
+        row=1, column=0, sticky='w', padx=4, pady=2)
+    ttk.Entry(matGroup, textvariable=dltsc.arrhenius_gammaVar, width=12).grid(
+        row=1, column=1, sticky='ew', padx=4, pady=2)
+    ttk.Label(matGroup, text='(SiC ≈ 1.66e21, Si ≈ 3.256e21)', foreground='gray').grid(
+        row=2, column=0, columnspan=2, sticky='w', padx=4, pady=(0, 2))
     matGroup.grid_columnconfigure(1, weight=1)
 
     # --- Execution Action ---

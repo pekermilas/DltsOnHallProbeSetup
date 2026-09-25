@@ -154,7 +154,9 @@ rateWindow_denoisedEmissions = None  # last impdData.calculate_delC_normalized()
                                       # emission snapshot, T -> {'x','yRaw','yFiltered','yerr','filterMethod'}
 rateWindow_peakMethodVar = None   # tk.StringVar: 'Smoothing Spline' (default) or lmfit curve fit
 rateWindow_windowVars = None      # list of 4 (t1Var, t2Var) tk.StringVar pairs, one per rate window set
-rateWindow_signals = None         # rw_index -> {'T_k': array, 'Signal': array}
+rateWindow_tpLoVar = None         # tk.StringVar: peak-search lower temperature bound (K), blank = no bound
+rateWindow_tpHiVar = None         # tk.StringVar: peak-search upper temperature bound (K), blank = no bound
+rateWindow_signals = None        # rw_index -> {'T_k': array, 'Signal': array}
 rateWindow_extractedPeaks = None  # rw_index -> {'T_peak':, 'S_peak':, 'e_n':}
 rateWindow_peakTable = None       # ttk.Treeview showing per-window fit results
 rateWindow_figure = None
@@ -163,6 +165,7 @@ rateWindow_canvas = None
 
 # Arrhenius Defect Mapping (bottom frame). Consumes rateWindow_extractedPeaks.
 arrhenius_ndVar = None            # tk.StringVar, background doping Nd (cm^-3)
+arrhenius_gammaVar = None         # tk.StringVar, emission pre-factor gamma (cm^-2 s^-1 K^-2) for sigma
 arrhenius_energyLabel = None
 arrhenius_captureLabel = None
 arrhenius_densityLabel = None
@@ -362,6 +365,8 @@ def init():
     global rateWindow_denoisedEmissions
     global rateWindow_peakMethodVar
     global rateWindow_windowVars
+    global rateWindow_tpLoVar
+    global rateWindow_tpHiVar
     global rateWindow_signals
     global rateWindow_extractedPeaks
     global rateWindow_peakTable
@@ -369,6 +374,7 @@ def init():
     global rateWindow_ax
     global rateWindow_canvas
     global arrhenius_ndVar
+    global arrhenius_gammaVar
     global arrhenius_energyLabel
     global arrhenius_captureLabel
     global arrhenius_densityLabel
