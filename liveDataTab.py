@@ -139,6 +139,7 @@ def _retake_selected_steps():
 
 def _set_run_control_buttons(mode):
     """mode: 'idle' (nothing has ever run) / 'running' / 'paused' /
+    'returning' (ramping back to room temperature; nothing may start) /
     'idle_with_instance' (completed or errored, but the run instance and its
     connected devices are still there for Resume/Redo/Retake).
     """
@@ -150,6 +151,8 @@ def _set_run_control_buttons(mode):
         buttonStates = dict(run=False, pause=True, resume=False, redo=False, retake=False)
     elif mode == 'paused':
         buttonStates = dict(run=False, pause=False, resume=True, redo=True, retake=True)
+    elif mode == 'returning':
+        buttonStates = dict(run=False, pause=False, resume=False, redo=False, retake=False)
     elif mode == 'idle_with_instance':
         buttonStates = dict(run=True, pause=False, resume=canResume, redo=True, retake=True)
     else:
@@ -163,8 +166,18 @@ def _set_run_control_buttons(mode):
             widget.config(state="normal" if enabled else "disabled")
 
 def _handle_run_status(status, isMainSequence):
+    """Default end-of-run behavior: whenever the stage is left idle -- the
+    main sequence completed, a Redo/Retake completed, or a step failed -- it
+    is returned to the Room Temperature set on the Input Parameters tab.
+    Only a Pause keeps the stage at its current temperature, since Resume
+    continues from there."""
     dltsc.run_busy = False
     _refresh_step_listbox()
+    if status == 'aborted' or dltsc.app_closing:
+        # GUI is closing: its close handler (DLTSGUI_MainWindow.on_closing)
+        # already commanded the room-temperature ramp and is waiting on it.
+        dltsc.log_to_textbox("Run stopped: GUI is closing.")
+        return
     if status == 'completed':
         if isMainSequence:
             dltsc.run_dltsInstance.finish_experiment()
@@ -172,14 +185,34 @@ def _handle_run_status(status, isMainSequence):
         else:
             dltsc.log_to_textbox("Redo/Retake completed.")
         dltsc.run_paused = False
-        _set_run_control_buttons('idle_with_instance')
+        _return_to_room_temp_async()
     elif status == 'paused':
         dltsc.run_paused = True
         dltsc.log_to_textbox("Run paused. Click Resume to continue, or Redo/Remove & Retake specific steps below.")
         _set_run_control_buttons('paused')
     else:
         dltsc.log_to_textbox("Run stopped due to an error. Devices remain connected; Resume/Redo/Retake are available.")
-        _set_run_control_buttons('idle_with_instance')
+        _return_to_room_temp_async()
+
+def _return_to_room_temp_async():
+    """Ramp back to room temperature on a background thread (it polls the
+    controller until the stage arrives, which can take many minutes and used
+    to freeze the GUI when done on the main thread). dltsc.run_busy stays set
+    and every run button stays disabled meanwhile, so no new run/redo can
+    start and fight the ramp."""
+    dltsc.run_busy = True
+    _set_run_control_buttons('returning')
+
+    def worker():
+        dltsc.run_dltsInstance.return_to_room_temp()
+
+        def apply():
+            dltsc.run_busy = False
+            if not dltsc.app_closing:   # closing keeps every run button disabled
+                _set_run_control_buttons('idle_with_instance')
+        dltsc.root.after(0, apply)
+
+    threading.Thread(target=worker, daemon=True).start()
 
 def _refresh_step_listbox():
     if dltsc.run_stepListbox is None or dltsc.run_dltsInstance is None:

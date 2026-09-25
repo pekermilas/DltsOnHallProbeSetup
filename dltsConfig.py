@@ -58,6 +58,16 @@ run_pauseButton = None
 run_resumeButton = None
 run_redoButton = None
 run_retakeButton = None
+run_abortRequested = None    # bool: set when the GUI is closing; the run loop stops at the next check
+                             # and discards a step whose acquisition overlapped the close
+
+##---------------------APP CLOSE (RETURN TO ROOM TEMPERATURE)-------------------------
+app_closing = None           # True once the window's close was requested (guards repeat clicks)
+app_roomReturnSent = None    # True once the room-temperature ramp has been commanded on the way out,
+                             # so the exit/console-close backstop doesn't send it again
+app_closeDialog = None       # Toplevel shown while waiting for the stage to reach room temperature
+app_closeStatusLabel = None  # its live "stage at X C -> room Y C" label
+app_closeNowRequested = None # True when "Close now" was clicked: stop waiting, leave the controller ramping
 
 ##---------------------RUN FILE WATCH-------------------------
 run_dataFolder = None
@@ -278,6 +288,14 @@ def init():
     global run_resumeButton
     global run_redoButton
     global run_retakeButton
+    global run_abortRequested
+
+    ##---------------------APP CLOSE (RETURN TO ROOM TEMPERATURE)-------------------------
+    global app_closing
+    global app_roomReturnSent
+    global app_closeDialog
+    global app_closeStatusLabel
+    global app_closeNowRequested
 
     ##---------------------RUN FILE WATCH-------------------------
     global run_dataFolder
@@ -420,6 +438,10 @@ def init():
     run_busy = False
     run_pauseRequested = False
     run_paused = False
+    run_abortRequested = False
+    app_closing = False
+    app_roomReturnSent = False
+    app_closeNowRequested = False
     run_stepStatus = dict()
     run_dataFileNames = []
     livePlot_activeMode = 'live'
@@ -603,6 +625,10 @@ def recast_param_type(device, pname):
                 newValue = float(oldValue)
             if pname == 'Stability Delay (s)':
                 newValue = int(oldValue)
+            if pname == 'Room Temperature (C)':
+                newValue = float(oldValue)
+            if pname == 'Room Ramp (C/min)':
+                newValue = float(oldValue)
     if device == 'output':
         if pname in d_params_vars:
             oldValue = d_params_vars[pname].get()

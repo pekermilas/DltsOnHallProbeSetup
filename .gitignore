@@ -23,3 +23,5 @@ __pycache__/runDlts_Tools.cpython-313.pyc
 .idea/DltsOnHallProbeSetup.iml
 .idea/DltsOnHallProbeSetup.iml
 __pycache__/runDlts_Tools.cpython-313.pyc
+__pycache__/runDlts_Tools.cpython-313.pyc
+*.pyc

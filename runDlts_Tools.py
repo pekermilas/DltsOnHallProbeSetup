@@ -244,6 +244,11 @@ class dltsRun:
         ramp = tempDev.tRamp
         delay = tempDev.tStableDelay
         tempDev.go_to_temp(tempDev.tempGrid[i], ramp, delay)
+        if dltsc.run_abortRequested:
+            # GUI closing: the stage is now ramping to room temperature, so
+            # don't acquire at a temperature that's no longer being held.
+            self.stepStatus[i] = 'aborted'
+            return 'aborted'
         time.sleep(1)
         # factory_reset() is skipped only for the very first pull this device
         # connection has ever done (right after setup); any later pull --
@@ -260,6 +265,14 @@ class dltsRun:
             fName = self.dataFileNames[i]
             data = impdDev.pull_data(plot=False, trigger=True,
                                    numPoints=numPoints, numReps=numReps)
+            if dltsc.run_abortRequested:
+                # The GUI was closed during this acquisition and the stage
+                # started ramping to room temperature part-way through it, so
+                # this data wasn't taken at a stable temperature: discard it
+                # rather than write a file that looks valid.
+                self.stepStatus[i] = 'aborted'
+                dltsc.log_to_textbox(f"Discarded T = {tempDev.tempGrid[i]} C data: GUI closed during acquisition.")
+                return 'aborted'
             if outType == 'hdf5':
                 # HDF5's start/finish flags assume one uninterrupted forward
                 # pass over the whole grid; an out-of-order redo/retake of a
@@ -296,7 +309,8 @@ class dltsRun:
         each index's existing data file before reacquiring it ("remove &
         retake"); deleteFirst=False just overwrites it in place ("redo").
 
-        Returns 'completed', 'paused', or 'error'.
+        Returns 'completed', 'paused', 'error', or 'aborted' (the GUI is
+        closing -- dltsc.run_abortRequested -- see DLTSGUI_MainWindow.on_closing).
         """
         tempDev = self.tempDevice
         runIndices = sorted(indices) if indices is not None else range(self.currentStepIndex, len(tempDev.tempGrid))
@@ -304,13 +318,16 @@ class dltsRun:
 
         try:
             for i in runIndices:
+                if dltsc.run_abortRequested:
+                    return 'aborted'
                 if isMainSequence and dltsc.run_pauseRequested:
                     self.currentStepIndex = i
                     self.stepStatus[i] = 'paused'
                     dltsc.log_to_textbox(f"Run paused before T = {tempDev.tempGrid[i]} C (step {i + 1}/{len(tempDev.tempGrid)}).")
                     return 'paused'
 
-                self._run_single_step(i, deleteFirst=deleteFirst)
+                if self._run_single_step(i, deleteFirst=deleteFirst) == 'aborted':
+                    return 'aborted'
 
                 if isMainSequence:
                     self.currentStepIndex = i + 1
@@ -334,11 +351,37 @@ class dltsRun:
         if impdDev is not None and hasattr(impdDev, 'writeDataJson') and fName is not None:
             impdDev.writeDataJson(runParams, fName)
 
-        if tempDev is not None:
-            tempDev.go_to_room_temp(Tr=30)
-
+        # The return to room temperature is no longer done here: this runs on
+        # the Tk main thread, and waiting out the ramp froze the GUI for
+        # minutes. liveDataTab._return_to_room_temp_async() calls
+        # return_to_room_temp() on a background thread instead.
         dltsc.log_to_textbox("Run complete: devices remain connected for the next run until the GUI is closed.")
         return 0
+
+    def return_to_room_temp(self):
+        """Ramp the stage back to the Room Temperature (C) / Room Ramp (C/min)
+        set on the Input Parameters tab and wait until it gets there. Blocking
+        (polls the controller), so call it from a background thread. Returns
+        the controller's status: 0 reached, 1 gave up waiting, -1 failed/not connected.
+        """
+        tempDev = self.tempDevice
+        if tempDev is None:
+            return -1
+        Tr, ramp = tempDev.Troom, tempDev.roomRamp
+        dltsc.log_to_textbox(f"Returning stage to room temperature: {Tr} C at {ramp} C/min...")
+        try:
+            status = tempDev.go_to_room_temp(Tr=Tr, ramp=ramp)
+        except Exception as exc:
+            dltsc.log_to_textbox(f"Warning: could not return stage to room temperature: {exc}")
+            return -1
+        if status == 0:
+            dltsc.log_to_textbox(f"Stage is at room temperature ({Tr} C).")
+        elif status == 1:
+            dltsc.log_to_textbox(f"Warning: stage did not settle at {Tr} C in the expected time; "
+                                 f"it is still ramping/holding toward {Tr} C.")
+        else:
+            dltsc.log_to_textbox("Warning: temperature controller not connected; stage was not returned to room temperature.")
+        return status
         
         
         

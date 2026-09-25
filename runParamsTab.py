@@ -425,9 +425,12 @@ def construct_runParamsTab():
     # Construct Temperature Controller Params
     # -------------------------------------------------------------------------
     dltsc.t_params_vars = dict()
+    # Room Temperature / Room Ramp: where (and how fast) the stage is returned
+    # to once a run finishes or stops on an error (runDlts_Tools.return_to_room_temp).
     t_param_list = [('Initial Temperature (C)', '25'), ('Final Temperature (C)', '25'),
                     ('Temperature Step (C)', '5'), ('Temperature Ramp (C/min)', '5'),
-                    ('Stability Delay (s)', '0')]
+                    ('Stability Delay (s)', '0'), ('Room Temperature (C)', '25'),
+                    ('Room Ramp (C/min)', '10')]
     dltsc.t_param_inputField = dict(t_param_list)
 
     for idx, (pname, pdef) in enumerate(t_param_list):
@@ -440,7 +443,7 @@ def construct_runParamsTab():
 
     # Device / control buttons at the bottom of the temperature panel
     tframe = ttk.Frame(runParamsFrame)
-    tframe.grid(row=5, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+    tframe.grid(row=len(t_param_list), column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
     # spacer1 = ttk.Label(runParamsFrame, text="")
     # spacer1.grid(row=6, column=2)
@@ -490,7 +493,8 @@ def construct_runParamsTab():
 
     # Device / control buttons at the bottom of the temperature panel
     oframe = ttk.Frame(runParamsFrame)
-    oframe.grid(row=11, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+    oframe_row = idx_offset + len(d_param_list)
+    oframe.grid(row=oframe_row, column=2, columnspan=4, sticky='ew', pady=(8, 2))
 
     apply_btn4 = ttk.Button(oframe, text='Apply + Push Params', style=style_names['green']['button'],
                              command=lambda: apply_and_push_params(devType='output'))
@@ -498,7 +502,8 @@ def construct_runParamsTab():
 
     history_frame = ttk.Frame(runParamsFrame)
     # Place history controls below the existing parameter rows to avoid altering row heights above.
-    history_frame.grid(row=len(dltsc.z_param_inputField)//2+1, column=2, columnspan=4, sticky='ew', pady=(8, 2))
+    history_frame.grid(row=max(len(dltsc.z_param_inputField)//2+1, oframe_row+1), column=2, columnspan=4,
+                       sticky='ew', pady=(8, 2))
     history_frame.grid_columnconfigure(0, weight=1)
 
     history_lbl = ttk.Label(history_frame, text='Parameter History', style=style_names['purple']['label'])
