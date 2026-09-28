@@ -244,7 +244,7 @@ def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cin
          per temperature -- e.g. '0C'/'n10C'/'120C_000' -- each with its own
          single-chunk CSV): this tab's own original/native format, ported
          from DLTS_APP.py;
-      3. legacy per-temperature files (flat JSON .txt or .csv, one file per
+      3. legacy per-temperature files (flat JSON .txt, .h5 or .csv, one file per
          temperature, e.g. 'n10p0.txt').
     Regardless of format, C_infinity is (re)computed here using this tab's
     OWN convention -- the mean capacitance over the [cinf_lo, cinf_hi]

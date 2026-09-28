@@ -45,6 +45,25 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties"
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
 
+def read_h5_record(file_path, keys=None):
+    """Read one temperature step written by ziDevice.writeDataH5().
+
+    Returns the same {channel name: values} dict a JSON .txt file gives, but
+    with numpy arrays instead of lists. keys limits which channels are read
+    (None reads all of them). Tick stamps are stored as uint64 but returned as
+    int64, the dtype numpy gives JSON's Python ints: cleanup_data() takes
+    np.diff() of them, which would wrap around on unsigned ints.
+    """
+    record = dict()
+    with h5py.File(file_path, 'r') as f:
+        for key in (f.keys() if keys is None else keys):
+            values = f[key][()]
+            if values.dtype == np.uint64:
+                values = values.astype(np.int64)
+            record[key] = values
+    return record
+
+
 class impdData:
     def __init__(self, fName=None):
         self.fileName = fName
@@ -65,6 +84,14 @@ class impdData:
         if isinstance(file_selection, str):
             return [file_selection]
         return list(file_selection)
+
+    @staticmethod
+    def _load_record(file_path):
+        """Load one temperature step's data file (.h5, or JSON in a .txt/.json file)."""
+        if os.path.splitext(file_path)[1].lower() == '.h5':
+            return read_h5_record(file_path)
+        with open(file_path, 'r', encoding='utf-8') as file:
+            return json.load(file)
 
     @staticmethod
     def _extract_txt_temperature(file_path):
@@ -116,8 +143,10 @@ class impdData:
                     value,
                     concatenate_arrays=concatenate_arrays,
                 )
-            elif concatenate_arrays and key in merged and isinstance(merged[key], np.ndarray) and isinstance(value, np.ndarray):
-                merged[key] = np.concatenate((merged[key], value))
+            elif concatenate_arrays and key in merged and isinstance(merged[key], (np.ndarray, list)) \
+                    and isinstance(value, (np.ndarray, list)) \
+                    and (isinstance(merged[key], np.ndarray) or isinstance(value, np.ndarray)):
+                merged[key] = np.concatenate((np.asarray(merged[key]), np.asarray(value)))
             elif concatenate_arrays and key in merged and isinstance(merged[key], list) and isinstance(value, list):
                 merged[key] = merged[key] + value
             else:
@@ -152,7 +181,7 @@ class impdData:
 
         if self.fileName is None:
             self.fileName = askopenfilenames(title="Select a file",
-                filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")])
+                filetypes=[("Data files", "*.txt *.h5"), ("Text files", "*.txt"), ("HDF5 files", "*.h5"), ("CSV files", "*.csv"), ("All files", "*.*")])
 
         self.fileName = self._normalize_file_selection(self.fileName)
         if not self.fileName:
@@ -173,7 +202,7 @@ class impdData:
 
         file_ext = os.path.splitext(self.fileName[0])[1].lower()
 
-        if file_ext in ('.txt', '.json'):
+        if file_ext in ('.txt', '.json', '.h5'):
             # Skip files whose name (excluding path) contains no numeric digits.
             filtered = []
             for f in self.fileName:
@@ -200,12 +229,11 @@ class impdData:
                     if temp is None:
                         print(f"Warning: Could not extract temperature from filename: {file_path}")
                         continue
-                    with open(file_path, 'r', encoding='utf-8') as file:
-                        data[temp] = json.load(file)
+                    data[temp] = self._load_record(file_path)
                     data_temps.append(temp)
 
                 if not data:
-                    print("No valid TXT data could be parsed.")
+                    print("No valid TXT/HDF5 data could be parsed.")
                     return -1
 
                 self.dataTemps = data_temps
@@ -323,7 +351,7 @@ class impdData:
                 self.fileName = None
                 return -1
 
-        print("Unsupported file type. Please select .txt or .csv files.")
+        print("Unsupported file type. Please select .txt, .h5 or .csv files.")
         return -1
 
     def append_data(self, fName=None):
@@ -335,7 +363,7 @@ class impdData:
             append_files = self._normalize_file_selection(
                 askopenfilenames(
                     title="Select files to append",
-                    filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")],
+                    filetypes=[("Data files", "*.txt *.h5"), ("Text files", "*.txt"), ("HDF5 files", "*.h5"), ("CSV files", "*.csv"), ("All files", "*.*")],
                 )
             )
 
@@ -346,7 +374,7 @@ class impdData:
         file_ext = os.path.splitext(append_files[0])[1].lower()
 
         # Append TXT/JSON data files.
-        if file_ext in ('.txt', '.json'):
+        if file_ext in ('.txt', '.json', '.h5'):
             filtered = []
             for f in append_files:
                 basename = os.path.basename(f)
@@ -369,12 +397,11 @@ class impdData:
                 if temp is None:
                     print(f"Warning: Could not extract temperature from filename: {file_path}")
                     continue
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    new_data[temp] = json.load(file)
+                new_data[temp] = self._load_record(file_path)
                 new_temps.append(temp)
 
             if not new_data:
-                print("No valid TXT data could be parsed.")
+                print("No valid TXT/HDF5 data could be parsed.")
                 return -1
 
             self.dataValues = self._append_records(self.dataValues, new_data)
@@ -503,7 +530,7 @@ class impdData:
 
             return 0
 
-        print("Unsupported file type. Please select .txt or .csv files.")
+        print("Unsupported file type. Please select .txt, .h5 or .csv files.")
         return -1
 
     @staticmethod

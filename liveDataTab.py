@@ -23,7 +23,7 @@ import runDlts_Tools as rdT
 DENOISE_METHODS = ['pca', 'wavelet', 'sgolay', 'lowess']
 
 # Legacy per-temperature filename pattern, ported from DrKayisScript.py's Tab 1 loader.
-_LEGACY_FILENAME_PATTERN = re.compile(r'^([npNP])(\d+)(?:[pP](\d+))?[cC]?(?:_\d+)?\.(txt|csv)$')
+_LEGACY_FILENAME_PATTERN = re.compile(r'^([npNP])(\d+)(?:[pP](\d+))?[cC]?(?:_\d+)?\.(txt|csv|h5)$')
 
 
 #---------------------DLTS RUN CONTROL (PAUSE / RESUME / REDO / RETAKE)-------------------------#
@@ -400,12 +400,6 @@ def _schedule_live_poll(token):
     if token != dltsc.livePlot_liveRunToken:
         return
 
-    if dltsc.run_outputFileType == 'hdf5':
-        if dltsc.livePlot_activeMode == 'live' and dltsc.livePlot_statusLabel is not None:
-            dltsc.livePlot_statusLabel.config(text='Live plotting is not yet supported for HDF5 output.')
-        dltsc.livePlot_pollAfterId = None
-        return
-
     fileNames = dltsc.run_dataFileNames or []
     allIngested = fileNames and len(dltsc.livePlot_processedFiles) >= len(fileNames)
 
@@ -649,7 +643,7 @@ def _load_offline_run():
     """
     files = filedialog.askopenfilenames(
         title="Select DLTS Data Files (Offline Run)",
-        filetypes=[("Text/JSON files", "*.txt *.json"), ("CSV files", "*.csv"), ("All files", "*.*")]
+        filetypes=[("Data files", "*.txt *.json *.h5"), ("HDF5 files", "*.h5"), ("CSV files", "*.csv"), ("All files", "*.*")]
     )
     if not files:
         return
@@ -1583,9 +1577,13 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
                 filePath = targetSource
                 ext = os.path.splitext(filePath)[1].lower()
 
-                if ext == '.txt':
-                    with open(filePath, 'r') as f:
-                        data = json.load(f)
+                if ext in ('.txt', '.h5'):
+                    if ext == '.h5':
+                        # Only the two channels used here, not all eight.
+                        data = iaT.read_h5_record(filePath, keys=('AuxInput1', 'ImpedanceIm'))
+                    else:
+                        with open(filePath, 'r') as f:
+                            data = json.load(f)
                     auxV = np.array(data['AuxInput1'], dtype=np.float32)
                     rawCap = np.array(data['ImpedanceIm'], dtype=np.float32) * 1e12
 

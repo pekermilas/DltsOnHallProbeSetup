@@ -223,6 +223,20 @@ class dltsRun:
             dltsc.log_to_textbox("3. Output file names set.")
             return 0
 
+    def _read_stage_temp(self):
+        """Measured stage temperature (C), or None if the controller can't be read.
+        Only used as HDF5 metadata, so a failed read must not fail the step."""
+        try:
+            return self.tempDevice.read_temp()
+        except Exception:
+            return None
+
+    def _current_run_params(self):
+        """The merged device + output parameters, as also written to runParams.txt."""
+        if self.impDeviceParams is not None and self.tempDeviceParams is not None and self.outputParams is not None:
+            return {**self.impDeviceParams, **self.tempDeviceParams, **self.outputParams}
+        return {}
+
     def _run_single_step(self, i, deleteFirst=False):
         """Acquire and write the data for tempGrid index i. Shared by the main
         sequential run and by redo/retake, which call this for arbitrary,
@@ -263,8 +277,14 @@ class dltsRun:
         outType = str(self.runOutputFileType).strip().lower()
         if outType in ('txt', 'json', 'hdf5'):
             fName = self.dataFileNames[i]
+            # Stage temperature is read before and after the acquisition and
+            # averaged; it is only recorded as HDF5 metadata.
+            stageTs = [self._read_stage_temp()]
             data = impdDev.pull_data(plot=False, trigger=True,
                                    numPoints=numPoints, numReps=numReps)
+            stageTs.append(self._read_stage_temp())
+            stageTs = [t for t in stageTs if t is not None]
+            stageT = sum(stageTs) / len(stageTs) if stageTs else None
             if dltsc.run_abortRequested:
                 # The GUI was closed during this acquisition and the stage
                 # started ramping to room temperature part-way through it, so
@@ -274,13 +294,10 @@ class dltsRun:
                 dltsc.log_to_textbox(f"Discarded T = {tempDev.tempGrid[i]} C data: GUI closed during acquisition.")
                 return 'aborted'
             if outType == 'hdf5':
-                # HDF5's start/finish flags assume one uninterrupted forward
-                # pass over the whole grid; an out-of-order redo/retake of a
-                # single index doesn't fit that shape cleanly, so this is
-                # best-effort for HDF5 specifically (matching the existing,
-                # documented gap that live HDF5 plotting isn't supported yet).
-                impdDev.writeDataH5(data, fName, i, shape=[1, 8, 1],
-                                    start=(not self._everPulled), finish=(i == len(tempDev.tempGrid) - 1))
+                impdDev.writeDataH5(data, fName,
+                                    setpoint_C=tempDev.tempGrid[i],
+                                    stage_temperature_C=stageT,
+                                    runParams=self._current_run_params())
             else:
                 impdDev.writeDataJson(data, fName)
 
@@ -343,10 +360,7 @@ class dltsRun:
         tempDev = self.tempDevice
         impdDev = self.impDevice
 
-        if self.impDeviceParams is not None and self.tempDeviceParams is not None and self.outputParams is not None:
-            runParams = {**self.impDeviceParams, **self.tempDeviceParams, **self.outputParams}
-        else:
-            runParams = {}
+        runParams = self._current_run_params()
         fName = self.paramsFileName
         if impdDev is not None and hasattr(impdDev, 'writeDataJson') and fName is not None:
             impdDev.writeDataJson(runParams, fName)

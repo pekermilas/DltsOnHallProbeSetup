@@ -28,7 +28,9 @@ Created on Fri Apr 17 16:06:33 2026
 # # a = list(device.tu)
 # # b = list(device.triggers)
 
+import os
 import time
+from datetime import datetime
 import zhinst.core as zi
 import zhinst.toolkit as zt
 # import zhinst.ziPython as zi
@@ -474,26 +476,68 @@ class ziDevice:
             json.dump(data, f, indent=4, default=self.defaultJsonConverter)
         return 0
 
-    def writeDataH5(self, data, fName, idx, shape=[1,6,1], start=False, finish=False):
+    # Bumped whenever the on-disk layout written by writeDataH5() changes.
+    H5_FORMAT_VERSION = 1
 
-        [d1, d2, d3] = shape
-        if start:
-            f = h5py.File(fName, 'w')
-            dltsData = f.create_dataset('dlts', shape=(d1, d2, d3), 
-                                        dtype='float32', compression="gzip", 
-                                        compression_opts=9)
-        dltsData[idx,0] = data['tickStampImps']
-        dltsData[idx,1] = data['tickStampDemods']
-        dltsData[idx,2] = data['timeStampImps']
-        dltsData[idx,3] = data['timeStampDemods']
-        dltsData[idx,4] = data['ImpedanceRe']
-        dltsData[idx,5] = data['ImpedanceIm']
-        dltsData[idx,6] = data['AbsZ']
-        dltsData[idx,7] = data['AuxInput1']
-        if finish:
-            f.close()
+    def writeDataH5(self, data, fName, setpoint_C=None, stage_temperature_C=None,
+                    runParams=None, acquired_at=None, extraAttrs=None):
+        """Write one temperature step's pull_data() output to its own .h5 file.
+
+        One file per temperature step (mirroring the .txt files), so redo/retake
+        simply overwrites that step's file and a crash can only cost the step
+        being written. Each channel is its own 1-D dataset in its native type:
+        clock-tick stamps as uint64 (float32 would lose up to thousands of ticks
+        at 60 MHz), everything else as float64, all gzip + shuffle compressed.
+        The setpoint, measured stage temperature, acquisition time and run
+        parameters go in root attributes.
+
+        The file is written to <fName>.tmp and then renamed into place, so the
+        live watcher (which waits for fName to exist) never sees a half-written
+        file.
+
+        acquired_at (a datetime, default now) and extraAttrs (more root
+        attributes) exist for convert_json_to_h5.py, which converts files
+        acquired earlier.
+        """
+        fileName = Path(fName)
+        fileName.parent.mkdir(parents=True, exist_ok=True)
+        tmpName = fileName.with_name(fileName.name + '.tmp')
+
+        with h5py.File(tmpName, 'w') as f:
+            f.attrs['format_version'] = self.H5_FORMAT_VERSION
+            f.attrs['acquired_at'] = (acquired_at or datetime.now()).isoformat(timespec='seconds')
+            f.attrs['setpoint_C'] = np.nan if setpoint_C is None else float(setpoint_C)
+            f.attrs['stage_temperature_C'] = np.nan if stage_temperature_C is None else float(stage_temperature_C)
+            if runParams is not None:
+                f.attrs['run_params'] = json.dumps(runParams, default=str)
+            for key, value in (extraAttrs or {}).items():
+                f.attrs[key] = value
+
+            for key, values in data.items():
+                if key.startswith('tickStamp'):
+                    arr = np.asarray(values, dtype=np.uint64)
+                else:
+                    arr = np.asarray(values, dtype=np.float64)
+                # gzip needs a chunked layout, which an empty dataset can't have.
+                if arr.size > 0:
+                    f.create_dataset(key, data=arr, compression='gzip',
+                                     compression_opts=4, shuffle=True)
+                else:
+                    f.create_dataset(key, data=arr)
+
+        # On Windows the rename fails while another process (e.g. the live
+        # watcher reading the previous version on a redo) has the target open,
+        # so retry briefly before giving up.
+        for attempt in range(10):
+            try:
+                os.replace(tmpName, fileName)
+                break
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.5)
         return 0
-    
+
     def runSweep(self, sweepType='freq'):
         data = None
         sweep_module = self.session.modules.sweeper
