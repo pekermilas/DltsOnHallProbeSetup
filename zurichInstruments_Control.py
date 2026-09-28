@@ -43,6 +43,18 @@ import h5py
 import dltsConfig as dltsc
 
 
+# The Input Parameters tab's defaults (runParamsTab.construct_runParamsTab), as
+# the numeric values pushed to the MFIA. ziDevice.configure() starts from these.
+DEFAULT_PARAMS = {
+    'Oscillation Amplitude': 0.3, 'Oscillation Frequency': 501000.0, 'Oscillation ON/OFF': 1,
+    'Max bandwidth': 10000.0, 'Input Control': 0, 'Current Range': 0.01, 'Voltage Range': 3.0,
+    'Omega Suppression': 80.0, 'Filter Harmonic': 1, 'Filter Bandwidth': 2, 'Data Transfer Rate': 60000,
+    'Equivalent Circuit Mode': 0, 'Threshold Input Signal': 59, 'State Enable Time': 0.006,
+    'State Disable Time': 0.003, 'Logic Unit Not': 1, 'Aux Output Signal': 13, 'Aux Output Scale': -1.0,
+    'Aux Output Offset': -0.5, 'Aux Output Lower Limit': -10.0, 'Aux Output Upper Limit': 0.0,
+    'Signal Output Add': 1, 'Trigger Source Signal': 36}
+
+
 class ziDevice:
 
     def __init__(self, devSerial = None):
@@ -57,7 +69,10 @@ class ziDevice:
                  'Aux Output Scale', 'Aux Output Offset', 'Aux Output Lower Limit',
                  'Aux Output Upper Limit', 'Signal Output Add', 'Trigger Source Signal']
         self.params = dict.fromkeys(pList, 0)
-        
+        # Set by configure(): the values set_param_value() falls back to when
+        # there is no GUI, so reload_params() never needs the console prompts.
+        self.configuredParams = None
+
     def connect_device(self):
         discovery = zi.ziDiscovery()
         device_id = discovery.find(self.devSerial)
@@ -111,6 +126,8 @@ class ziDevice:
                     key: (var.get() if hasattr(var, 'get') else var)
                     for key, var in dltsc.z_params_vars.items()
                 }
+            elif getattr(self, 'configuredParams', None):
+                valueDict = self.configuredParams
 
         if valueDict is None:
             if pName in list(self.params):
@@ -351,6 +368,27 @@ class ziDevice:
             print("Unknown Parameter!!!")
             returnVal = False
         return returnVal
+
+    def configure(self, values=None, push=True):
+        """Set every parameter without the GUI: DEFAULT_PARAMS, overridden by
+        values ({parameter name: number}), then push them all to the device
+        (connect_device() first). Returns the parameters now in effect.
+
+        Example: dev.configure({'State Enable Time': 0.5, 'State Disable Time': 0.001})
+        """
+        unknown = sorted(set(values or {}) - set(self.params))
+        if unknown:
+            raise KeyError(f"unknown MFIA parameter(s): {unknown}")
+        merged = {**DEFAULT_PARAMS, **(values or {})}
+        self.configuredParams = merged
+        for pName in self.params:
+            self.set_param_value(pName, merged)
+        if push:
+            if self.session is None:
+                raise RuntimeError("MFIA not connected: call connect_device() first")
+            for pName in self.params:
+                self.push_param_to_device(pName)
+        return dict(self.params)
 
     def load_params(self):
         for pName in list(self.params):

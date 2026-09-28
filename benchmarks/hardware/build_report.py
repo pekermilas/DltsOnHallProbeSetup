@@ -59,8 +59,8 @@ def build(A, notesHtml=''):
     ]
     failed = [c['name'] for c in A['checks'] if not c['ok']]
     verdict = ('Every file is complete, correctly typed and carries its attributes; Redo and Remove & Retake replaced '
-               'only their own step; and every analysis path gives identical results from HDF5 and from the same data '
-               'in JSON.') if not failed else 'Failed: ' + '; '.join(failed) + '.'
+               'only their own step; every analysis path gives identical results from HDF5 and from the same data '
+               'in JSON; and Quick Analysis and Detailed Analysis give the same Arrhenius result on the run.') if not failed else 'Failed: ' + '; '.join(failed) + '.'
     reacq = [(k, v['T']) for k, v in A['redoRetake'].items()]
     first = datetime.fromisoformat(A['steps'][0]['acquired_at'])
     v = A.get('versions', {})
@@ -85,7 +85,10 @@ def build(A, notesHtml=''):
                      'thread sharing the controller\'s serial lock. Live ingest repeated liveDataTab._ingest_files_async\'s '
                      'calls on each new file. Afterwards each HDF5 file was re-written as JSON with writeDataJson() into '
                      'the benchmark output folder (never the run folder); both copies went through impdData, '
-                     '_compute_legacy_transients and _load_detailed_data. Timings are single runs on this PC (Python '
+                     '_compute_legacy_transients and _load_detailed_data. The DLTS analysis ran Quick Analysis\' '
+                     'functions (dataAnalysisTab._window_peaks, _quick_arrhenius) on the Extract & Average transients '
+                     'and Detailed Analysis\' _compute_detailed_analysis on its own Load Data of the HDF5 run. '
+                     'Timings are single runs on this PC (Python '
                      f"{v.get('python', '?')}, h5py {v.get('h5py', '?')}, HDF5 {v.get('hdf5', '?')}, numpy {v.get('numpy', '?')}) "
                      'with the OS file cache warm for both formats.'))
     html = open(os.path.join(HERE, 'report_template.html'), encoding='utf-8').read()

@@ -92,7 +92,7 @@ def test_read_data_accepts_mixed_txt_and_h5(run_folders):
     mixed = [run_folders['.txt'][0], run_folders['.h5'][1], run_folders['.txt'][2]]
     impd = iaT.impdData(fName=mixed)
     assert impd.read_data() == 0
-    assert impd.dataTemps == [int(T) + 273 for T in TEMPS]
+    assert impd.dataTemps == [round(T + 273.15, 6) for T in TEMPS]
 
     reference = iaT.impdData(fName=run_folders['.txt'])
     assert reference.read_data() == 0
@@ -106,7 +106,7 @@ def test_append_data_across_formats(run_folders, firstExt, appendExt):
     impd = iaT.impdData(fName=[run_folders[firstExt][0]])
     assert impd.read_data() == 0
     assert impd.append_data(fName=[run_folders[appendExt][1]]) == 0
-    assert impd.dataTemps == [int(T) + 273 for T in TEMPS[:2]]
+    assert impd.dataTemps == [round(T + 273.15, 6) for T in TEMPS[:2]]
 
 
 def test_appending_same_temperature_across_formats_concatenates(run_folders):

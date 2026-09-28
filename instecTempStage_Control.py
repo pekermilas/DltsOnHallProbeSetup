@@ -28,6 +28,18 @@ import matplotlib.pyplot as plt
 import lmfit
 from lmfit.models import *
 
+# Longest wait (s) for one serial read or write before read_temp() gives up on
+# that reply; it asks READ_RETRIES more times before raising TimeoutError.
+SERIAL_TIMEOUT_S = 2.0
+READ_RETRIES = 1
+
+# The Input Parameters tab's temperature defaults (runParamsTab). mK2000B.configure()
+# starts from these.
+DEFAULT_PARAMS = {'Initial Temperature (C)': 25.0, 'Final Temperature (C)': 25.0,
+                  'Temperature Step (C)': 5.0, 'Temperature Ramp (C/min)': 5.0,
+                  'Stability Delay (s)': 0.0, 'Room Temperature (C)': 25.0, 'Room Ramp (C/min)': 10.0}
+
+
 class mK2000B:
 
     def __init__(self, port = None):
@@ -116,6 +128,10 @@ class mK2000B:
             try:
                 self.dev = serial.Serial()
                 self.dev.port = self.port
+                # Without these a controller that stops answering blocks
+                # readline() (and every caller: runs, the close dialog) forever.
+                self.dev.timeout = SERIAL_TIMEOUT_S
+                self.dev.write_timeout = SERIAL_TIMEOUT_S
                 # self.dev.baudrate = 9600
                 # self.dev.timeout = None
                 # self.dev.dsrdtr=True
@@ -180,11 +196,27 @@ class mK2000B:
             if locked:
                 self._ioLock.release()
 
-    def read_temp(self):
-        """Current stage temperature (C), as one locked query/response pair."""
+    def read_temp(self, retries=READ_RETRIES):
+        """Current stage temperature (C), as one locked query/response pair.
+
+        Waits at most SERIAL_TIMEOUT_S for each reply and asks again up to
+        `retries` times (a missed or garbled reply), then raises TimeoutError,
+        so a controller that stops answering fails the step instead of hanging.
+        """
         with self._ioLock:
-            self.dev.write(str.encode(":TEMPerature:CTEMperature?\n"))
-            return float(self.dev.readline().strip().decode())
+            reply = b''
+            for _ in range(retries + 1):
+                # Drop a late reply to an earlier query so it isn't read as this one.
+                self.dev.reset_input_buffer()
+                self.dev.write(str.encode(":TEMPerature:CTEMperature?\n"))
+                reply = self.dev.readline()
+                try:
+                    return float(reply.strip().decode())
+                except (ValueError, UnicodeDecodeError):
+                    continue
+            raise TimeoutError(
+                f"temperature controller on {self.port} did not answer the temperature query "
+                f"({retries + 1} tries, {SERIAL_TIMEOUT_S:g} s each; last reply {reply!r})")
 
     def expected_del_t(self, T=25):
         Ttheo = np.array([19.648,100.0,199.990,300.0,400.0,500.0,600.0])
@@ -352,6 +384,26 @@ class mK2000B:
                 print(f"Unknown Parameter {pName}!!!")
         self._sync_attrs_from_params()
         return 0
+
+    def configure(self, values=None):
+        """Set every parameter without the GUI: DEFAULT_PARAMS, overridden by
+        values ({parameter name: number}), including the ramp/delay/room
+        attributes go_to_temp() and go_to_room_temp() use and the temperature
+        grid (self.tempGrid). Needs no connection. Returns the parameters.
+
+        Example: stage.configure({'Initial Temperature (C)': 25, 'Final Temperature (C)': 50})
+        """
+        unknown = sorted(set(values or {}) - set(DEFAULT_PARAMS))
+        if unknown:
+            raise KeyError(f"unknown temperature parameter(s): {unknown}")
+        merged = {**DEFAULT_PARAMS, **(values or {})}
+        self.load_params(merged)
+        self.Tinitial = merged['Initial Temperature (C)']
+        self.Tfinal = merged['Final Temperature (C)']
+        self.tempStep = merged['Temperature Step (C)']
+        self.tempGrid = self.build_temp_grid(self.Tinitial, self.Tfinal, self.tempStep)
+        self.numTemps = len(self.tempGrid)
+        return dict(self.params)
 
     def load_params(self, valueDict):
         for pName in list(self.params):

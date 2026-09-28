@@ -175,7 +175,16 @@ class dltsRun:
             self.tempDevice.set_temp_grid()
             dltsc.log_to_textbox("2. Temperature grid set.")
 
-            rootFolder = self.outputParams['Data Root Folder']
+            rootFolder = str(self.outputParams.get('Data Root Folder') or '').strip()
+            # An empty root used to give '\\MMDDYY\\HHMMSS\\', i.e. a run folder at
+            # the root of the current drive; a relative one lands wherever the GUI
+            # was started. Refuse both before anything is created.
+            if not rootFolder or not os.path.isabs(rootFolder):
+                dltsc.log_to_textbox(
+                    "Error: Data Root Folder is not set" if not rootFolder else
+                    f"Error: Data Root Folder '{rootFolder}' is not a full path")
+                dltsc.log_to_textbox("Choose it with Browse... on the Input Parameters tab, then Apply + Push Params.")
+                return -1
             outputType = str(self.outputParams['Data File Format']).strip().lower()
             if outputType == 'json':
                 ext = '.json'
@@ -186,19 +195,14 @@ class dltsRun:
             else:
                 ext = '.json'
 
+            # Root\MMDDYY\HHMMSS\
             timeAndDate = datetime.now()
-            temp = '{:02d}'.format(timeAndDate.month) + '{:02d}'.format(timeAndDate.day) + \
-                   '{:02d}'.format(timeAndDate.year)[-2:] + '\\'
-            topFolder = rootFolder + '\\' + temp
-            if not os.path.exists(topFolder):
-                os.makedirs(topFolder)
-
-            timeAndDate = datetime.now()
-            temp = '{:02d}'.format(timeAndDate.hour) + '{:02d}'.format(timeAndDate.minute) + \
-                   '{:02d}'.format(timeAndDate.second) + '\\'
-            subFolder = topFolder + '\\' + temp
-            if not os.path.exists(subFolder):
-                os.makedirs(subFolder)
+            subFolder = os.path.join(rootFolder, timeAndDate.strftime('%m%d%y'), timeAndDate.strftime('%H%M%S'))
+            try:
+                os.makedirs(subFolder, exist_ok=True)
+            except OSError as exc:
+                dltsc.log_to_textbox(f"Error: cannot create the run folder {subFolder}: {exc}")
+                return -1
 
             self.runOutputFileType = outputType
             self.dataFolder = subFolder
@@ -209,10 +213,10 @@ class dltsRun:
                    prefix = 'n'
                 else:
                    prefix = 'p'
-                fName.append(self.dataFolder + prefix +
-                            str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.','p') + ext)
+                fName.append(os.path.join(self.dataFolder, prefix +
+                            str(np.abs(dltsc.tempDev.tempGrid[i])).replace('.','p') + ext))
             self.dataFileNames = fName
-            self.paramsFileName = self.dataFolder + 'runParams.txt'
+            self.paramsFileName = os.path.join(self.dataFolder, 'runParams.txt')
 
             # Publish this run's file manifest so liveDataTab.py can watch for
             # each temperature's file without reaching into this instance.

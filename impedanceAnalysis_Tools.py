@@ -6,6 +6,7 @@ Created on Wed May  6 13:23:08 2026
 """
 
 import os
+import re
 import time
 import zhinst.core as zi
 import zhinst.toolkit as zt
@@ -44,6 +45,17 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties"
 
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
+
+# cleanup_data(): a time step larger than this many typical (median) steps is a
+# gap, which _gap_remove() closes.
+GAP_FACTOR = 100
+
+# Step file name without extension -> (sign, integer, decimals): p25p0, n10p5,
+# p25C, p25p0_1, 25p0 (no sign letter = positive). Same rule as liveDataTab's
+# _LEGACY_FILENAME_PATTERN, which decides which files the folder scans load.
+_STEP_STEM_PATTERN = re.compile(r'^([npNP]?)(\d+)(?:[pP](\d+))?[cC]?(?:_\d+)?$')
+# ZI export history name -> (sign, integer, decimals): 25C_000, p25C_001, n10C_000, p25p5C_000.
+_CSV_NAME_PATTERN = re.compile(r'^([npNP]?)(\d+)(?:[pP.](\d+))?C_')
 
 def read_h5_record(file_path, keys=None):
     """Read one temperature step written by ziDevice.writeDataH5().
@@ -94,39 +106,35 @@ class impdData:
             return json.load(file)
 
     @staticmethod
-    def _extract_txt_temperature(file_path):
-        basename = os.path.basename(file_path)
-        idx = basename.find('.')
-        if idx <= 1:
-            return None
+    def _celsius_to_kelvin_key(sign, integerPart, fracPart):
+        """Temperature key in K from a parsed setpoint: exact (273.15 offset,
+        decimals kept), rounded to 1e-6 K so the same setpoint always gives
+        the same float key."""
+        celsius = float(f"{integerPart}.{fracPart or 0}")
+        if sign in ('n', 'N'):
+            celsius = -celsius
+        return round(celsius + 273.15, 6)
 
-        t0 = '+' if basename[0] == 'p' else '-'
-        t = basename[1:idx].replace('p', '.')
-        t = t0 + t
-        if not t.strip():
+    @staticmethod
+    def _extract_txt_temperature(file_path):
+        """Setpoint in K from a step file name: p25p0.txt -> 298.15, n10p5.h5 ->
+        262.65, p25C_1.txt -> 298.15 (the names liveDataTab's folder scan
+        accepts; a missing sign letter means positive). None if the name
+        doesn't encode a temperature."""
+        stem = os.path.splitext(os.path.basename(file_path))[0]
+        match = _STEP_STEM_PATTERN.match(stem)
+        if match is None:
             return None
-        return int(float(t)) + 273
+        return impdData._celsius_to_kelvin_key(*match.groups())
 
     @staticmethod
     def _extract_csv_temperature(data_name):
-        stopIdx = data_name.find('C_')
-        if stopIdx <= 0:
+        """Setpoint in K from a ZI export history name such as '25C_000',
+        'p25C_001', 'n10C_000' or 'p25p5C_000'. None if it has none."""
+        match = _CSV_NAME_PATTERN.match(data_name)
+        if match is None:
             return None
-
-        if data_name[0] == 'p':
-            t0 = '+'
-            t = data_name[1:stopIdx]
-            t = t0 + t
-        elif data_name[0] == 'n':
-            t0 = '-'
-            t = data_name[1:stopIdx]
-            t = t0 + t
-        else:
-            t = data_name[:stopIdx]
-
-        if not t.strip():
-            return None
-        return int(float(t)) + 273
+        return impdData._celsius_to_kelvin_key(*match.groups())
 
     @staticmethod
     def _merge_nested_dict(existing, incoming, concatenate_arrays=False):
@@ -554,17 +562,28 @@ class impdData:
                 for i in range(len(list(signal))):
                     signal[list(signal)[i]] = np.asarray(signal[list(signal)[i]])
 
-            deltas = np.abs(np.diff(signal['tickStampImps']))
-            maxgap = [np.max(deltas), np.argmax(deltas)]
-            mingap = [np.min(deltas), np.argmin(deltas)]
-            if maxgap[0] > 100*mingap[0]:
-                # Handle the gap between signal['tickStampImps'][maxgap[1]] and signal['tickStampImps'][maxgap[1]+1]
-                if signal['tickStampImps'][maxgap[1]] > signal['tickStampImps'][maxgap[1]+1]:
-                    offset = signal['tickStampImps'][maxgap[1]] + mingap[0]
-                    signal['tickStampImps'][maxgap[1]+1:] = signal['tickStampImps'][maxgap[1]+1:] + offset
-                if signal['tickStampImps'][maxgap[1]+1] > signal['tickStampImps'][maxgap[1]]:
-                    offset = signal['tickStampImps'][maxgap[1]+1] - mingap[0]
-                    signal['tickStampImps'][:maxgap[1]+1] = signal['tickStampImps'][:maxgap[1]+1] + offset
+            # Close every gap -- a jump forward (dropped samples) or backward (a
+            # second record of the same temperature appended by append_data(),
+            # restarting its clock) -- larger than GAP_FACTOR typical steps, by
+            # replacing it with one typical step. The axis is rebuilt from its
+            # first sample, so it is continuous and increasing afterwards.
+            # (This used to shift one segment by the wrong offset, leaving the
+            # segments overlapping, and could apply both of its two shifts.)
+            tick = signal['tickStampImps']
+            if tick.dtype.kind == 'u':
+                tick = tick.astype(np.int64)   # np.diff of unsigned ticks wraps on a backward jump
+            deltas = np.diff(tick)
+            step = np.median(np.abs(deltas)) if deltas.size else 0
+            gaps = np.abs(deltas) > GAP_FACTOR * step if step > 0 else np.zeros(deltas.size, dtype=bool)
+            if gaps.any():
+                if tick.dtype.kind == 'i':
+                    step = max(1, int(round(step)))
+                fixed = deltas.copy()
+                fixed[gaps] = step
+                newTick = np.empty_like(tick)
+                newTick[0] = tick[0]
+                newTick[1:] = tick[0] + np.cumsum(fixed)
+                signal['tickStampImps'] = newTick
                 signal['timeStampImps'] = signal['tickStampImps'] / impdData._ticks_per_second(signal['tickStampImps'])
                 signal['tickStampDemods'] = np.array(signal['tickStampImps'], copy=True)
                 signal['timeStampDemods'] = np.array(signal['timeStampImps'], copy=True)

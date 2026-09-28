@@ -77,12 +77,29 @@ def test_unequal_channel_lengths(zi_device, tmp_path):
     assert h5txt.read_txt(result['output'])['AbsZ'] == [] and result['rows'] == 32
 
 
-@pytest.mark.parametrize('name', ['p25p0.txt', 'p25p0.json', 'n10p0.txt'])
+@pytest.mark.parametrize('name', ['p25p0.txt', 'p25p0.json', 'n10p0.txt', 'p30p0.csv', 'P25p0.TXT'])
 def test_refuses_names_the_analysis_tabs_would_read_as_data(step_h5, tmp_path, name):
     path, _ = step_h5
     with pytest.raises(ValueError, match='named like a run'):
         h5txt.export_h5(str(path), str(tmp_path / name))
     assert not (tmp_path / name).exists()
+
+
+@pytest.mark.parametrize('name', ['p30p0.h5', 'other.h5'])
+def test_refuses_to_write_over_hdf5_data(zi_device, step_h5, tmp_path, name):
+    path, _ = step_h5
+    target = tmp_path / name
+    zi_device.writeDataH5(make_step(30.0, n=16), str(target))
+    before = target.read_bytes()
+    with pytest.raises(ValueError, match='not .h5'):
+        h5txt.export_h5(str(path), str(target))
+    assert target.read_bytes() == before
+
+
+def test_format_must_match_extension(step_h5, tmp_path):
+    path, _ = step_h5
+    with pytest.raises(ValueError, match="doesn't match"):
+        h5txt.export_h5(str(path), str(tmp_path / 'x.txt'), fmt='json')
 
 
 def test_export_next_to_the_run_is_ignored_by_the_folder_scan(step_h5, tmp_path):

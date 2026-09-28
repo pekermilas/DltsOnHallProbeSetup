@@ -35,6 +35,12 @@ def test_short_fill_pulse_matches_old_fixed_threshold():
     assert np.array_equal(starts, old) and len(starts) >= 2
 
 
+def test_nan_samples_do_not_shift_the_pulse_starts():
+    aux = np.array([np.nan, 0, 0, -5, -5, -5, 0, -5, -5])
+    starts, msg = ldT._find_reverse_bias_starts(aux)
+    assert msg is None and list(starts) == [2, 6]
+
+
 def test_constant_excitation_reports_no_pulses():
     aux = np.full(5000, -1.0) + np.random.default_rng(0).normal(0, 1e-3, 5000)
     starts, msg = ldT._find_reverse_bias_starts(aux)
@@ -75,6 +81,16 @@ def test_run_timing_from_run_params(tmp_path, enable, disable, expected):
     (tmp_path / 'runParams.txt').write_text(json.dumps({'State Enable Time': enable, 'State Disable Time': disable}))
     fp, rb = ldT._legacy_run_timing(str(tmp_path))
     assert (fp, rb) == pytest.approx(expected)
+
+
+def test_plot_slice_reads_timing_boundaries(monkeypatch):
+    class V:
+        def __init__(self, v): self.v = v
+        def get(self): return self.v
+    monkeypatch.setattr(ldT.dltsc, 'manual_paramVars', {'slice_start': V('2.0'), 'slice_end': V('')})
+    assert ldT._plot_slice_ms() == (2.0, None)
+    monkeypatch.setattr(ldT.dltsc, 'manual_paramVars', None)
+    assert ldT._plot_slice_ms() == (None, None)
 
 
 def test_run_timing_missing_is_none(tmp_path):

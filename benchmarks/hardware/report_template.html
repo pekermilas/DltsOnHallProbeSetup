@@ -207,13 +207,28 @@ svg .val { fill: var(--ink); font-size: 11.5px; }
       <div class="tablewrap" id="tbPdf"></div></div>
   </section>
 
+  <section id="rwSection" hidden>
+    <div class="sechead"><span class="secnum">06 · DLTS ANALYSIS</span><h2>Quick Analysis and Detailed Analysis on this run</h2>
+      <p id="rwSentence"></p></div>
+    <div class="card"><h3>DLTS signal S(T) for each rate window</h3>
+      <div class="sub" id="rwSub"></div>
+      <div class="legend" id="lgRw"></div>
+      <div class="chart" id="chRw"></div>
+      <div class="tablewrap" id="tbRw"></div>
+    </div>
+    <div class="card"><h3>Arrhenius result in the two tabs</h3>
+      <div class="sub">Same transients, same windows, same search range, smoothing spline. Detailed Analysis' figure is its Standard block.</div>
+      <div class="tablewrap" id="tbRwFit"></div>
+    </div>
+  </section>
+
   <section id="notesSection" hidden>
-    <div class="sechead"><span class="secnum">06 · FOUND DURING THE RUN</span><h2>What this run turned up</h2></div>
+    <div class="sechead"><span class="secnum">07 · FOUND DURING AND AFTER THE RUN</span><h2>What this run turned up, and what was fixed</h2></div>
     <div id="notes" class="notes"></div>
   </section>
 
   <section>
-    <div class="sechead"><span class="secnum">07 · METHOD</span><h2>How this was measured</h2></div>
+    <div class="sechead"><span class="secnum">08 · METHOD</span><h2>How this was measured</h2></div>
     <p id="method" style="color:var(--ink2)"></p>
   </section>
 </main>
@@ -458,6 +473,42 @@ function drawAll() {
   table('tbLive', ['File', 'Temps loaded', 'Read (s)', 'Cleanup (s)', 'Clustering (s)', 'Denoise + all (s)'],
     li.map(r => [r.file, r.nTemps, f(r.read_s, 3), f(r.cleanup_s, 3), f(r.cluster_s, 2), f(r.denoise_s + r.allEmissions_s, 2)]));
   table('tbPdf', ['Measure', 'Evaluation (synthetic, 40 × 2^16)', 'This run (real, 6 × 2^18)'], D.pdfRows);
+  drawRw();
+}
+
+function drawRw() {
+  const W = R.rateWindows;
+  if (!W) return;
+  $('rwSection').hidden = false;
+  const q = W.quick, d = W.detailedStd;
+  // A trap gives a positive Et with R² near 1; anything else is not a trap signature.
+  const noEmission = !q || q.Et <= 0 || q.R2 < 0.5 || (q.Et_se != null && q.Et_se > Math.abs(q.Et));
+  const same = (!q && !d) || (q && d && Math.abs(q.Et - d.Et) <= 1e-9 * Math.abs(d.Et) && Math.abs(q.Nt - d.Nt) <= 1e-9 * Math.abs(d.Nt));
+  $('rwSentence').textContent =
+    `Windows ${W.windows.map(w => w[0] + '/' + w[1]).join(', ')} ms (the GUI's default windows scaled to this run's ${f(R.rbMs, 0)} ms reverse bias), ` +
+    `peak search over the run's own range, ${f(W.tpLo, 1)} to ${f(W.tpHi, 1)} K. ` +
+    (same ? 'Both tabs give the same numbers, as they now share one pipeline. ' : 'The two tabs DISAGREE. ') +
+    (noEmission ? 'This run shows no trap emission: S(T) has no peak that moves to higher temperature for faster windows, ' +
+      'and the fit gives ' + (q ? `Et = ${f(q.Et, 2)} ± ${f(q.Et_se, 2)} eV with R² = ${f(q.R2, 2)}` : 'no result') +
+      `. ${grid.length} setpoints over ${f(grid[grid.length - 1] - grid[0], 0)} K with a ${f(R.rbMs, 0)} ms reverse bias were chosen to exercise the HDF5 path, not to characterize a trap. ` +
+      'The result is shown only to confirm that the two tabs agree.' : '');
+  $('rwSub').textContent = 'Lines are ΔC/C∞ at each setpoint; a dot marks the peak each window reports. ' +
+    'A peak on the edge of the search range gets no T_peak error and is left out of the fit.';
+  const cols = ['--t1', '--t2', '--t3', '--t4', '--t5', '--t0'];
+  legend('lgRw', W.rows.map((r, i) => ({ n: `${r.t1}/${r.t2} ms`, c: cols[i % cols.length], line: 1 })));
+  lineChart('chRw', {
+    series: W.rows.map((r, i) => ({ n: `${r.t1}/${r.t2} ms`, c: cols[i % cols.length], pts: r.T_K.map((T, j) => [T, r.S[j] * 1e3]), w: 2 })),
+    dots: W.rows.filter(r => !r.skipped).map(r => ({ x: r.Tp, y: r.S_peak * 1e3, c: cols[W.rows.indexOf(r) % cols.length] })),
+    height: 260, xLabel: 'temperature (K)', yLabel: 'ΔC/C∞ (×10⁻³)', xFmt: v => f(v, 0), xTip: v => f(v, 1) + ' K', yFmt: v => f(v, 0), yTip: v => f(v, 2), ml: 50
+  });
+  const status = r => r.skipped ? 'skipped (no peak)' : r.used ? 'used' : 'excluded (edge peak)';
+  table('tbRw', ['Window (ms)', 'e_n (s⁻¹)', 'T_peak (K)', 'ΔC/C∞ at peak', 'Arrhenius fit'],
+    W.rows.map(r => [`${r.t1} / ${r.t2}`, f(r.e_n, 1), r.skipped ? '–' : f(r.Tp, 2) + (r.Tp_err != null ? ' ± ' + f(r.Tp_err, 2) : ''),
+      r.skipped ? '–' : Number(r.S_peak).toExponential(2), status(r)]));
+  const pm = (v, e, d, exp) => v == null ? '–' : (exp ? Number(v).toExponential(d) : f(v, d)) + (e != null ? ' ± ' + (exp ? Number(e).toExponential(d) : f(e, d)) : '');
+  const row = (name, x) => x ? [name, pm(x.Et, x.Et_se, 3) + ' eV', pm(x.sigma, x.sigma_se, 1, 1), f(x.R2, 3), `${x.N} + ${x.N_excluded}`, Number(x.Nt).toExponential(3)]
+                             : [name, 'no fit', '–', '–', '–', '–'];
+  table('tbRwFit', ['Tab', 'Et', 'σ (cm²)', 'R²', 'Used + excl.', 'Nt (cm⁻³)'], [row('Quick', q), row('Detailed (Standard)', d)]);
 }
 
 let rawT = grid[0], emT = grid[0];

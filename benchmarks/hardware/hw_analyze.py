@@ -169,6 +169,47 @@ check('Detailed Analysis Load Data: every temperature loaded, identical from JSO
       f"{len(det['.h5']['temps'])} temperatures")
 res['detailed'] = {k: dict(s=v['s'], errors=v['errors']) for k, v in det.items()}
 
+# ---- 3b. Rate-window analysis: Quick Analysis vs Detailed Analysis ------------------------
+# Quick Analysis on the Qualitative Extract & Average transients, Detailed Analysis on its own
+# Load Data of the same HDF5 run, both with the same five windows (scaled to this run's reverse
+# bias like the GUI defaults are to 500 ms), the run's own temperature range and the spline.
+import dataAnalysisTab as qaT
+wins = [(round(RB_MS * a / 500.0, 4), round(RB_MS * b / 500.0, 4)) for a, b in daT.DEFAULT_STD_WINDOWS]
+tpLo, tpHi = min(grid) + 273.15 - 0.5, max(grid) + 273.15 + 0.5
+records, rtemps = qaT._transient_records(qaObj['.h5'], RB_MS)
+pks = qaT._window_peaks(records, rtemps, wins, tpLo, tpHi, qaT.PEAK_METHOD_SPLINE)
+good = [dict(T_peak=p['Tp'], T_peak_err=p['Tp_err'], e_n=p['e_n'], S_peak=p['S_peak']) for p in pks if not p['skipped']]
+quick = qaT._quick_arrhenius(good, daT.DEFAULT_GAMMA, daT.DEFAULT_ND, (records, rtemps, RB_MS)) if len(good) >= 2 else None
+dd = det['.h5']['data']
+try:
+    dOut = daT._compute_detailed_analysis(dd, sorted(dd), dict(
+        nWin=8, t1Min=wins[0][0], t1Max=wins[-1][0], ratio=5.0, stdWins=wins, gamma=daT.DEFAULT_GAMMA,
+        nd=daT.DEFAULT_ND, tpLo=tpLo, tpHi=tpHi, peakMethod=daT.PEAK_METHOD_SPLINE,
+        signalMethod=daT.SIGNAL_METHOD_MEASURED, denoise=daT.DENOISE_NONE, rbMs=RB_MS, showStd=True,
+        showSpectra=False, nSpectra=5, showTmap=False, showTau=False, showRwm=False))
+    std, dNt, dErr = dOut['resStd'], dOut['Nt'], None
+except ValueError as exc:
+    std, dNt, dErr = None, None, str(exc)
+fitKeys = ('Et', 'Et_se', 'sigma', 'sigma_se', 'R2', 'N', 'N_excluded', 'weighted')
+pick = lambda r, nt: None if r is None else {**{k: (None if r[k] is None else float(r[k])) for k in fitKeys}, 'Nt': nt}
+fitMask = list(quick['fit_mask']) if quick else []
+rw = dict(windows=wins, tpLo=tpLo, tpHi=tpHi, detailedError=dErr,
+          quick=pick(quick, quick['Nt'] if quick else None), detailedStd=pick(std, dNt), rows=[])
+it = iter(fitMask)
+for p in pks:
+    used = None if p['skipped'] else bool(next(it)) if fitMask else False
+    rw['rows'].append(dict(t1=p['t1'], t2=p['t2'], e_n=p['e_n'], skipped=p['skipped'], used=used,
+                           Tp=p.get('Tp'), Tp_err=p.get('Tp_err'), S_peak=p.get('S_peak'),
+                           T_K=[float(t) for t in p['T_k']], S=[float(s) for s in p['Signal']]))
+res['rateWindows'] = rw
+same_fit = (quick is None and std is None) or (quick is not None and std is not None and all(
+    (quick[k] is None and std[k] is None) or (quick[k] is not None and std[k] is not None
+                                              and np.isclose(quick[k], std[k], rtol=1e-9)) for k in fitKeys))
+check('Quick Analysis and Detailed Analysis (Standard) give the same Et, sigma and Nt',
+      same_fit and (quick is None or np.isclose(quick['Nt'], dNt, rtol=1e-12)),
+      'no fit in either tab' if quick is None else f"Et {quick['Et']:.4g} eV in both, {quick['N']} fitted, "
+                                                  f"{quick['N_excluded']} excluded")
+
 mem = {}
 for ext in ('.txt', '.h5'):
     tracemalloc.start(); impd = iaT.impdData(fName=[paths[ext][0]]); impd.read_data()

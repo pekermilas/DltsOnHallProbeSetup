@@ -28,6 +28,11 @@ Everything the scripts write goes to `benchmarks/hardware/output/run_<timestamp>
 `report.html` and a JSON copy of the run (about 60 MB per 2^18-point step). The run's
 data files stay in the Data Root Folder, and nothing is written there by the analysis.
 
+`hw_analyze.py` also runs the rate-window analysis both ways, Quick Analysis on the
+Extract & Average transients and Detailed Analysis on its own Load Data, with the GUI's
+default windows scaled to the run's reverse bias. One check requires the two to give the
+same Et, σ and Nt; the report's section 06 shows S(T), the peaks and both fits.
+
 ## Files
 
 - `hw_common.py`: GUI parameter defaults and the connect/push sequence.

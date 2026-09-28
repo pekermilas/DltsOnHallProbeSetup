@@ -153,11 +153,15 @@ rateWindow_denoiseVar = None      # tk.StringVar: 'None (raw)' (default) / pca /
 rateWindow_denoisedEmissions = None  # last impdData.calculate_delC_normalized() call's denoised/raw
                                       # emission snapshot, T -> {'x','yRaw','yFiltered','yerr','filterMethod'}
 rateWindow_peakMethodVar = None   # tk.StringVar: 'Smoothing Spline' (default) or lmfit curve fit
-rateWindow_windowVars = None      # list of 4 (t1Var, t2Var) tk.StringVar pairs, one per rate window set
+rateWindow_windowVars = None      # list of 5 (t1Var, t2Var) tk.StringVar pairs, one per rate window set
 rateWindow_tpLoVar = None         # tk.StringVar: peak-search lower temperature bound (K), blank = no bound
 rateWindow_tpHiVar = None         # tk.StringVar: peak-search upper temperature bound (K), blank = no bound
 rateWindow_signals = None        # rw_index -> {'T_k': array, 'Signal': array}
-rateWindow_extractedPeaks = None  # rw_index -> {'T_peak':, 'S_peak':, 'e_n':}
+rateWindow_extractedPeaks = None  # rw_index -> {'T_peak':, 'S_peak':, 'e_n':, 'T_peak_err':, 't1':, 't2':}
+                                   # (skipped windows are left out)
+rateWindow_transients = None      # (records, temps, rb_ms) of the averaged transients the last Compute
+                                   # used, in Detailed Analysis' record shape -- Nt is computed from
+                                   # these; None when the signal came from impdData directly
 rateWindow_peakTable = None       # ttk.Treeview showing per-window fit results
 rateWindow_figure = None
 rateWindow_ax = None
@@ -369,6 +373,7 @@ def init():
     global rateWindow_tpHiVar
     global rateWindow_signals
     global rateWindow_extractedPeaks
+    global rateWindow_transients
     global rateWindow_peakTable
     global rateWindow_figure
     global rateWindow_ax
@@ -489,6 +494,11 @@ def log_to_textbox(message):
                 _textboxes = [textbox]
         except NameError:
             pass
+    if not _textboxes:
+        # No GUI (the instrument classes or dltsRun used from a script): print
+        # instead, so warnings such as pull_data()'s acquisition timeout are seen.
+        print(message)
+        return
     for tb in _textboxes:
         if tb:
             tb.insert("end", f"{message}\n")

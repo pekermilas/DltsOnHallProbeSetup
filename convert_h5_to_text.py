@@ -23,12 +23,15 @@ import math
 import os
 import sys
 
+import re
+
 import h5py
 import numpy as np
 
-from convert_json_to_h5 import setpoint_from_name
-
 FORMATS = ('txt', 'json')
+# Any name the analysis tabs or the JSON->HDF5 converter would take for a run's
+# step file (p25p0.txt, n10p0.h5, p120C.csv, p25p0_1.json, ...).
+_STEP_NAME = re.compile(r'^[npNP]\d+(?:[pP]\d+)?[cC]?(?:_\d+)?\.(txt|json|csv|h5)$', re.IGNORECASE)
 # Column order in exports: time axes first (HDF5 lists channels alphabetically).
 CHANNEL_ORDER = ('timeStampImps', 'timeStampDemods', 'tickStampImps', 'tickStampDemods',
                  'ImpedanceRe', 'ImpedanceIm', 'AbsZ', 'AuxInput1')
@@ -150,10 +153,14 @@ def export_h5(h5Path, outPath=None, fmt=None):
         fmt = format_from_path(outPath) if outPath else 'txt'
     if fmt not in FORMATS:
         raise ValueError(f"unknown format {fmt!r}; use one of {', '.join(FORMATS)}")
+    if outPath and os.path.splitext(outPath)[1].lower() in ('.txt', '.json') and format_from_path(outPath) != fmt:
+        raise ValueError(f"format {fmt!r} doesn't match the output extension of '{os.path.basename(outPath)}'")
     outPath = outPath or default_output_path(h5Path, fmt)
     if os.path.abspath(outPath) == os.path.abspath(h5Path):
         raise ValueError("the output file can't be the .h5 file itself")
-    if setpoint_from_name(os.path.basename(outPath)) is not None:
+    if os.path.splitext(outPath)[1].lower() == '.h5':
+        raise ValueError("the output must be a text file (.txt or .json), not .h5: that would replace data")
+    if _STEP_NAME.match(os.path.basename(outPath)):
         raise ValueError(f"'{os.path.basename(outPath)}' is named like a run's step file, so the analysis "
                          f"tabs would read it as data; choose another name, e.g. "
                          f"{os.path.basename(default_output_path(h5Path, fmt))}")

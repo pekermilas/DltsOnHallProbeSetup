@@ -11,6 +11,7 @@ from tkinter import filedialog
 
 import numpy as np
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -342,7 +343,7 @@ def _on_mode_toggle():
         _set_livePlot_mode(dltsc.livePlot_modeVar.get())
 
 def _format_dataset_label(t):
-    """Format a dataset's Kelvin temperature as 'K (C)', e.g. 273 (0) or 271 (-2)."""
+    """Format a dataset's Kelvin temperature as 'K (C)', e.g. 298.15 (25) or 262.65 (-10)."""
     try:
         celsius = round(t - 273.15)
     except TypeError:
@@ -370,7 +371,7 @@ def _update_dataset_dropdown(temps, preferred=None):
     """Refresh the dataset dropdown's values.
 
     Each entry is labeled with its Kelvin value and the equivalent Celsius value
-    in parentheses (e.g. '273 (0)'). Selects `preferred` (a previously-viewed
+    in parentheses (e.g. '298.15 (25)'). Selects `preferred` (a previously-viewed
     dataset label, e.g. when switching modes back) if it is still available,
     otherwise the most recently added one.
     """
@@ -1317,6 +1318,22 @@ def _downsample_for_plot(x, y, maxPoints=_MAX_PLOT_POINTS):
     stride = -(-n // maxPoints)  # ceil division
     return x[::stride], y[::stride]
 
+# Qualitative plot: more traces than this get a temperature color bar instead
+# of a legend.
+_MAX_LEGEND_TRACES = 10
+_manualColorbar = None   # the Qualitative plot's current color bar, removed on redraw
+
+def _plot_slice_ms():
+    """(start, end) of Timing Boundaries' Analysis Slice in ms, each None if
+    the field is empty or not a number. Used to window the Qualitative plot."""
+    bounds = []
+    for key in ('slice_start', 'slice_end'):
+        try:
+            bounds.append(float(dltsc.manual_paramVars[key].get()))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            bounds.append(None)
+    return tuple(bounds)
+
 def _get_transient_executor():
     """Return the shared ProcessPoolExecutor for _process_raw_transients, creating
     it on first use. Reused across extractions so only the very first click pays
@@ -1397,10 +1414,41 @@ def _process_raw_transients():
 
             dltsc.manual_ax.clear()
             scale, unit = _capacitance_axis_units([rec['avg_cap_pf'] for rec in processedTransients.values()])
-            for temp in sorted(processedTransients.keys()):
+            global _manualColorbar
+            if _manualColorbar is not None:
+                try:
+                    _manualColorbar.remove()
+                except Exception:
+                    pass
+                _manualColorbar = None
+            sliceLo, sliceHi = _plot_slice_ms()
+            temps = sorted(processedTransients.keys())
+            # Many traces: color by temperature with a color bar instead of a
+            # legend that would run off the plot.
+            useColorbar = len(temps) > _MAX_LEGEND_TRACES
+            if useColorbar:
+                norm = matplotlib.colors.Normalize(vmin=min(temps), vmax=max(temps))
+                cmap = matplotlib.colormaps['plasma']
+            for temp in temps:
                 rec = processedTransients[temp]
-                x, y = _downsample_for_plot(rec['time_ms'], rec['avg_cap_pf'])
-                dltsc.manual_ax.plot(x, np.asarray(y) * scale, label=f"{temp}°C")
+                t, c = np.asarray(rec['time_ms']), np.asarray(rec['avg_cap_pf'])
+                # Plot only the Analysis Slice (default 2 ms .. 98% of the reverse
+                # bias): the fill-pulse edge at t = 0 would otherwise set the y
+                # scale and flatten every transient. The data itself is unchanged.
+                keep = np.ones(t.size, dtype=bool)
+                if sliceLo is not None:
+                    keep &= t >= sliceLo
+                if sliceHi is not None:
+                    keep &= t <= sliceHi
+                if not keep.any():
+                    keep[:] = True
+                x, y = _downsample_for_plot(t[keep], c[keep])
+                dltsc.manual_ax.plot(x, np.asarray(y) * scale, label=f"{temp}°C",
+                                     color=cmap(norm(temp)) if useColorbar else None)
+            if useColorbar:
+                mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+                _manualColorbar = dltsc.manual_figure.colorbar(mappable, ax=dltsc.manual_ax, pad=0.01)
+                _manualColorbar.set_label('Temperature (°C)')
             if not processedTransients:
                 dltsc.manual_ax.text(0.5, 0.5, "No transients extracted.\nSee the log for the reason per temperature.",
                                      ha='center', va='center', transform=dltsc.manual_ax.transAxes, color='gray')
@@ -1412,7 +1460,7 @@ def _process_raw_transients():
             dltsc.manual_ax.set_title("Averaged Capacitance Transients Profile")
             dltsc.manual_ax.grid(True, linestyle=":")
             handles, labels = dltsc.manual_ax.get_legend_handles_labels()
-            if labels:
+            if labels and not useColorbar:
                 # A fixed corner instead of loc='best' skips matplotlib's
                 # overlap-search over every plotted point, which is otherwise a
                 # further main-thread rendering cost right when results land.
@@ -1591,10 +1639,12 @@ def _find_reverse_bias_starts(auxV):
     otherwise says why none were.
     """
     auxV = np.asarray(auxV, dtype=np.float64)
-    auxV = auxV[np.isfinite(auxV)]
-    if auxV.size < 2:
+    # Indices must line up with ImpedanceIm, so NaN samples stay in the array
+    # (they compare as not-forward) and are only left out of the level estimate.
+    finite = auxV[np.isfinite(auxV)]
+    if finite.size < 2:
         return np.array([], dtype=int), "no excitation (AuxInput1) samples to locate fill pulses in."
-    low, high = np.percentile(auxV, [0.01, 99.99])
+    low, high = np.percentile(finite, [0.01, 99.99])
     if high - low < _MIN_PULSE_HEIGHT_V:
         return np.array([], dtype=int), (
             f"no fill pulses found: the excitation (AuxInput1) stays between {low:.3f} and {high:.3f} V.")

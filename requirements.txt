@@ -1,0 +1,21 @@
+# DLTS control GUI (DLTSGUI_MainWindow.py) and its libraries.
+# Versions are the ones the software was tested with on the lab PC (Python 3.13.9).
+numpy>=2.1
+scipy>=1.15
+pandas>=2.2
+matplotlib>=3.10
+h5py>=3.12
+lmfit>=1.3
+uncertainties>=3.2
+scikit-learn>=1.6
+statsmodels>=0.14
+PyWavelets>=1.8
+fastlowess>=2.0
+torch>=2.6
+Pillow>=11.3
+pyserial>=3.5
+zhinst-core>=26.1
+zhinst-toolkit>=1.3
+pytest>=8.3
+# Only for the standalone legacy apps DLTS_APP.py and DrKayisScript.py:
+# PyQt6

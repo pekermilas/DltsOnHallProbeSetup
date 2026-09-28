@@ -54,6 +54,20 @@ DEFAULT_GRID_DT    = 1.86667e-5
 DEFAULT_CHUNK_SIZE = 32768
 DEFAULT_RB_MS      = 500.0
 
+# ── Analysis defaults shared with Quick Analysis (dataAnalysisTab), so both tabs
+# give the same result for the same data and windows ─────────────────────────
+KB_EV = 8.617333262145e-5          # Boltzmann constant, eV/K (CODATA 2018)
+DEFAULT_CINF_LO = 0.40             # C_infinity = mean C over [lo, hi] x reverse bias
+DEFAULT_CINF_HI = 0.90
+DEFAULT_ND = 3.2e14                # background doping, cm^-3
+DEFAULT_GAMMA = 1.66e21            # emission pre-factor, cm^-2 s^-1 K^-2 (4H-SiC)
+PEAK_MIN_FRAC = 0.05               # skip a window whose peak is below this fraction of max|S|
+DEFAULT_TPEAK_LO = 250.0           # peak-search range, K
+DEFAULT_TPEAK_HI = 400.0
+# Standard rate windows (t1, t2) in ms: this tab's "standard-window comparison"
+# and Quick Analysis' default window sets.
+DEFAULT_STD_WINDOWS = [(5.0, 25.0), (10.0, 50.0), (20.0, 100.0), (50.0, 250.0), (100.0, 490.0)]
+
 # Matches both old-style "25C_001" and new-style "85C" / "n10C" temperature
 # subfolder names.
 _FOLDER_RE = re.compile(r'^(n?)(\d+)C(?:_\d+)?$', re.IGNORECASE)
@@ -162,23 +176,64 @@ PEAK_METHOD_PARABOLIC = 'Parabolic fit (lmfit)'
 PEAK_METHOD_SPLINE = 'Smoothing Spline (bootstrap)'
 PEAK_METHOD_OPTIONS = [PEAK_METHOD_PARABOLIC, PEAK_METHOD_SPLINE]
 
+# A peak within this fraction of a grid step of either end of the search range
+# is on the edge: the signal still rises out of the range, so it isn't a real peak.
+EDGE_PEAK_FRAC = 0.01
+# Smallest Tp error (K) taken as real. A spline peak pinned to the range edge is
+# the same grid point in every bootstrap sample, giving ~1e-13 K, and such a
+# point would otherwise dominate the weighted Arrhenius fit.
+MIN_TP_ERR_K = 1e-4
+
 def _find_peak(T_arr, S_arr, S_err, method):
-    """Peak temperature and its 1-sigma error, (Tp, Tp_err), by `method`."""
-    if method == PEAK_METHOD_SPLINE:
-        return _find_peak_spline(T_arr, S_arr, S_err)
-    return _find_peak_parabolic(T_arr, S_arr, S_err)
+    """Peak temperature and its 1-sigma error, (Tp, Tp_err), by `method`.
+
+    Tp_err is None -- so _compute_arrhenius leaves the window out of the
+    weighted fit, like any peak without an error -- when the peak lies on the
+    edge of the search range or its error is below MIN_TP_ERR_K."""
+    return _find_peak_full(T_arr, S_arr, S_err, method)[:2]
+
+def _find_peak_full(T_arr, S_arr, S_err, method):
+    """(Tp, Tp_err, xFit, yFit): _find_peak plus the fitted curve for plotting
+    (None, None when the method has none). `method` is PEAK_METHOD_SPLINE,
+    PEAK_METHOD_PARABOLIC, or a callable (T, S, S_err) -> (Tp, Tp_err, xFit,
+    yFit) -- Quick Analysis passes its lmfit curve-fit finders that way."""
+    if callable(method):
+        Tp, Tp_err, xFit, yFit = method(T_arr, S_arr, S_err)
+    elif method == PEAK_METHOD_SPLINE:
+        Tp, Tp_err, xFit, yFit = _find_peak_spline(T_arr, S_arr, S_err)
+    else:
+        (Tp, Tp_err), xFit, yFit = _find_peak_parabolic(T_arr, S_arr, S_err), None, None
+    return Tp, _guard_peak_error(T_arr, Tp, Tp_err), xFit, yFit
+
+def _guard_peak_error(T_arr, Tp, Tp_err):
+    """Tp_err, or None for a peak on the edge of the search range or an error
+    below MIN_TP_ERR_K (see _find_peak)."""
+    if _peak_on_edge(T_arr, Tp):
+        return None
+    if Tp_err is None or not (np.isfinite(Tp_err) and Tp_err >= MIN_TP_ERR_K):
+        return None
+    return float(Tp_err)
+
+def _peak_on_edge(T_arr, Tp):
+    """True if Tp is at (or outside) either end of the search-range grid T_arr."""
+    T_arr = np.asarray(T_arr, dtype=float)
+    if T_arr.size < 2:
+        return True
+    tol = EDGE_PEAK_FRAC * float(np.min(np.abs(np.diff(T_arr)))) if T_arr.size > 1 else 0.0
+    return bool(Tp <= T_arr.min() + tol or Tp >= T_arr.max() - tol)
 
 def _find_peak_spline(T_arr, S_arr, S_err):
     """Peak of a weighted smoothing cubic spline over the whole search range,
     via Quick Analysis' own iaT.impdData._smoothingSpline_peakFinder, whose
     Tp error is a parametric-bootstrap estimate (a spline has no parameter
-    covariance). Falls back to the raw grid maximum (no error) if it fails."""
+    covariance). Returns (Tp, Tp_err, xFit, yFit); falls back to the raw grid
+    maximum (no error, no curve) if it fails."""
     try:
-        Tp, _, _, _, Tp_err, _ = iaT.impdData._smoothingSpline_peakFinder(
+        Tp, _, xFit, yFit, Tp_err, _ = iaT.impdData._smoothingSpline_peakFinder(
             T_arr, S_arr, signalYErr=_valid_errors(S_err))
     except Exception:
-        return float(T_arr[int(np.argmax(S_arr))]), None
-    return float(Tp), Tp_err
+        return float(T_arr[int(np.argmax(S_arr))]), None, None, None
+    return float(Tp), Tp_err, xFit, yFit
 
 def _find_peak_parabolic(T_arr, S_arr, S_err=None, hw=2):
     """Sub-grid peak temperature from a parabola fitted (lmfit QuadraticModel,
@@ -294,11 +349,19 @@ def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cin
     for tc, rec in raw.items():
         t_ms = rec['time_ms']
         cap = rec['avg_cap_pf']
-        mi = (t_ms >= cinf_lo * rb_ms) & (t_ms <= cinf_hi * rb_ms)
-        c_inf = float(np.nanmean(cap[mi])) if mi.any() else float(np.nanmean(cap))
-        data[tc] = (t_ms, cap, c_inf)
+        data[tc] = (t_ms, cap, _cinf_range_mean(t_ms, cap, rb_ms, cinf_lo, cinf_hi))
 
     return data, sorted(data.keys()), errorMsgs
+
+def _cinf_range_mean(t_ms, cap, rb_ms, cinf_lo=DEFAULT_CINF_LO, cinf_hi=DEFAULT_CINF_HI):
+    """C_infinity of one averaged transient: the mean capacitance over
+    [cinf_lo, cinf_hi] x rb_ms (all of it if that range holds no samples).
+    Both analysis tabs use this, so they normalize the DLTS signal the same way.
+    Averaged in float64: the extractors can return float32, whose mean would
+    differ from the same data already converted to float64 in the 7th digit."""
+    t_ms, cap = np.asarray(t_ms, dtype=np.float64), np.asarray(cap, dtype=np.float64)
+    mi = (t_ms >= cinf_lo * rb_ms) & (t_ms <= cinf_hi * rb_ms)
+    return float(np.nanmean(cap[mi])) if mi.any() else float(np.nanmean(cap))
 
 def _fit_arrhenius_line(x, y, Tp, Tp_err):
     """Error-weighted lmfit LinearModel fit of y = ln(en/T²) vs x = 1000/T.
@@ -324,33 +387,67 @@ def _fit_arrhenius_line(x, y, Tp, Tp_err):
             break
     return result, True
 
-def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_method=PEAK_METHOD_SPLINE,
-                       peak_min_frac=0.05):
-    T_K  = np.array([tc + 273.15 for tc in temps])
+def _emission_rate(t1, t2):
+    """Rate-window emission rate e_n (s^-1) for t1, t2 in ms."""
+    return np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+
+def _peak_from_signal(T_K, S_full, S_err_full, t_peak_lo, t_peak_hi, peak_method=PEAK_METHOD_SPLINE,
+                      peak_min_frac=PEAK_MIN_FRAC):
+    """One rate window's peak from its S(T) curve -- the step both analysis tabs
+    share. Inside [t_peak_lo, t_peak_hi] (K) the signal is flipped positive if
+    the peak is negative; a window whose peak is at most peak_min_frac of
+    max|S| over all temperatures is skipped. Returns a dict: skipped (bool),
+    and unless skipped Tp, Tp_err (None if unusable, see _find_peak), S_peak
+    (grid maximum, in the curve's own sign), sign, and xFit/yFit (fitted curve in
+    the curve's own sign, or None)."""
+    T_K, S_full = np.asarray(T_K, dtype=float), np.asarray(S_full, dtype=float)
+    S_err_full = None if S_err_full is None else np.asarray(S_err_full, dtype=float)
     mask = (T_K >= t_peak_lo) & (T_K <= t_peak_hi)
-    T_m  = T_K[mask]
+    if not mask.any():
+        return dict(skipped=True)
+    T_m, S_m = T_K[mask], S_full[mask]
+    S_err_m = S_err_full[mask] if S_err_full is not None else None
+    sign = -1.0 if np.max(S_m) < abs(np.min(S_m)) else 1.0
+    S_m = sign * S_m
+    peak_val = float(np.max(S_m))
+    if peak_val <= peak_min_frac * np.max(np.abs(S_full)):
+        return dict(skipped=True)
+    Tp, Tp_err, xFit, yFit = _find_peak_full(T_m, S_m, S_err_m, peak_method)
+    return dict(skipped=False, Tp=float(Tp), Tp_err=Tp_err, S_peak=sign * peak_val, sign=sign,
+                xFit=xFit, yFit=None if yFit is None else sign * np.asarray(yFit))
+
+def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_method=PEAK_METHOD_SPLINE,
+                       peak_min_frac=PEAK_MIN_FRAC):
+    T_K  = np.array([tc + 273.15 for tc in temps])
 
     en_list, Tp_list, Tp_err_list, Sp_list = [], [], [], []
     rows_detail = []
 
     for (t1, t2) in windows:
         S_full, S_err_full = _rate_window_signal(temps, data, t1, t2)
-        S_m, S_err_m = S_full[mask], S_err_full[mask]
-        if np.max(S_m) < abs(np.min(S_m)):
-            S_m = -S_m
-        peak_val = np.max(S_m)
-        if peak_val <= peak_min_frac * np.max(np.abs(S_full)):
+        pk = _peak_from_signal(T_K, S_full, S_err_full, t_peak_lo, t_peak_hi, peak_method, peak_min_frac)
+        if pk['skipped']:
             continue
-        Tp, Tp_err = _find_peak(T_m, S_m, S_err_m, peak_method)
-        en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+        en = _emission_rate(t1, t2)
+        Tp, Tp_err, peak_val = pk['Tp'], pk['Tp_err'], abs(pk['S_peak'])
         en_list.append(en); Tp_list.append(Tp); Sp_list.append(peak_val)
         Tp_err_list.append(np.nan if Tp_err is None else Tp_err)
         rows_detail.append((t1, t2, en, Tp - 273.15, Tp_err, peak_val))
 
-    en_arr = np.array(en_list)
-    Tp_arr = np.array(Tp_list)
-    Tp_err_arr = np.array(Tp_err_list)   # K, NaN where the peak fit gave no error
-    Sp_arr = np.array(Sp_list)
+    res = _arrhenius_fit(en_list, Tp_list, Tp_err_list, gamma)
+    if res is None:
+        return None
+    res.update(Sp_arr=np.array(Sp_list), peak_method=peak_method, detail=rows_detail)
+    return res
+
+def _arrhenius_fit(en_list, Tp_list, Tp_err_list, gamma):
+    """Arrhenius fit of rate-window peaks -- shared by both analysis tabs.
+    Tp_err entries are K, or NaN/None where the peak has no usable error.
+    Returns a dict (Et, sigma, their errors, fit mask, ...) or None if fewer
+    than 2 peaks can be fitted."""
+    en_arr = np.array(en_list, dtype=float)
+    Tp_arr = np.array(Tp_list, dtype=float)
+    Tp_err_arr = np.array([np.nan if e is None else e for e in Tp_err_list], dtype=float)   # K, NaN = no error
 
     # Windows whose peak has no error estimate (the peak fell on the edge of
     # the search range, so only the raw grid maximum is known) can't be
@@ -374,18 +471,24 @@ def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_m
     # 2-point line reports no error rather than a misleading ~0.
     if fit_mask.sum() < 3:
         sl_se = ic_se = covar = None
-    kB       = 8.617333e-5
+    kB       = KB_EV
     Et       = -sl * 1000.0 * kB
     Et_se    = sl_se * 1000.0 * kB if sl_se is not None else None
     sigma    = np.exp(ic) / gamma
     sigma_se = sigma * ic_se if ic_se is not None else None   # dσ = σ·d(intercept)
     R2       = float(linResult.rsquared)
-    return dict(en_arr=en_arr, Tp_arr=Tp_arr, Tp_err_arr=Tp_err_arr, Sp_arr=Sp_arr,
+    return dict(en_arr=en_arr, Tp_arr=Tp_arr, Tp_err_arr=Tp_err_arr,
                 Et=Et, Et_se=Et_se, sigma=sigma, sigma_se=sigma_se, R2=R2,
                 N=int(fit_mask.sum()), N_excluded=int((~fit_mask).sum()), fit_mask=fit_mask,
-                weighted=weighted, redchi=float(linResult.redchi), peak_method=peak_method,
+                weighted=weighted, redchi=float(linResult.redchi),
                 slope=sl, slope_se=sl_se, intercept=ic, intercept_se=ic_se, covar=covar,
-                x=x, y=y, detail=rows_detail)
+                x=x, y=y)
+
+def _trap_density(data, temps, rb_ms, nd):
+    """Trap density N_T = 2 * max over temperatures of |(C(rb_ms) - C(2 ms)) / C_inf|
+    * Nd (cm^-3), from _prepare_signal_data records -- shared by both analysis tabs."""
+    S_ref = np.array([(_cap_at(data[tc], rb_ms) - _cap_at(data[tc], 2.0)) / data[tc][2] for tc in temps])
+    return 2.0 * float(np.nanmax(np.abs(S_ref))) * nd
 
 def _prepare_spectra(mw, temps, data, n_spectra):
     """DLTS spectra for n_spectra of the multi-windows: list of (k, t1, t2, en, S*1e3)."""
@@ -437,7 +540,7 @@ def _prepare_rate_window_map(temps, data, t1_min, t1_max, ratio):
     """Nt/Nd sampled over (1/kT, T^2/en) and interpolated onto a 220x220 grid
     for the Rate-Window Analysis map. Returns dict(Xi, Yi, Zi, z_lo, z_hi,
     x_min, x_max), or None if there are too few points to interpolate."""
-    kB     = 8.617333e-5   # eV/K
+    kB     = KB_EV
     n_map  = 100
     t1_arr = np.logspace(np.log10(t1_min), np.log10(t1_max), n_map)
     T_K    = np.array([tc + 273.15 for tc in temps])
@@ -497,13 +600,16 @@ def _compute_detailed_analysis(data, temps, p):
     mw = [(float(t1), float(p['ratio'] * t1)) for t1 in t1Arr]
 
     resMw = _compute_arrhenius(mw, temps, data, p['gamma'], p['tpLo'], p['tpHi'], p['peakMethod'])
-    resStd = _compute_arrhenius(p['stdWins'], temps, data, p['gamma'], p['tpLo'], p['tpHi'], p['peakMethod'])
+    # A standard window set to 0 / 0 (or any t2 <= t1) is unused, so the table can
+    # also hold fewer than 5 windows -- e.g. Quick Analysis' four, for comparison.
+    stdWins = [(float(a), float(b)) for a, b in p['stdWins'] if a > 0 and b > a]
+    resStd = (_compute_arrhenius(stdWins, temps, data, p['gamma'], p['tpLo'], p['tpHi'], p['peakMethod'])
+              if stdWins else None)
     if resMw is None:
         raise ValueError('Multi-window: no peaks found. Check t1 range and temperature bounds.')
 
     T_K = np.array([tc + 273.15 for tc in temps])
-    S_ref = np.array([(_cap_at(data[tc], p['rbMs']) - _cap_at(data[tc], 2.0)) / data[tc][2] for tc in temps])
-    Nt = 2.0 * float(np.nanmax(np.abs(S_ref))) * p['nd']
+    Nt = _trap_density(data, temps, p['rbMs'], p['nd'])
 
     return dict(
         resMw=resMw, resStd=resStd, mw=mw, T_K=T_K, Nt=Nt,
@@ -1061,7 +1167,7 @@ def _detailed_plot_transient_map(ax, res_mw, T_K, tmap, params):
 
     # ── τ(T) = 1/eₙ(T) overlay ───────────────────────────────────────────
     if params['showTau'] and res_mw is not None:
-        kB    = 8.617333e-5
+        kB    = KB_EV
         gamma = params['gamma']
         Et    = res_mw['Et']
         sigma = res_mw['sigma']
@@ -1526,16 +1632,16 @@ def construct_detailedAnalysisTab():
 
     # ── C0 Estimation ─────────────────────────────────────────────────────
     section('C₀ Estimation Window')
-    dltsc.detailed_cinfLoVar = tk.DoubleVar(value=0.40)
-    dltsc.detailed_cinfHiVar = tk.DoubleVar(value=0.90)
+    dltsc.detailed_cinfLoVar = tk.DoubleVar(value=DEFAULT_CINF_LO)
+    dltsc.detailed_cinfHiVar = tk.DoubleVar(value=DEFAULT_CINF_HI)
 
     row('Start  (frac RB)', lambda p, **k: spinbox(p, dltsc.detailed_cinfLoVar, 0.1, 0.8, 0.05, '%.2f'))
     row('End    (frac RB)', lambda p, **k: spinbox(p, dltsc.detailed_cinfHiVar, 0.3, 0.99, 0.05, '%.2f'))
 
     # ── Physical constants ────────────────────────────────────────────────
     section('Physical Constants (4H-SiC)')
-    dltsc.detailed_gammaVar = tk.DoubleVar(value=1.66e21)
-    dltsc.detailed_ndVar    = tk.DoubleVar(value=3.2e14)
+    dltsc.detailed_gammaVar = tk.DoubleVar(value=DEFAULT_GAMMA)
+    dltsc.detailed_ndVar    = tk.DoubleVar(value=DEFAULT_ND)
 
     row('γ (cm⁻²s⁻¹K⁻²)',
         lambda p, **k: spinbox(p, dltsc.detailed_gammaVar, 1e20, 1e22, 1e20, '%.2e'))
@@ -1554,8 +1660,8 @@ def construct_detailedAnalysisTab():
 
     # ── Peak search range ─────────────────────────────────────────────────
     section('Peak Search Range')
-    dltsc.detailed_tpeakLoVar = tk.DoubleVar(value=250.0)
-    dltsc.detailed_tpeakHiVar = tk.DoubleVar(value=400.0)
+    dltsc.detailed_tpeakLoVar = tk.DoubleVar(value=DEFAULT_TPEAK_LO)
+    dltsc.detailed_tpeakHiVar = tk.DoubleVar(value=DEFAULT_TPEAK_HI)
 
     row('T min (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakLoVar, 100, 350, 5))
     row('T max (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakHiVar, 200, 600, 5))
@@ -1586,17 +1692,20 @@ def construct_detailedAnalysisTab():
     # ── Standard 5 windows ────────────────────────────────────────────────
     section('Standard Windows (reference)')
     dltsc.detailed_stdWinsVar = tk.BooleanVar(value=True)
-    ttk.Checkbutton(ctrl, text='Show 5-window comparison', variable=dltsc.detailed_stdWinsVar).pack(anchor='w', pady=2)
+    ttk.Checkbutton(ctrl, text='Show standard-window comparison (0 / 0 = unused)', variable=dltsc.detailed_stdWinsVar).pack(anchor='w', pady=2)
 
     tk.Label(ctrl, text='t1 / t2  (ms):', bg=CTRL_BG, fg=TEXT_SEC, font=('Segoe UI', 8)).pack(anchor='w')
     dltsc.detailed_stdEntries = []
-    for t1, t2 in [(5, 25), (10, 50), (20, 100), (50, 250), (100, 490)]:
+    # Same defaults as Quick Analysis' window sets, so the Standard result here
+    # and Quick Analysis' Arrhenius result match on the same data.
+    for t1, t2 in DEFAULT_STD_WINDOWS:
         fr = tk.Frame(ctrl, bg=CTRL_BG)
         fr.pack(fill='x', pady=1)
         v1, v2 = tk.DoubleVar(value=t1), tk.DoubleVar(value=t2)
-        ttk.Spinbox(fr, textvariable=v1, from_=1, to=490, increment=1, width=5, font=('Segoe UI', 9)).pack(side='left')
+        # 0 / 0 leaves a row unused (see _compute_detailed_analysis).
+        ttk.Spinbox(fr, textvariable=v1, from_=0, to=490, increment=1, width=5, font=('Segoe UI', 9)).pack(side='left')
         tk.Label(fr, text=' / ', bg=CTRL_BG, font=('Segoe UI', 9)).pack(side='left')
-        ttk.Spinbox(fr, textvariable=v2, from_=2, to=499, increment=1, width=5, font=('Segoe UI', 9)).pack(side='left')
+        ttk.Spinbox(fr, textvariable=v2, from_=0, to=499, increment=1, width=5, font=('Segoe UI', 9)).pack(side='left')
         dltsc.detailed_stdEntries.append((v1, v2))
 
     # ── Display options ───────────────────────────────────────────────────
