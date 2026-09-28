@@ -26,3 +26,5 @@ __pycache__/runDlts_Tools.cpython-313.pyc
 __pycache__/runDlts_Tools.cpython-313.pyc
 *.pyc
 *.iml
+benchmarks/benchdata/
+benchmarks/hardware/output/

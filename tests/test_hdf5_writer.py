@@ -37,6 +37,43 @@ def test_tick_stamps_survive_exactly_beyond_float_precision(zi_device, tmp_path)
         assert np.array_equal(f['tickStampImps'][()], data['tickStampImps'])
 
 
+def triggered_step(n=4096):
+    """What triggered pull_data() (the mode runs use) actually returns: the DAQ
+    grid's time axis in seconds under the tickStamp names, not clock ticks."""
+    data = make_step(25.0, n=n)
+    t = np.arange(n) * 1.8666666666666665e-05
+    for key in ('tickStampImps', 'tickStampDemods', 'timeStampImps', 'timeStampDemods'):
+        data[key] = t.copy()
+    return data
+
+
+def test_float_tick_stamps_from_triggered_acquisitions_are_kept(zi_device, tmp_path):
+    data = triggered_step()
+    path = tmp_path / 'p25p0.h5'
+    zi_device.writeDataH5(data, str(path))
+
+    with h5py.File(path, 'r') as f:
+        assert f['tickStampImps'].dtype == np.float64
+    record = iaT.read_h5_record(str(path))
+    for key in data:
+        assert np.array_equal(record[key], data[key]), key
+
+
+def test_triggered_step_analyses_like_json(zi_device, tmp_path):
+    data = triggered_step()
+    zi_device.writeDataH5(data, str(tmp_path / 'p25p0.h5'))
+    zi_device.writeDataJson(data, str(tmp_path / 'p25p0.txt'))
+
+    cleaned = []
+    for ext in ('.txt', '.h5'):
+        impd = iaT.impdData(fName=[str(tmp_path / ('p25p0' + ext))])
+        assert impd.read_data() == 0
+        impd.cleanup_data()
+        cleaned.append(impd.dataValues[impd.dataTemps[0]])
+    for key in cleaned[0]:
+        assert np.array_equal(np.asarray(cleaned[0][key]), cleaned[1][key]), key
+
+
 def test_attributes(zi_device, tmp_path):
     params = {'Number of Reps': 500, 'Data File Format': 'HDF5', 'Data Root Folder': 'C:\\data'}
     path = tmp_path / 'n10p0.h5'

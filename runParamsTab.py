@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import copy
+import threading
 
 from tkinter import *
 from tkinter import ttk
@@ -17,6 +18,7 @@ import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
 import impedanceAnalysis_Tools as iaT
 import runDlts_Tools as rdT
+import convert_h5_to_text as h5txt
 
 
 def _format_param_snapshot(param_vars):
@@ -247,7 +249,50 @@ def browse_root_folder():
 
     return 0
 
+_exportButton = None
+
+def export_h5_file():
+    """'Export HDF5 File...': pick a .h5 step file, then where to save it as a
+    readable tab-separated .txt table or .json (convert_h5_to_text.py). The
+    export runs on a background thread; a 2^18-point step takes a few seconds."""
+    initialDir = ''
+    if 'Data Root Folder' in getattr(dltsc, 'd_params_vars', {}):
+        initialDir = dltsc.d_params_vars['Data Root Folder'].get() or ''
+    h5Path = filedialog.askopenfilename(title='Select an HDF5 step file to export',
+                                        initialdir=initialDir or None,
+                                        filetypes=[('HDF5 step files', '*.h5'), ('All files', '*.*')])
+    if not h5Path:
+        return 0
+    outPath = filedialog.asksaveasfilename(
+        title='Save readable copy as', initialdir=os.path.dirname(h5Path),
+        initialfile=os.path.basename(h5txt.default_output_path(h5Path, 'txt')), defaultextension='.txt',
+        filetypes=[('Text table, tab-separated (*.txt)', '*.txt'), ('JSON (*.json)', '*.json')])
+    if not outPath:
+        return 0
+
+    if _exportButton is not None:
+        _exportButton.config(state='disabled')
+    dltsc.log_to_textbox(f"Exporting {os.path.basename(h5Path)} to {os.path.basename(outPath)}...")
+
+    def worker():
+        try:
+            result = h5txt.export_h5(h5Path, outPath)
+            msg = (f"Exported {os.path.basename(h5Path)} -> {result['output']} ({result['format'].upper()}, "
+                   f"{result['rows']} rows x {result['channels']} channels, {result['bytes'] / 1024 ** 2:.1f} MB).")
+        except Exception as exc:
+            msg = f"Export of {os.path.basename(h5Path)} failed: {exc}"
+
+        def apply():
+            if _exportButton is not None:
+                _exportButton.config(state='normal')
+            dltsc.log_to_textbox(msg)
+        dltsc.root.after(0, apply)
+
+    threading.Thread(target=worker, daemon=True).start()
+    return 0
+
 def construct_runParamsTab():
+    global _exportButton
     root = dltsc.root
     runParamsTab = dltsc.runParamsTab
     tabControl = dltsc.tabControl
@@ -499,6 +544,11 @@ def construct_runParamsTab():
     apply_btn4 = ttk.Button(oframe, text='Apply + Push Params', style=style_names['green']['button'],
                              command=lambda: apply_and_push_params(devType='output'))
     apply_btn4.grid(row=0, column=0, padx=4, pady=0, sticky='ew')
+
+    # Readable .txt/.json copy of one HDF5 step file, for inspection.
+    _exportButton = ttk.Button(oframe, text='Export HDF5 File...', style=style_names['green']['button'],
+                               command=export_h5_file)
+    _exportButton.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
 
     history_frame = ttk.Frame(runParamsFrame)
     # Place history controls below the existing parameter rows to avoid altering row heights above.

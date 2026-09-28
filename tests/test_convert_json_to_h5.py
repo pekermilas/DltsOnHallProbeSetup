@@ -88,6 +88,20 @@ def test_converted_run_reads_like_the_original(json_run):
     assert all(path.endswith('.h5') for path in registry.values())
 
 
+def test_converts_triggered_run_with_float_tick_stamps(zi_device, tmp_path):
+    """Real runs store the grid's time axis (seconds) under the tickStamp names;
+    those must convert and verify, not be truncated to integers."""
+    folder = tmp_path / 'run'
+    t = (np.arange(512) * 1.8666666666666665e-05).tolist()
+    data = {'tickStampImps': t, 'tickStampDemods': t, 'timeStampImps': t,
+            'timeStampDemods': t, 'ImpedanceIm': np.linspace(1e-10, 2e-10, 512)}
+    zi_device.writeDataJson(data, str(folder / 'p25p0.txt'))
+
+    assert conv.main([str(folder)]) == 0
+    record = iaT.read_h5_record(str(folder / 'p25p0.h5'))
+    assert np.array_equal(record['tickStampImps'], np.asarray(t))
+
+
 def test_delete_json(json_run):
     assert conv.main([str(json_run), '--delete-json']) == 0
     assert listing(json_run) == sorted(

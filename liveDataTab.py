@@ -951,6 +951,7 @@ def _scan_manual_directory_async(dir_path, isAppend):
         ziDetected = False
         ziInfo = None
         ziSubfolderParams = None
+        legacyTiming = None
         try:
             # Detect format, in order: a single combined ZI export (a header
             # CSV matching *imps_0_sample_param1_avg_header*.csv directly in
@@ -970,6 +971,7 @@ def _scan_manual_directory_async(dir_path, isAppend):
                     ziDetected = True
                 else:
                     registry = _compute_legacy_dataset(dir_path, errorMsgs)
+                    legacyTiming = _legacy_run_timing(dir_path)
         except Exception as exc:
             errorMsgs.append(f"error scanning folder: {exc}")
 
@@ -1031,6 +1033,13 @@ def _scan_manual_directory_async(dir_path, isAppend):
                         rb_ms = float(rb_match.group(1))
                         dltsc.manual_paramVars['rb_ms'].set(str(rb_ms))
                         dltsc.manual_paramVars['slice_end'].set(str(rb_ms * 0.98))
+            elif legacyTiming and not isAppend:
+                fpMs, rbMs = legacyTiming
+                dltsc.manual_paramVars['fp_ms'].set(f"{fpMs:g}")
+                dltsc.manual_paramVars['rb_ms'].set(f"{rbMs:g}")
+                dltsc.manual_paramVars['slice_end'].set(f"{rbMs * 0.98:g}")
+                dltsc.log_to_textbox(f"Manual analysis: Timing Boundaries set from runParams.txt "
+                                     f"(fill {fpMs:g} ms, reverse bias {rbMs:g} ms).")
 
             dltsc.manual_ziMode = _registry_format_label(dltsc.manual_datasetRegistry)
 
@@ -1266,6 +1275,24 @@ def _compute_legacy_dataset(dir_path, errorMsgs):
 
     return registry
 
+def _legacy_run_timing(dir_path):
+    """(fill ms, reverse-bias ms) from a run folder's runParams.txt, or None.
+
+    The MFIA's threshold unit sets the pulse: State Enable Time is the reverse
+    bias and State Disable Time the fill pulse (0.5 s / 0.001 s for a 500 ms /
+    1 ms run; the GUI defaults 0.006 / 0.003 s give 6 ms / 3 ms).
+    """
+    try:
+        with open(os.path.join(dir_path, 'runParams.txt'), 'r') as f:
+            params = json.load(f)
+        rbMs = float(params['State Enable Time']) * 1e3
+        fpMs = float(params['State Disable Time']) * 1e3
+    except Exception:
+        return None
+    if not (rbMs > 0 and fpMs > 0):
+        return None
+    return fpMs, rbMs
+
 def _select_all_manual_temps():
     dltsc.manual_tempListbox.select_set(0, tk.END)
 
@@ -1369,12 +1396,19 @@ def _process_raw_transients():
             dltsc.manual_processedTransients = processedTransients
 
             dltsc.manual_ax.clear()
+            scale, unit = _capacitance_axis_units([rec['avg_cap_pf'] for rec in processedTransients.values()])
             for temp in sorted(processedTransients.keys()):
                 rec = processedTransients[temp]
                 x, y = _downsample_for_plot(rec['time_ms'], rec['avg_cap_pf'])
-                dltsc.manual_ax.plot(x, y, label=f"{temp}°C")
+                dltsc.manual_ax.plot(x, np.asarray(y) * scale, label=f"{temp}°C")
+            if not processedTransients:
+                dltsc.manual_ax.text(0.5, 0.5, "No transients extracted.\nSee the log for the reason per temperature.",
+                                     ha='center', va='center', transform=dltsc.manual_ax.transAxes, color='gray')
             dltsc.manual_ax.set_xlabel("Time from Reverse Bias Start (ms)")
-            dltsc.manual_ax.set_ylabel("Capacitance (pF)")
+            dltsc.manual_ax.set_ylabel(f"Capacitance ({unit})")
+            # No offset/multiplier notation: small changes on a large baseline
+            # would otherwise read as '+4.5e6' in the corner instead of values.
+            dltsc.manual_ax.ticklabel_format(axis='y', useOffset=False, style='plain')
             dltsc.manual_ax.set_title("Averaged Capacitance Transients Profile")
             dltsc.manual_ax.grid(True, linestyle=":")
             handles, labels = dltsc.manual_ax.get_legend_handles_labels()
@@ -1389,7 +1423,8 @@ def _process_raw_transients():
             if executionErrors:
                 for err in executionErrors:
                     dltsc.log_to_textbox(f"Manual analysis: {err}")
-                dltsc.manual_statusLabel.config(text="Completed with processing errors.")
+                dltsc.manual_statusLabel.config(
+                    text=f"{len(processedTransients)} of {len(selectedTemps)} traces; see log for the rest.")
             else:
                 dltsc.manual_statusLabel.config(
                     text=f"Transients ensembled completely — {len(processedTransients)} traces.")
@@ -1538,6 +1573,48 @@ def _compute_mixed_transients(ziTemps, legacyTemps, cInfTargetMs, datasetRegistr
         executionErrors.extend(e)
     return processedTransients, executionErrors
 
+# Smallest fill-pulse height (V) treated as real pulsing rather than noise on a
+# constant excitation.
+_MIN_PULSE_HEIGHT_V = 0.05
+
+def _find_reverse_bias_starts(auxV):
+    """Indices where the excitation (AuxInput1) drops from the fill level to the
+    reverse-bias level, i.e. where each reverse-bias window starts.
+
+    The threshold sits midway between the file's own two excitation levels, so
+    any pulse settings work: 0 / -5 V (-2.5 V threshold, the value that used to
+    be fixed here) as well as the GUI's default -0.5 / -1.5 V (-1.0 V), which a
+    fixed -2.5 V never crossed. The levels are taken as extreme percentiles so a
+    short fill pulse (1 ms in 500 ms is 0.2% of samples) still counts as a level.
+
+    Returns (indices, message): message is None when pulses were found, and
+    otherwise says why none were.
+    """
+    auxV = np.asarray(auxV, dtype=np.float64)
+    auxV = auxV[np.isfinite(auxV)]
+    if auxV.size < 2:
+        return np.array([], dtype=int), "no excitation (AuxInput1) samples to locate fill pulses in."
+    low, high = np.percentile(auxV, [0.01, 99.99])
+    if high - low < _MIN_PULSE_HEIGHT_V:
+        return np.array([], dtype=int), (
+            f"no fill pulses found: the excitation (AuxInput1) stays between {low:.3f} and {high:.3f} V.")
+    isForward = auxV > (low + high) / 2
+    fallingTriggers = np.where(np.diff(isForward.astype(int)) == -1)[0]
+    if fallingTriggers.size == 0:
+        return fallingTriggers, (
+            f"no fill pulses found: the excitation (AuxInput1) never falls through {(low + high) / 2:.3f} V.")
+    return fallingTriggers, None
+
+def _capacitance_axis_units(curves):
+    """(scale, unit) to plot transients stored in pF so the tick labels stay
+    short at any magnitude: pF values of 1e7 (a non-capacitance ImpedanceIm, or
+    a large capacitance) are shown as 10 uF rather than 10,000,000 pF."""
+    peak = max((float(np.nanmax(np.abs(c))) for c in curves if np.size(c) and np.isfinite(c).any()), default=0.0)
+    for scale, unit in ((1e-9, 'mF'), (1e-6, 'µF'), (1e-3, 'nF')):
+        if peak >= 1 / scale:
+            return scale, unit
+    return 1.0, 'pF'
+
 def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datasetRegistry,
                                samplingRateS):
     """Legacy transient extraction, ported from DrKayisScript.py's original logic.
@@ -1587,15 +1664,20 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
                     auxV = np.array(data['AuxInput1'], dtype=np.float32)
                     rawCap = np.array(data['ImpedanceIm'], dtype=np.float32) * 1e12
 
-                    isForward = auxV > -2.5
-                    transitions = np.diff(isForward.astype(int))
-                    fallingTriggers = np.where(transitions == -1)[0]
+                    fallingTriggers, pulseMsg = _find_reverse_bias_starts(auxV)
+                    if pulseMsg:
+                        executionErrors.append(f"{temp}°C: {pulseMsg}")
+                        continue
 
                     cycleLen = int((rbDurationMs * 1e-3) / samplingRateS)
                     validBlocks = [rawCap[trig:trig + cycleLen]
                                   for trig in fallingTriggers
                                   if trig + cycleLen <= len(rawCap)]
                     if not validBlocks:
+                        executionErrors.append(
+                            f"{temp}°C: found {len(fallingTriggers)} fill pulse(s), but none is followed by a full "
+                            f"{rbDurationMs:g} ms reverse-bias window before the data ends "
+                            f"({len(rawCap) * samplingRateS * 1e3:.0f} ms recorded); lower Reverse Bias (ms).")
                         continue
                     avgCurve = np.mean(np.array(validBlocks), axis=0)
                     timeAxisMs = np.arange(len(avgCurve)) * samplingRateS * 1000

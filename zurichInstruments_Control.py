@@ -486,8 +486,10 @@ class ziDevice:
         One file per temperature step (mirroring the .txt files), so redo/retake
         simply overwrites that step's file and a crash can only cost the step
         being written. Each channel is its own 1-D dataset in its native type:
-        clock-tick stamps as uint64 (float32 would lose up to thousands of ticks
-        at 60 MHz), everything else as float64, all gzip + shuffle compressed.
+        integer clock-tick stamps as uint64 (float32 would lose up to thousands
+        of ticks at 60 MHz), everything else -- including the float time axis
+        triggered acquisitions store under the tickStamp names -- as float64,
+        all gzip + shuffle compressed.
         The setpoint, measured stage temperature, acquisition time and run
         parameters go in root attributes.
 
@@ -514,10 +516,14 @@ class ziDevice:
                 f.attrs[key] = value
 
             for key, values in data.items():
-                if key.startswith('tickStamp'):
-                    arr = np.asarray(values, dtype=np.uint64)
+                # Triggered pull_data() gives the DAQ grid's time axis in
+                # seconds (floats) under the tickStamp names, not clock ticks,
+                # so only integer tick stamps are stored as uint64.
+                arr = np.asarray(values)
+                if key.startswith('tickStamp') and arr.dtype.kind in 'iu':
+                    arr = arr.astype(np.uint64)
                 else:
-                    arr = np.asarray(values, dtype=np.float64)
+                    arr = arr.astype(np.float64)
                 # gzip needs a chunked layout, which an empty dataset can't have.
                 if arr.size > 0:
                     f.create_dataset(key, data=arr, compression='gzip',

@@ -534,6 +534,19 @@ class impdData:
         return -1
 
     @staticmethod
+    def _is_seconds_axis(tick):
+        """True when tickStamp* holds a time axis in seconds rather than 60 MHz
+        clock ticks: triggered pull_data() (the mode runs use) stores the DAQ
+        grid's float time axis (0, 18.7 us, ...) under the tickStamp names,
+        while untriggered acquisitions give integer clock ticks."""
+        tick = np.asarray(tick)
+        return tick.dtype.kind == 'f' and tick.size > 0 and not np.all(np.mod(tick[np.isfinite(tick)], 1) == 0)
+
+    @staticmethod
+    def _ticks_per_second(tick):
+        return 1.0 if impdData._is_seconds_axis(tick) else 60 * 10 ** 6
+
+    @staticmethod
     def _gap_remove(signal=None):
         if not signal is None:
             # Make sure data is a dict of arrays
@@ -552,7 +565,7 @@ class impdData:
                 if signal['tickStampImps'][maxgap[1]+1] > signal['tickStampImps'][maxgap[1]]:
                     offset = signal['tickStampImps'][maxgap[1]+1] - mingap[0]
                     signal['tickStampImps'][:maxgap[1]+1] = signal['tickStampImps'][:maxgap[1]+1] + offset
-                signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
+                signal['timeStampImps'] = signal['tickStampImps'] / impdData._ticks_per_second(signal['tickStampImps'])
                 signal['tickStampDemods'] = np.array(signal['tickStampImps'], copy=True)
                 signal['timeStampDemods'] = np.array(signal['timeStampImps'], copy=True)
 
@@ -590,17 +603,22 @@ class impdData:
                 for i in range(len(list(signal))):
                     signal[list(signal)[i]] = np.asarray(signal[list(signal)[i]])
 
-            # Find the indices of 0 time stamp elements
+            # Find the indices of 0 time stamp elements. On a time axis in
+            # seconds the first sample is a genuine t = 0, not a missing tick.
+            secondsAxis = impdData._is_seconds_axis(signal['tickStampImps'])
             idxtimeless = np.where(signal['tickStampImps']==0)[0]
+            if secondsAxis:
+                idxtimeless = idxtimeless[idxtimeless > 0]
             if len(idxtimeless) > 0:
-                valid_idx = np.where(signal['tickStampImps'] != 0)[0]
+                valid_idx = np.setdiff1d(np.arange(len(signal['tickStampImps'])), idxtimeless)
                 if valid_idx.size == 0:
                     # No valid timestamps to infer a step from; leave data unchanged.
                     return signal
 
                 diffs = np.diff(signal['tickStampImps'][valid_idx])
                 if diffs.size > 0:
-                    delt = int(np.median(diffs))
+                    # int() would truncate a step of seconds (1.87e-5) to 0.
+                    delt = float(np.median(diffs)) if secondsAxis else int(np.median(diffs))
                     if delt <= 0:
                         delt = 1
                 else:
@@ -631,7 +649,7 @@ class impdData:
                     else:
                         signal['tickStampImps'][idx] = 0
 
-                signal['timeStampImps'] = signal['tickStampImps'] / (60 * 10 ** 6)
+                signal['timeStampImps'] = signal['tickStampImps'] / impdData._ticks_per_second(signal['tickStampImps'])
                 signal['tickStampDemods'] = np.array(signal['tickStampImps'], copy=True)
                 signal['timeStampDemods'] = np.array(signal['timeStampImps'], copy=True)
             return signal

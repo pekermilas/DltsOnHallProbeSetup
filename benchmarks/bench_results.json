@@ -1,0 +1,71 @@
+{
+  "write 2^16": {
+    "json_MB": 14.605313,
+    "h5_MB": 1.784357,
+    "json_s": 0.5397691000002851,
+    "h5_s": 0.03240090000008422,
+    "lossless": true
+  },
+  "write 2^20": {
+    "json_MB": 232.198239,
+    "h5_MB": 26.134914,
+    "json_s": 8.49477879999995,
+    "h5_s": 0.45051660000035554,
+    "lossless": true
+  },
+  "run folder MB": {
+    ".txt": 583.870873,
+    ".h5": 71.339981
+  },
+  "offline .txt": {
+    "read": 4.558967299999949,
+    "cleanup": 0.6484542000002875,
+    "cluster": 4.519564000000173,
+    "denoise": 2.492828599999939,
+    "total": 12.219814100000349
+  },
+  "offline .h5": {
+    "read": 0.589737199999945,
+    "cleanup": 0.004778600000008737,
+    "cluster": 4.513584500000434,
+    "denoise": 2.4832738000000063,
+    "total": 7.591374100000394
+  },
+  "offline identical": true,
+  "extract .txt": {
+    "s": 4.540376800000104,
+    "temps": 40,
+    "errors": []
+  },
+  "extract .h5": {
+    "s": 0.13373039999987668,
+    "temps": 40,
+    "errors": []
+  },
+  "extract identical": true,
+  "detailed .txt": {
+    "s": 4.558960700000171,
+    "temps": 40,
+    "errors": []
+  },
+  "detailed .h5": {
+    "s": 0.13545820000035746,
+    "temps": 40,
+    "errors": []
+  },
+  "detailed identical": true,
+  "live ingest .txt": {
+    "read": 0.10367219999989175,
+    "cleanup+cluster": 4.560286699999779,
+    "denoise+all": 2.5217607000004136,
+    "total": 7.185719600000084
+  },
+  "live ingest .h5": {
+    "read": 0.010700800000449817,
+    "cleanup+cluster": 4.539156199999525,
+    "denoise+all": 2.5447415999997247,
+    "total": 7.094598599999699
+  },
+  "peak MB .txt": 43.84912,
+  "peak MB .h5": 4.212206
+}

@@ -1,0 +1,485 @@
+<title>HDF5 on the Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f4f5f2; --surface: #fcfcfb; --ink: #111412; --ink2: #50554f; --muted: #7d827b;
+  --grid: #e1e3dd; --axis: #c3c6be; --band: rgba(42,120,214,0.06); --band2: rgba(17,20,18,0.035);
+  --hdf: #2a78d6; --json: #eb6834; --aqua: #1baf7a;
+  --g1: #9a9e97; --g2: #b7bab2; --g3: #d0d2cb;
+  --t0: #86b6ef; --t1: #5598e7; --t2: #2a78d6; --t3: #1c5cab; --t4: #104281; --t5: #0a2a55;
+  --good: #0ca30c; --good-ink: #006300; --crit: #d03b3b;
+  --ring: rgba(17,20,18,0.10);
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f1110; --surface: #1a1a19; --ink: #f4f4f1; --ink2: #c3c2b7; --muted: #8f918a;
+    --grid: #2c2c2a; --axis: #3d3e3a; --band: rgba(57,135,229,0.10); --band2: rgba(255,255,255,0.04);
+    --hdf: #3987e5; --json: #d95926; --aqua: #199e70;
+    --g1: #74776f; --g2: #5b5e57; --g3: #464842;
+    --t0: #cde2fb; --t1: #9ec5f4; --t2: #6da7ec; --t3: #3987e5; --t4: #256abf; --t5: #184f95;
+    --good: #0ca30c; --good-ink: #3cc43c; --crit: #e66767; --ring: rgba(255,255,255,0.10);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1110; --surface: #1a1a19; --ink: #f4f4f1; --ink2: #c3c2b7; --muted: #8f918a;
+  --grid: #2c2c2a; --axis: #3d3e3a; --band: rgba(57,135,229,0.10); --band2: rgba(255,255,255,0.04);
+  --hdf: #3987e5; --json: #d95926; --aqua: #199e70;
+  --g1: #74776f; --g2: #5b5e57; --g3: #464842;
+  --t0: #cde2fb; --t1: #9ec5f4; --t2: #6da7ec; --t3: #3987e5; --t4: #256abf; --t5: #184f95;
+  --good: #0ca30c; --good-ink: #3cc43c; --crit: #e66767; --ring: rgba(255,255,255,0.10);
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans); padding-inline: 20px; padding-block: 40px 80px; }
+main { max-width: 980px; margin: 0 auto; display: grid; gap: 56px; }
+header { display: grid; gap: 14px; }
+.eyebrow { font: 500 12px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 24px; line-height: 1.2; font-weight: 600; margin: 0; text-wrap: balance; }
+h3 { font-size: 16px; font-weight: 600; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { font-size: 17px; color: var(--ink2); }
+.meta { font: 13px/1.6 var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 18px; }
+section { display: grid; gap: 20px; }
+.sechead { display: grid; gap: 8px; border-top: 1px solid var(--axis); padding-top: 18px; }
+.secnum { font: 500 12px/1 var(--mono); color: var(--muted); letter-spacing: 0.06em; }
+.verdict { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 20px 22px; display: grid; gap: 16px; }
+.verdict p { color: var(--ink); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.tile { border-top: 2px solid var(--hdf); padding-top: 10px; display: grid; gap: 2px; }
+.tile .v { font-size: 30px; font-weight: 600; line-height: 1.15; }
+.tile .l { font-size: 13px; color: var(--ink2); }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 18px 18px 12px; display: grid; gap: 10px; min-width: 0; }
+.card .sub { font-size: 13px; color: var(--ink2); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+.chart { width: 100%; position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.legend i.line { height: 3px; border-radius: 2px; width: 16px; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: var(--ink2); }
+.controls button { font: 500 13px/1 var(--mono); color: var(--ink2); background: transparent; border: 1px solid var(--axis); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+.controls button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.controls button:focus-visible, summary:focus-visible { outline: 2px solid var(--hdf); outline-offset: 2px; }
+details { font-size: 13px; }
+summary { cursor: pointer; color: var(--muted); font-family: var(--mono); font-size: 12px; padding-block: 4px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 500; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+.checks { display: grid; gap: 0; }
+.check { display: grid; grid-template-columns: 58px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--grid); align-items: baseline; }
+.check .d { color: var(--muted); font: 12px/1.4 var(--mono); display: block; word-break: break-word; }
+.pill { font: 500 11px/1 var(--mono); letter-spacing: 0.05em; padding: 5px 7px; border-radius: 4px; text-align: center; }
+.pill.ok { color: var(--good-ink); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.pill.bad { color: var(--crit); background: color-mix(in srgb, var(--crit) 14%, transparent); }
+.note { border-left: 3px solid var(--json); padding: 4px 0 4px 16px; display: grid; gap: 8px; }
+.note.fix { border-left-color: var(--good); }
+code { font-family: var(--mono); font-size: 0.9em; }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 6px; padding: 7px 9px; font: 12px/1.45 var(--mono); box-shadow: 0 4px 16px rgba(0,0,0,0.12); max-width: 280px; }
+.tip b { font-weight: 500; }
+.tip .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+svg text { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+svg .lbl { fill: var(--ink2); }
+svg .val { fill: var(--ink); font-size: 11.5px; }
+@media (prefers-reduced-motion: no-preference) { .controls button { transition: background .12s, color .12s; } }
+.notes { display: grid; gap: 20px; }
+@media print {
+  body { padding-block: 0; padding-inline: 0; }
+  main { gap: 28px; }
+  /* Whole cards may split across pages (keeping a tall card together made
+     Chromium overlap it with the next one); charts, legends and rows may not. */
+  .chart, .legend, h3, .sub, .note, .check, .tile, tr { break-inside: avoid; }
+  h3, .sub, .legend { break-after: avoid; }
+  .sechead { break-after: avoid; }
+  .grid2 { display: block; }
+  .grid2 > * + * { margin-top: 16px; }
+  /* Chromium keeps a CSS grid's row positions when it pushes an item to the
+     next page, so the following item overlaps it: print every grid as blocks. */
+  main, section, header, .sechead, .notes, .card, .verdict { display: block; }
+  main > * + * { margin-top: 36px; }
+  section > * + *, .notes > * + * { margin-top: 18px; }
+  .sechead > * + *, header > * + * { margin-top: 8px; }
+  .card > * + *, .verdict > * + * { margin-top: 10px; }
+  .tablewrap { overflow: visible; }
+  table { font-size: 11px; }
+  th, td { white-space: normal; padding: 5px 6px; }
+  .controls button:not([aria-pressed="true"]) { display: none; }
+  summary { display: none; }
+  .tip { display: none !important; }
+}
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">DltsOnHallProbeSetup · real-hardware validation · MFIA DEV32271 + Instec mK2000B</div>
+    <h1>HDF5 on the bench</h1>
+    <p class="lede" id="lede"></p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <div class="verdict">
+    <p id="verdictText"></p>
+    <div class="tiles" id="tiles"></div>
+  </div>
+
+  <section>
+    <div class="sechead"><span class="secnum">01 · THE RUN</span><h2>What the instruments did</h2>
+      <p id="runSentence"></p></div>
+    <div class="card"><h3>Stage temperature during the session</h3>
+      <div class="sub">Controller reading every 10 s. Shaded bands mark each phase; dots mark each acquisition, at the mean of the stage readings taken before and after it.</div>
+      <div class="legend" id="lgTimeline"></div>
+      <div class="chart" id="chTimeline"></div>
+      <details><summary>Show data table</summary><div class="tablewrap" id="tbTimeline"></div></details>
+    </div>
+    <div class="card"><h3>Where each step's time went</h3>
+      <div class="sub">Ramp and stabilization dominate. Writing the HDF5 file takes a fraction of a second per step.</div>
+      <div class="legend" id="lgSteps"></div>
+      <div class="chart" id="chSteps"></div>
+      <div class="tablewrap" id="tbSteps"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secnum">02 · VERIFICATION</span><h2 id="checksHead">Checks on the files the run wrote</h2></div>
+    <div class="card"><div class="checks" id="checks"></div></div>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secnum">03 · THE DATA</span><h2>What was measured</h2>
+      <p id="dataSentence"></p></div>
+    <div class="card"><h3>Raw acquisition, first three pulse cycles</h3>
+      <div class="controls" id="ctRaw" role="group" aria-label="Temperature"></div>
+      <div class="grid2">
+        <div><div class="sub">Excitation (Aux input 1, V)</div><div class="chart" id="chAux"></div></div>
+        <div><div class="sub">Impedance imaginary part as stored (<code>ImpedanceIm</code>)</div><div class="chart" id="chCap"></div></div>
+      </div>
+    </div>
+    <div class="card"><h3>Averaged transients from Qualitative "Extract &amp; Average"</h3>
+      <div class="sub" id="transSentence"></div>
+      <div class="legend" id="lgTrans"></div>
+      <div class="chart" id="chTrans"></div>
+      <details><summary>Show data table</summary><div class="tablewrap" id="tbTrans"></div></details>
+    </div>
+    <div class="card"><h3>Live Tools emission 0, raw vs PCA-denoised</h3>
+      <div class="sub">Output of the offline pipeline (<code>read_data → cleanup_data → selected_emissions → filter_emissions</code>) on the HDF5 run.</div>
+      <div class="controls" id="ctEm" role="group" aria-label="Temperature"></div>
+      <div class="legend" id="lgEm"></div>
+      <div class="chart" id="chEm"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secnum">04 · REDO AND RETAKE</span><h2>Re-acquired steps replaced only their own file</h2>
+      <p>Each file was copied aside before being re-acquired, so the original and the replacement can be compared. The other four files were written once and left untouched.</p></div>
+    <div class="grid2" id="rrCards"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secnum">05 · JSON VS HDF5 ON REAL DATA</span><h2>The evaluation's comparisons, repeated on this run</h2>
+      <p>Each HDF5 file was also written as the JSON <code>.txt</code> the TXT format produces, from identical arrays. Both folders then went through the same analysis code.</p></div>
+    <div class="grid2">
+      <div class="card"><h3>File size per step</h3><div class="legend" id="lgSize"></div><div class="chart" id="chSize"></div>
+        <details><summary>Show data table</summary><div class="tablewrap" id="tbSize"></div></details></div>
+      <div class="card"><h3>Write time per step</h3><div class="legend" id="lgWrite"></div><div class="chart" id="chWrite"></div>
+        <details><summary>Show data table</summary><div class="tablewrap" id="tbWrite"></div></details></div>
+    </div>
+    <div class="card"><h3>Analysis paths, whole run</h3>
+      <div class="sub">Wall-clock seconds for every temperature in the run.</div>
+      <div class="legend" id="lgPaths"></div><div class="chart" id="chPaths"></div>
+      <details><summary>Show data table</summary><div class="tablewrap" id="tbPaths"></div></details></div>
+    <div class="grid2">
+      <div class="card"><h3>Offline run load by stage</h3><div class="sub">Blue is file reading; greys are the stages HDF5 doesn't change.</div>
+        <div class="legend" id="lgOff"></div><div class="chart" id="chOff"></div></div>
+      <div class="card"><h3>Live ingest of each new file during the run</h3><div class="sub">The same work the Live Tools watcher does when a step's file appears.</div>
+        <div class="legend" id="lgLive"></div><div class="chart" id="chLive"></div>
+        <details><summary>Show data table</summary><div class="tablewrap" id="tbLive"></div></details></div>
+    </div>
+    <div class="card"><h3>Real run vs the evaluation's synthetic predictions</h3>
+      <div class="tablewrap" id="tbPdf"></div></div>
+  </section>
+
+  <section id="notesSection" hidden>
+    <div class="sechead"><span class="secnum">06 · FOUND DURING THE RUN</span><h2>What this run turned up</h2></div>
+    <div id="notes" class="notes"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secnum">07 · METHOD</span><h2>How this was measured</h2></div>
+    <p id="method" style="color:var(--ink2)"></p>
+  </section>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script type="application/json" id="data">/*DATA*/</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent);
+const NS = 'http://www.w3.org/2000/svg';
+const $ = id => document.getElementById(id);
+const tip = $('tip');
+const f = (v, d = 2) => v == null || isNaN(v) ? '–' : Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const TEMP_VARS = ['--t0', '--t1', '--t2', '--t3', '--t4', '--t5'];
+
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function showTip(evt, html) {
+  tip.innerHTML = html; tip.hidden = false;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = evt.clientX + 14, y = evt.clientY + 14;
+  if (x + w > innerWidth - 8) x = evt.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = evt.clientY - h - 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => { tip.hidden = true; };
+function legend(id, items) {
+  $(id).innerHTML = items.map(i => `<span><i class="${i.line ? 'line' : ''}" style="background:var(${i.c})"></i>${i.n}</span>`).join('');
+}
+function table(id, head, rows) {
+  $(id).innerHTML = '<table><thead><tr>' + head.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>' +
+    rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
+}
+function ticks(lo, hi, n = 5) {
+  const span = hi - lo || 1, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map(s => s * mag).find(s => span / s <= n) || 10 * mag;
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+const lin = (d0, d1, r0, r1) => v => r0 + (v - d0) / ((d1 - d0) || 1) * (r1 - r0);
+function thin(pts, max = 1400) { if (pts.length <= max) return pts; const k = Math.ceil(pts.length / max); return pts.filter((_, i) => i % k === 0); }
+
+// ---- line chart: crosshair + nearest-point tooltip ---------------------------------
+function lineChart(id, o) {
+  const host = $(id); host.innerHTML = '';
+  const W = Math.max(300, host.clientWidth), H = o.height || 240, m = { l: o.ml || 58, r: 14, t: 16, b: 38 };
+  const all = o.series.flatMap(s => s.pts);
+  let [x0, x1] = o.xDomain || [Math.min(...all.map(p => p[0])), Math.max(...all.map(p => p[0]))];
+  let [y0, y1] = o.yDomain || [Math.min(...all.map(p => p[1])), Math.max(...all.map(p => p[1]))];
+  if (!o.yDomain) { const pad = (y1 - y0) * 0.06 || Math.abs(y0) * 0.05 || 1; y0 -= pad; y1 += pad; }
+  const X = lin(x0, x1, m.l, W - m.r), Y = lin(y0, y1, H - m.b, m.t);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': o.label || '' }, host);
+  (o.bands || []).forEach((b, i) => {
+    el('rect', { x: X(b.x0), y: m.t, width: Math.max(0, X(b.x1) - X(b.x0)), height: H - m.b - m.t, style: `fill:var(${b.fill || (i % 2 ? '--band2' : '--band')})` }, svg);
+    if (X(b.x1) - X(b.x0) > 34) { const t = el('text', { x: X(b.x0) + 4, y: m.t + 11 }, svg); t.textContent = b.label; }
+  });
+  const yt = ticks(y0, y1, o.yTicks || 5);
+  yt.forEach(v => {
+    el('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), style: 'stroke:var(--grid);stroke-width:1' }, svg);
+    const t = el('text', { x: m.l - 8, y: Y(v) + 4, 'text-anchor': 'end' }, svg); t.textContent = (o.yFmt || (v => v))(v);
+  });
+  ticks(x0, x1, o.xTicks || 6).forEach(v => {
+    const t = el('text', { x: X(v), y: H - m.b + 16, 'text-anchor': 'middle' }, svg); t.textContent = (o.xFmt || (v => v))(v);
+  });
+  el('line', { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, style: 'stroke:var(--axis);stroke-width:1' }, svg);
+  if (o.xLabel) { const t = el('text', { x: (m.l + W - m.r) / 2, y: H - 4, 'text-anchor': 'middle' }, svg); t.textContent = o.xLabel; }
+  if (o.yLabel) { const t = el('text', { x: 12, y: (m.t + H - m.b) / 2, 'text-anchor': 'middle', transform: `rotate(-90 12 ${(m.t + H - m.b) / 2})` }, svg); t.textContent = o.yLabel; }
+  o.series.forEach(s => {
+    const p = thin(s.pts, o.maxPts || 1400);
+    const d = p.map((q, i) => (i ? 'L' : 'M') + X(q[0]).toFixed(1) + ' ' + Y(q[1]).toFixed(1)).join('');
+    el('path', { d, style: `fill:none;stroke:var(${s.c});stroke-width:${s.w || 2};stroke-linejoin:round;stroke-linecap:round;${s.dash ? 'stroke-dasharray:' + s.dash : ''};opacity:${s.op || 1}` }, svg);
+  });
+  (o.dots || []).forEach(dt => {
+    el('circle', { cx: X(dt.x), cy: Y(dt.y), r: 5, style: `fill:var(${dt.c || '--hdf'});stroke:var(--surface);stroke-width:2` }, svg);
+  });
+  const cross = el('line', { y1: m.t, y2: H - m.b, style: 'stroke:var(--axis);stroke-width:1', visibility: 'hidden' }, svg);
+  const marks = o.series.map(s => el('circle', { r: 4, style: `fill:var(${s.c});stroke:var(--surface);stroke-width:2`, visibility: 'hidden' }, svg));
+  const hit = el('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, style: 'fill:transparent' }, svg);
+  const nearest = (pts, x) => { let lo = 0, hi = pts.length - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pts[mid][0] < x) lo = mid; else hi = mid; } return Math.abs(pts[lo][0] - x) < Math.abs(pts[hi][0] - x) ? pts[lo] : pts[hi]; };
+  hit.addEventListener('mousemove', e => {
+    const r = svg.getBoundingClientRect(), sx = (e.clientX - r.left) * W / r.width, x = x0 + (sx - m.l) / (W - m.l - m.r) * (x1 - x0);
+    cross.setAttribute('x1', sx); cross.setAttribute('x2', sx); cross.setAttribute('visibility', 'visible');
+    let html = `<b>${(o.xTip || o.xFmt || (v => f(v)))(x)}</b>`;
+    o.series.forEach((s, i) => {
+      if (!s.pts.length || s.noTip) { marks[i].setAttribute('visibility', 'hidden'); return; }
+      const q = nearest(s.pts, x);
+      marks[i].setAttribute('cx', X(q[0])); marks[i].setAttribute('cy', Y(q[1])); marks[i].setAttribute('visibility', 'visible');
+      html += `<br><span class="sw" style="background:var(${s.c})"></span>${s.n}: ${(o.yTip || o.yFmt || (v => f(v)))(q[1])}`;
+    });
+    showTip(e, html);
+  });
+  hit.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); marks.forEach(c => c.setAttribute('visibility', 'hidden')); hideTip(); });
+}
+
+// ---- horizontal bar chart: grouped or stacked -----------------------------------------
+function barChart(id, o) {
+  const host = $(id); host.innerHTML = '';
+  const W = Math.max(300, host.clientWidth), m = { l: o.ml || 120, r: 64, t: 6, b: 26 };
+  const nS = o.series.length, bh = o.barH || 14, gap = 2, rowPad = 12;
+  const rowH = o.stacked ? bh + rowPad : nS * bh + (nS - 1) * gap + rowPad;
+  const H = m.t + m.b + o.cats.length * rowH;
+  const totals = o.cats.map((_, ci) => o.stacked ? o.series.reduce((a, s) => a + (s.v[ci] || 0), 0) : Math.max(...o.series.map(s => s.v[ci] || 0)));
+  const xmax = o.xMax || Math.max(...totals) * 1.02 || 1;
+  const X = lin(0, xmax, m.l, W - m.r);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': o.label || '' }, host);
+  ticks(0, xmax, 5).forEach(v => {
+    el('line', { x1: X(v), x2: X(v), y1: m.t, y2: H - m.b, style: 'stroke:var(--grid);stroke-width:1' }, svg);
+    const t = el('text', { x: X(v), y: H - m.b + 16, 'text-anchor': 'middle' }, svg); t.textContent = (o.xFmt || (v => v))(v);
+  });
+  el('line', { x1: m.l, x2: m.l, y1: m.t, y2: H - m.b, style: 'stroke:var(--axis);stroke-width:1' }, svg);
+  o.cats.forEach((c, ci) => {
+    const yRow = m.t + ci * rowH + rowPad / 2;
+    const lab = el('text', { x: m.l - 10, y: yRow + (rowH - rowPad) / 2 + 4, 'text-anchor': 'end', class: 'lbl' }, svg); lab.textContent = c;
+    let acc = 0;
+    o.series.forEach((s, si) => {
+      const v = s.v[ci] || 0, y = o.stacked ? yRow : yRow + si * (bh + gap);
+      const xa = X(o.stacked ? acc : 0), xb = X((o.stacked ? acc : 0) + v);
+      const w = Math.max(o.stacked ? 0 : 1.5, xb - xa - (o.stacked && si < nS - 1 ? gap : 0));
+      const r = Math.min(4, bh / 2, w / 2);
+      const last = !o.stacked || si === nS - 1;
+      const d = last ? `M${xa} ${y}h${Math.max(0, w - r)}a${r} ${r} 0 0 1 ${r} ${r}v${bh - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}h${-Math.max(0, w - r)}z` : `M${xa} ${y}h${w}v${bh}h${-w}z`;
+      const bar = el('path', { d, style: `fill:var(${s.c})` }, svg);
+      const hitR = el('rect', { x: xa, y: y - gap, width: Math.max(w, 6), height: bh + 2 * gap, style: 'fill:transparent' }, svg);
+      hitR.addEventListener('mousemove', e => showTip(e, `<b>${c}</b><br><span class="sw" style="background:var(${s.c})"></span>${s.n}: ${(o.tipFmt || o.valFmt || (v => f(v)))(v)}`));
+      hitR.addEventListener('mouseleave', hideTip);
+      if (!o.stacked && o.valFmt) { const t = el('text', { x: xb + 6, y: y + bh / 2 + 4, class: 'val' }, svg); t.textContent = o.valFmt(v); }
+      acc += v;
+    });
+    if (o.stacked && o.valFmt) { const t = el('text', { x: X(acc) + 6, y: yRow + bh / 2 + 4, class: 'val' }, svg); t.textContent = o.valFmt(acc); }
+  });
+}
+
+// ================= content ====================================================
+const R = D.analysis, grid = D.grid, tempVar = T => TEMP_VARS[grid.indexOf(T)] || '--t2';
+const nOk = R.checks.filter(c => c.ok).length, nAll = R.checks.length;
+const wc = R.writeCompare, sumJ = R.folderMB['.txt'], sumH = R.folderMB['.h5'];
+const off = R.offline, ex = R.extract, det = R.detailed;
+$('lede').textContent = `A ${grid.length}-step run from ${grid[0]} °C to ${grid[grid.length - 1]} °C on the real instruments, written in HDF5 by the new code, then checked file by file and compared against the same data in JSON.`;
+$('meta').innerHTML = [D.dateText, 'Folder ' + D.runFolder, `2^${D.nPts} points × ${D.nReps} reps`, 'Room temperature ' + D.roomT + ' °C'].map(s => `<span>${s}</span>`).join('');
+$('runSentence').textContent = D.runSentence;
+$('dataSentence').textContent = D.dataSentence;
+$('transSentence').textContent = D.transSentence;
+if (D.notesHtml) { $('notes').innerHTML = D.notesHtml; $('notesSection').hidden = false; }
+$('verdictText').innerHTML = `<b>${nOk} of ${nAll} checks passed.</b> ${D.verdictSentence}`;
+$('tiles').innerHTML = [
+  [f(sumJ / sumH, 1) + '×', `smaller run folder (${f(sumJ, 0)} MB JSON → ${f(sumH, 1)} MB HDF5)`],
+  [f(ex['.txt'].s / ex['.h5'].s, 0) + '×', `faster Extract & Average (${f(ex['.txt'].s, 2)} s → ${f(ex['.h5'].s, 2)} s)`],
+  [f(D.meanInRunWrite, 2) + ' s', `mean HDF5 write per step during the run (JSON: ${f(D.meanJsonWrite, 1)} s)`],
+  [f(R.peakMemMB['.txt'] / R.peakMemMB['.h5'], 0) + '×', `less memory reading one step (${f(R.peakMemMB['.txt'], 0)} → ${f(R.peakMemMB['.h5'], 0)} MB)`]
+].map(([v, l]) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span></div>`).join('');
+
+function drawAll() {
+  // Timeline
+  const st = R.stageTemps.map(r => [r.t / 60, r.T]);
+  legend('lgTimeline', [{ n: 'Stage temperature', c: '--ink2', line: 1 }, { n: 'Acquisition', c: '--hdf' }]);
+  lineChart('chTimeline', {
+    series: [{ n: 'Stage', c: '--ink2', pts: st, w: 2 }], bands: D.bands, height: 280,
+    dots: R.stepTimings.map(s => ({ x: s.end / 60, y: s.stage_T })),
+    xLabel: 'minutes since connect', yLabel: '°C', xFmt: v => f(v, 0), xTip: v => f(v, 1) + ' min', yFmt: v => f(v, 0), yTip: v => f(v, 2) + ' °C', label: 'Stage temperature over time'
+  });
+  legend('lgSteps', [{ n: 'Ramp + stabilize', c: '--g2' }, { n: 'Acquire (pull_data)', c: '--aqua' }, { n: 'Write HDF5', c: '--hdf' }]);
+  const sl = R.stepTimings.map(s => `${s.setpoint} °C ${s.phase.includes('redo') ? 'redo' : s.phase.includes('retake') ? 'retake' : ''}`.trim());
+  barChart('chSteps', {
+    cats: sl, stacked: true, ml: 110, series: [
+      { n: 'Ramp + stabilize', c: '--g2', v: R.stepTimings.map(s => s.ramp_stabilize_s) },
+      { n: 'Acquire', c: '--aqua', v: R.stepTimings.map(s => s.acquire_s) },
+      { n: 'Write HDF5', c: '--hdf', v: R.stepTimings.map(s => s.write_h5_s) }],
+    xFmt: v => f(v, 0) + ' s', valFmt: v => f(v, 0) + ' s', tipFmt: v => f(v, 2) + ' s'
+  });
+  table('tbSteps', ['Step', 'Stage T at acquisition', 'Ramp + stabilize', 'Acquire', 'Write HDF5', 'File'],
+    R.stepTimings.map((s, i) => [sl[i], f(s.stage_T, 3) + ' °C', f(s.ramp_stabilize_s, 0) + ' s', f(s.acquire_s, 1) + ' s', f(s.write_h5_s, 3) + ' s', `${s.file} · ${f(s.size_MB, 2)} MB`]));
+  table('tbTimeline', ['Phase', 'Start', 'End', 'Duration'], D.bands.map(b => [b.label, f(b.x0, 1) + ' min', f(b.x1, 1) + ' min', f(b.x1 - b.x0, 1) + ' min']));
+
+  // Checks
+  const pill = ok => `<span class="pill ${ok ? 'ok' : 'bad'}">${ok ? 'PASS' : 'FAIL'}</span>`;
+  const per = {}, cols = [], rest = [];
+  R.checks.forEach(c => {
+    let mt = c.name.match(/^(\d+) C: (.*)$/), col, T;
+    if (mt) { T = mt[1]; col = mt[2].replace(/ = \d+/, ''); }
+    else if ((mt = c.name.match(/^(\d+) C written once/))) { T = mt[1]; col = 'Untouched by Redo/Retake'; }
+    if (T) { if (!cols.includes(col)) cols.push(col); (per[T] = per[T] || {})[col] = c; } else rest.push(c);
+  });
+  const colNames = { '8 channels, float64, gzip+shuffle': '8 channels, float64, gzip + shuffle', [`2^${D.nPts} points in every channel`]: `2^${D.nPts} points`,'tick-stamp time axis intact (not truncated)': 'Tick-stamp axis intact',
+    'setpoint attr, stage T within 0.5 C': 'Setpoint + stage T attrs', 'run_params attr matches the run': 'run_params attr' };
+  $('checks').innerHTML = '<div class="tablewrap"><table><thead><tr><th>File</th>' + cols.map(c => `<th>${colNames[c] || c}</th>`).join('') + '</tr></thead><tbody>' +
+    grid.map(T => `<tr><td>p${T}p0.h5</td>` + cols.map(c => { const x = (per[String(T)] || {})[c]; return `<td>${x ? pill(x.ok) + (c.startsWith('setpoint') ? ` <span style="color:var(--muted)">${x.detail.replace('stage ', '')} °C</span>` : '') : '<span style="color:var(--muted)">n/a</span>'}</td>`; }).join('') + '</tr>').join('') +
+    '</tbody></table></div>' + rest.map(c => `<div class="check">${pill(c.ok)}<span>${c.name}${c.detail && c.detail.length < 160 ? `<span class="d">${c.detail}</span>` : ''}</span></div>`).join('');
+  $('checksHead').textContent = `${nOk} of ${nAll} checks passed on the files the run wrote`;
+
+  // Raw + transients + emissions
+  drawRaw(); drawEm();
+  legend('lgTrans', grid.map(T => ({ n: T + ' °C', c: tempVar(T), line: 1 })));
+  // Same display units as the GUI's Qualitative plot (liveDataTab._capacitance_axis_units).
+  const trT = grid.filter(T => R.transients[T.toFixed(1)]);
+  const peak = Math.max(0, ...trT.flatMap(T => R.transients[T.toFixed(1)].c_pf.map(Math.abs)));
+  const [cs, cu] = peak >= 1e9 ? [1e-9, 'mF'] : peak >= 1e6 ? [1e-6, 'µF'] : peak >= 1e3 ? [1e-3, 'nF'] : [1, 'pF'];
+  const sig = v => Number(v).toPrecision(5);
+  lineChart('chTrans', {
+    series: trT.map(T => ({ n: T + ' °C', c: tempVar(T), pts: R.transients[T.toFixed(1)].t_ms.map((t, i) => [t, R.transients[T.toFixed(1)].c_pf[i] * cs]) })),
+    height: 300, xLabel: 'time from reverse-bias start (ms)', yLabel: `capacitance (${cu})`, xFmt: v => f(v, 1), yFmt: v => sig(v), yTip: v => sig(v) + ' ' + cu, xTip: v => f(v, 3) + ' ms', ml: 70
+  });
+  table('tbTrans', ['Setpoint', 'Points per cycle', `C∞ estimate (${cu})`, `First point (${cu})`, `Last point (${cu})`],
+    trT.map(T => { const t = R.transients[T.toFixed(1)]; return [T + ' °C', t.c_pf.length, sig(t.cinf * cs), sig(t.c_pf[0] * cs), sig(t.c_pf[t.c_pf.length - 1] * cs)]; }));
+
+  // Redo / Retake
+  $('rrCards').innerHTML = Object.keys(R.redoRetake).map((k, i) => `<div class="card"><h3>${k} at ${R.redoRetake[k].T} °C</h3><div class="sub">Original ${R.redoRetake[k].oldAt.slice(11)} · replacement ${R.redoRetake[k].newAt.slice(11)}</div><div class="legend" id="lgRR${i}"></div><div class="chart" id="chRR${i}"></div></div>`).join('');
+  Object.keys(R.redoRetake).forEach((k, i) => {
+    const r = R.redoRetake[k];
+    legend('lgRR' + i, [{ n: 'Original acquisition', c: '--g1', line: 1 }, { n: 'Replacement', c: '--hdf', line: 1 }]);
+    lineChart('chRR' + i, { series: [{ n: 'Original', c: '--g1', pts: r.t_ms.map((t, j) => [t, r.oldC[j]]), w: 2 }, { n: 'Replacement', c: '--hdf', pts: r.t_ms.map((t, j) => [t, r.newC[j]]), w: 1.5 }],
+      height: 220, xLabel: 'ms', xFmt: v => f(v, 0), yFmt: v => v.toExponential(1), yTip: v => v.toExponential(4), ml: 64 });
+  });
+
+  // Size / write
+  const cats = wc.map(w => w.T + ' °C');
+  legend('lgSize', [{ n: 'JSON .txt', c: '--json' }, { n: 'HDF5 .h5', c: '--hdf' }]);
+  barChart('chSize', { cats, ml: 64, series: [{ n: 'JSON .txt', c: '--json', v: wc.map(w => w.json_MB) }, { n: 'HDF5 .h5', c: '--hdf', v: wc.map(w => w.h5_MB) }], xFmt: v => f(v, 0), valFmt: v => f(v, 1) + ' MB' });
+  table('tbSize', ['Step', 'JSON (MB)', 'HDF5 (MB)', 'Ratio'], wc.map(w => [w.T + ' °C', f(w.json_MB, 2), f(w.h5_MB, 2), f(w.json_MB / w.h5_MB, 1) + '×']));
+  legend('lgWrite', [{ n: 'JSON .txt', c: '--json' }, { n: 'HDF5 .h5', c: '--hdf' }]);
+  barChart('chWrite', { cats, ml: 64, series: [{ n: 'JSON .txt', c: '--json', v: wc.map(w => w.json_write_s) }, { n: 'HDF5 .h5', c: '--hdf', v: wc.map(w => w.h5_write_s) }], xFmt: v => f(v, 1), valFmt: v => f(v, 2) + ' s' });
+  table('tbWrite', ['Step', 'JSON write (s)', 'HDF5 write (s)', 'HDF5 during run (s)'], wc.map(w => [w.T + ' °C', f(w.json_write_s, 3), f(w.h5_write_s, 3), f((R.inRunWrite_s.find(x => x.T === w.T && x.phase === 'step:main') || {}).write_h5_s, 3)]));
+
+  const pc = ['Qualitative Extract & Average', 'Detailed Analysis → Load Data', 'Offline run load (Live Tools)'];
+  const pj = [ex['.txt'].s, det['.txt'].s, off['.txt'].total], ph = [ex['.h5'].s, det['.h5'].s, off['.h5'].total];
+  legend('lgPaths', [{ n: 'JSON .txt', c: '--json' }, { n: 'HDF5 .h5', c: '--hdf' }]);
+  barChart('chPaths', { cats: pc, ml: 210, series: [{ n: 'JSON .txt', c: '--json', v: pj }, { n: 'HDF5 .h5', c: '--hdf', v: ph }], xFmt: v => f(v, 1) + ' s', valFmt: v => f(v, 2) + ' s', barH: 16 });
+  table('tbPaths', ['Path', 'JSON (s)', 'HDF5 (s)', 'Speed-up'], pc.map((c, i) => [c, f(pj[i], 3), f(ph[i], 3), f(pj[i] / ph[i], 1) + '×']));
+  legend('lgOff', [{ n: 'Read files', c: '--hdf' }, { n: 'Cleanup', c: '--g3' }, { n: 'Clustering', c: '--g1' }, { n: 'Denoise (PCA)', c: '--g2' }]);
+  barChart('chOff', { cats: ['JSON', 'HDF5'], stacked: true, ml: 54, barH: 22, series: [
+    { n: 'Read files', c: '--hdf', v: [off['.txt'].read, off['.h5'].read] }, { n: 'Cleanup', c: '--g3', v: [off['.txt'].cleanup, off['.h5'].cleanup] },
+    { n: 'Clustering', c: '--g1', v: [off['.txt'].cluster, off['.h5'].cluster] }, { n: 'Denoise (PCA)', c: '--g2', v: [off['.txt'].denoise, off['.h5'].denoise] }],
+    xFmt: v => f(v, 1) + ' s', valFmt: v => f(v, 2) + ' s', tipFmt: v => f(v, 3) + ' s' });
+  const li = R.liveIngest.filter(r => !r.error);
+  legend('lgLive', [{ n: 'Read file', c: '--hdf' }, { n: 'Cleanup', c: '--g3' }, { n: 'Clustering', c: '--g1' }, { n: 'Denoise + all emissions', c: '--g2' }]);
+  barChart('chLive', { cats: li.map(r => r.file.replace('.h5', '').replace('p', '').replace('p0', '') + ' °C'), stacked: true, ml: 64, series: [
+    { n: 'Read file', c: '--hdf', v: li.map(r => r.read_s) }, { n: 'Cleanup', c: '--g3', v: li.map(r => r.cleanup_s) },
+    { n: 'Clustering', c: '--g1', v: li.map(r => r.cluster_s) }, { n: 'Denoise + all emissions', c: '--g2', v: li.map(r => r.denoise_s + r.allEmissions_s) }],
+    xFmt: v => f(v, 1) + ' s', valFmt: v => f(v, 2) + ' s', tipFmt: v => f(v, 3) + ' s' });
+  table('tbLive', ['File', 'Temps loaded', 'Read (s)', 'Cleanup (s)', 'Clustering (s)', 'Denoise + all (s)'],
+    li.map(r => [r.file, r.nTemps, f(r.read_s, 3), f(r.cleanup_s, 3), f(r.cluster_s, 2), f(r.denoise_s + r.allEmissions_s, 2)]));
+  table('tbPdf', ['Measure', 'Evaluation (synthetic, 40 × 2^16)', 'This run (real, 6 × 2^18)'], D.pdfRows);
+}
+
+let rawT = grid[0], emT = grid[0];
+function buttons(id, get, set, redraw) {
+  $(id).innerHTML = grid.map(T => `<button type="button" id="${id}-${T}" aria-pressed="${T === get()}">${T} °C</button>`).join('');
+  grid.forEach(T => $(`${id}-${T}`).addEventListener('click', () => { set(T); grid.forEach(u => $(`${id}-${u}`).setAttribute('aria-pressed', u === T)); redraw(); }));
+}
+function drawRaw() {
+  const r = D.analysis.raw[rawT.toFixed(1)];
+  lineChart('chAux', { series: [{ n: 'Aux in 1', c: '--aqua', pts: r.t_ms.map((t, i) => [t, r.aux[i]]), w: 1.5 }], height: 200, xLabel: 'ms', xFmt: v => f(v, 0), yFmt: v => f(v, 1), yTip: v => f(v, 4) + ' V', ml: 44 });
+  lineChart('chCap', { series: [{ n: 'ImpedanceIm', c: '--hdf', pts: r.t_ms.map((t, i) => [t, r.c[i]]), w: 1.5 }], height: 200, xLabel: 'ms', xFmt: v => f(v, 0), yFmt: v => v.toExponential(1), yTip: v => v.toExponential(4), ml: 60 });
+}
+function drawEm() {
+  const e = D.analysis.emission0[String(emT + 273)] || D.analysis.emission0[Object.keys(D.analysis.emission0)[grid.indexOf(emT)]];
+  const t0 = e.x[0] || 0, ms = x => (x - t0) * 1e3, s = [{ n: 'Raw', c: '--g1', pts: e.x.map((x, i) => [ms(x), e.y[i]]), w: 1.5 }];
+  if (e.yFiltered.length) s.push({ n: 'PCA denoised', c: '--hdf', pts: e.x.map((x, i) => [ms(x), e.yFiltered[i]]), w: 2 });
+  legend('lgEm', s.map(q => ({ n: q.n, c: q.c, line: 1 })));
+  lineChart('chEm', { series: s, height: 240, xLabel: 'time from emission start (ms)', xFmt: v => f(v, 1), xTip: v => f(v, 3) + ' ms', yFmt: v => v.toExponential(1), yTip: v => v.toExponential(4), ml: 60 });
+}
+buttons('ctRaw', () => rawT, T => rawT = T, drawRaw);
+buttons('ctEm', () => emT, T => emT = T, drawEm);
+$('method').textContent = D.method;
+drawAll();
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawAll, 150); });
+</script>
