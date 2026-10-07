@@ -139,6 +139,10 @@ manual_figure = None
 manual_ax = None
 manual_canvas = None
 manual_statusLabel = None
+manual_liveFollowVar = None       # tk.BooleanVar: 'Follow live run' -- re-extract as run files are written
+manual_liveRunFolder = None       # run folder the Qualitative frame adopted as its source while following
+manual_liveFileMtimes = None      # run data file -> mtime it was last extracted at (new/rewritten = changed)
+manual_livePollActive = None      # True while the follow loop (_qualitative_live_tick) is scheduled
 
 ##---------------------DATA ANALYSIS (RATE WINDOW / ARRHENIUS)-------------------------
 # Rate Window Analysis (top frame). Reads dltsc.manual_processedTransients (populated by
@@ -360,6 +364,10 @@ def init():
     global manual_ax
     global manual_canvas
     global manual_statusLabel
+    global manual_liveFollowVar
+    global manual_liveRunFolder
+    global manual_liveFileMtimes
+    global manual_livePollActive
 
     ##---------------------DATA ANALYSIS (RATE WINDOW / ARRHENIUS)-------------------------
     global rateWindow_dataSourceVar
@@ -471,6 +479,8 @@ def init():
     manual_sourceFolders = list()
     manual_processedTransients = dict()
     manual_paramVars = dict()
+    manual_liveFileMtimes = dict()
+    manual_livePollActive = False
     rateWindow_signals = dict()
     rateWindow_extractedPeaks = dict()
     detailed_data = dict()

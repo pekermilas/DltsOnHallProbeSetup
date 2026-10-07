@@ -72,6 +72,9 @@ def start_thread():
     _set_run_control_buttons('running')
     _reset_live_plot_state('live')
     _schedule_live_poll(dltsc.livePlot_liveRunToken)
+    dltsc.manual_liveRunFolder = None
+    dltsc.manual_liveFileMtimes = {}
+    _start_qualitative_live_follow()
 
     taskThread = threading.Thread(target=start_dlts)
     taskThread.daemon = True
@@ -106,6 +109,9 @@ def _run_control_thread(indices=None, deleteFirst=False, isMainSequence=False):
 
     threading.Thread(target=worker, daemon=True).start()
     dltsc.root.after(200, _poll_step_listbox_while_busy)
+    # Resume continues writing new steps and Redo/Retake rewrite existing
+    # ones; either way the Qualitative plot picks up the changed files.
+    _start_qualitative_live_follow()
 
 def _resume_run():
     if dltsc.run_dltsInstance is None or dltsc.run_busy:
@@ -926,10 +932,11 @@ def _registry_format_label(registry):
         return "Mixed"
     return "ZI" if hasZi else "Legacy"
 
-def _scan_manual_directory_async(dir_path, isAppend):
+def _scan_manual_directory_async(dir_path, isAppend, onDone=None):
     """Auto-detect ZI vs. legacy format and index the available temperatures in
     dir_path, then merge (isAppend=True) into the current dataset or replace
-    it (isAppend=False) with them.
+    it (isAppend=False) with them. onDone, if given, is called on the main
+    thread once the scan has been applied (Follow live run extracts from it).
 
     Runs the directory scan/parse on a background thread, like Run DLTS does for
     the experiment itself, so scanning a large folder never freezes the GUI. Only
@@ -1061,6 +1068,9 @@ def _scan_manual_directory_async(dir_path, isAppend):
                 dltsc.manual_statusLabel.config(
                     text=f"[{dltsc.manual_ziMode}] {len(dltsc.manual_datasetRegistry)} temperature step(s) "
                         f"from {len(dltsc.manual_sourceFolders)} source(s).")
+
+            if onDone is not None:
+                onDone()
 
         dltsc.root.after(0, apply)
 
@@ -1294,6 +1304,94 @@ def _legacy_run_timing(dir_path):
         return None
     return fpMs, rbMs
 
+#---------------------QUALITATIVE ANALYSIS: FOLLOW LIVE RUN-------------------------#
+# While a run is writing files, the Qualitative frame adopts the run folder as
+# its source and re-extracts whenever a step file appears or is rewritten
+# (Resume, Redo, Remove & Retake), so the Averaged Capacitance Transients
+# Profile keeps up without clicking Extract & Average Transients.
+_QUAL_LIVE_POLL_MS = 2000
+
+def _start_qualitative_live_follow():
+    """Start the follow loop unless it is already scheduled."""
+    if dltsc.manual_livePollActive:
+        return
+    dltsc.manual_livePollActive = True
+    dltsc.root.after(_QUAL_LIVE_POLL_MS, _qualitative_live_tick)
+
+def _qualitative_live_tick():
+    """Main-thread poll. Keeps going while the run is busy or a change is still
+    waiting to be extracted, so the final step is picked up after the run ends."""
+    if dltsc.app_closing:
+        dltsc.manual_livePollActive = False
+        return
+    pending = _qualitative_live_update()
+    if dltsc.run_busy or pending:
+        dltsc.root.after(_QUAL_LIVE_POLL_MS, _qualitative_live_tick)
+    else:
+        dltsc.manual_livePollActive = False
+
+def _same_folder(a, b):
+    if not a or not b:
+        return False
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+def _changed_run_files():
+    """{path: mtime} of the run's data files that exist and were not yet
+    extracted at their current mtime. A step still being written as .h5.tmp
+    does not exist under its final name yet, so it is not picked up early."""
+    changed = {}
+    for path in dltsc.run_dataFileNames or []:
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if dltsc.manual_liveFileMtimes.get(path) != mtime:
+            changed[path] = mtime
+    return changed
+
+def _qualitative_live_update():
+    """One follow step. Returns True while there is still work to do."""
+    folder = dltsc.run_dataFolder
+    if dltsc.manual_liveFollowVar is None or not dltsc.manual_liveFollowVar.get() or not folder:
+        return False
+    if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
+        return True   # retry once the current scan/extraction is done
+
+    adopted = _same_folder(dltsc.manual_liveRunFolder, folder)
+    if adopted and not _same_folder(dltsc.manual_dataDirectory, folder):
+        return False  # the user loaded a different folder mid-run; leave it alone
+
+    changed = _changed_run_files()
+    if not changed:
+        return False
+    dltsc.manual_liveFileMtimes.update(changed)
+
+    if not adopted:
+        # First file of this run: load the run folder (also sets Timing
+        # Boundaries from its runParams.txt), then extract every step.
+        dltsc.manual_liveRunFolder = folder
+        dltsc.log_to_textbox(f"Qualitative Analysis: following live run folder {folder}")
+        _scan_manual_directory_async(folder, isAppend=False, onDone=_process_raw_transients)
+        return True
+
+    # Already following: add newly written steps (selected, keeping the
+    # user's selection of the others) and re-extract.
+    errorMsgs = []
+    registry = _compute_legacy_dataset(folder, errorMsgs)
+    newTemps = [t for t in registry if t not in dltsc.manual_datasetRegistry]
+    if newTemps:
+        sortedTemps = sorted(dltsc.manual_datasetRegistry.keys())
+        selected = {sortedTemps[i] for i in dltsc.manual_tempListbox.curselection()}
+        dltsc.manual_datasetRegistry.update({t: registry[t] for t in newTemps})
+        selected.update(newTemps)
+        dltsc.manual_tempListbox.delete(0, tk.END)
+        for i, temp in enumerate(sorted(dltsc.manual_datasetRegistry.keys())):
+            dltsc.manual_tempListbox.insert(tk.END, f"{temp} °C")
+            if temp in selected:
+                dltsc.manual_tempListbox.select_set(i)
+    _process_raw_transients()
+    return True
+
 def _select_all_manual_temps():
     dltsc.manual_tempListbox.select_set(0, tk.END)
 
@@ -1321,7 +1419,6 @@ def _downsample_for_plot(x, y, maxPoints=_MAX_PLOT_POINTS):
 # Qualitative plot: more traces than this get a temperature color bar instead
 # of a legend.
 _MAX_LEGEND_TRACES = 10
-_manualColorbar = None   # the Qualitative plot's current color bar, removed on redraw
 
 def _plot_slice_ms():
     """(start, end) of Timing Boundaries' Analysis Slice in ms, each None if
@@ -1412,15 +1509,13 @@ def _process_raw_transients():
             _set_manual_buttons_state('normal')
             dltsc.manual_processedTransients = processedTransients
 
-            dltsc.manual_ax.clear()
+            # Rebuild the figure from scratch rather than ax.clear() + removing
+            # the old color bar: colorbar.remove() does not give back the width
+            # the color bar took once tight_layout has run, so every redraw with
+            # a color bar shrank the plot further in x.
+            dltsc.manual_figure.clear()
+            dltsc.manual_ax = dltsc.manual_figure.add_subplot(1, 1, 1)
             scale, unit = _capacitance_axis_units([rec['avg_cap_pf'] for rec in processedTransients.values()])
-            global _manualColorbar
-            if _manualColorbar is not None:
-                try:
-                    _manualColorbar.remove()
-                except Exception:
-                    pass
-                _manualColorbar = None
             sliceLo, sliceHi = _plot_slice_ms()
             temps = sorted(processedTransients.keys())
             # Many traces: color by temperature with a color bar instead of a
@@ -1445,10 +1540,13 @@ def _process_raw_transients():
                 x, y = _downsample_for_plot(t[keep], c[keep])
                 dltsc.manual_ax.plot(x, np.asarray(y) * scale, label=f"{temp}°C",
                                      color=cmap(norm(temp)) if useColorbar else None)
+            # X spans exactly the plotted data (the Analysis Slice); the default
+            # 5% margin otherwise starts the axis at negative time.
+            dltsc.manual_ax.margins(x=0)
             if useColorbar:
                 mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
-                _manualColorbar = dltsc.manual_figure.colorbar(mappable, ax=dltsc.manual_ax, pad=0.01)
-                _manualColorbar.set_label('Temperature (°C)')
+                colorbar = dltsc.manual_figure.colorbar(mappable, ax=dltsc.manual_ax, pad=0.01)
+                colorbar.set_label('Temperature (°C)')
             if not processedTransients:
                 dltsc.manual_ax.text(0.5, 0.5, "No transients extracted.\nSee the log for the reason per temperature.",
                                      ha='center', va='center', transform=dltsc.manual_ax.transAxes, color='gray')
@@ -1467,6 +1565,10 @@ def _process_raw_transients():
                 dltsc.manual_ax.legend(loc='upper right')
             dltsc.manual_figure.tight_layout(pad=2.0)
             dltsc.manual_canvas.draw()
+            # Reset the toolbar's view history so Home/Back return to this
+            # plot's range, not the first extraction's (or a stale zoom).
+            if dltsc.manual_canvas.toolbar is not None:
+                dltsc.manual_canvas.toolbar.update()
 
             if executionErrors:
                 for err in executionErrors:
@@ -1764,6 +1866,10 @@ def _build_manualPlotFrame(parent):
         dltsc.manual_processingBusy = False
     if dltsc.manual_loadingBusy is None:
         dltsc.manual_loadingBusy = False
+    if dltsc.manual_liveFileMtimes is None:
+        dltsc.manual_liveFileMtimes = dict()
+    if dltsc.manual_livePollActive is None:
+        dltsc.manual_livePollActive = False
 
     parent.grid_rowconfigure(0, weight=0)
     parent.grid_rowconfigure(1, weight=1)
@@ -1859,6 +1965,9 @@ def _build_manualPlotFrame(parent):
     dltsc.manual_extractButton = tk.Button(execGroup, text='Extract & Average Transients', font=('Segoe UI', 9, 'bold'),
                            bg='#e8f5e9', command=_process_raw_transients)
     dltsc.manual_extractButton.pack(fill='x', padx=4, pady=(4, 2))
+    dltsc.manual_liveFollowVar = tk.BooleanVar(value=True)
+    ttk.Checkbutton(execGroup, text='Follow live run (auto-update)',
+                    variable=dltsc.manual_liveFollowVar).pack(fill='x', padx=4, pady=(0, 2))
     dltsc.manual_statusLabel = ttk.Label(execGroup, text='Status: Idle')
     dltsc.manual_statusLabel.pack(fill='x', padx=4, pady=(0, 4))
 
