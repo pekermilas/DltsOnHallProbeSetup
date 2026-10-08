@@ -19,7 +19,8 @@ Data: the 23 Sep 2026 run, `C:\Users\spencer\Desktop\DATA\DLTS\092326\101901`. I
 47 setpoints from 25 °C to 255 °C in 5 °C steps, 2^16 points × 100 reps, 1 ms fill at
 0 V and 500 ms reverse bias at −5 V. It was written as JSON (`.json`, 651 MB).
 
-**1. Convert it to HDF5 (optional, recommended).** The Qualitative and Detailed tabs read
+**1. Convert it to HDF5 (optional, recommended).** The folder loaders of the Quick
+Analysis (Offline Data) and Detailed Analysis tabs read
 `.txt`, `.h5` and `.csv` step files, not `.json`. Converting a copy gives `.h5` files
 that every tab reads and that load about 25× faster:
 
@@ -39,17 +40,24 @@ touched; `--keep-json` leaves the originals in place.
 loading, pick **Dataset** `398.15 (125)`: the upper plots show emission 0 raw and PCA
 denoised, and all emission blocks aligned.
 
-**3. Qualitative Analysis → Select Source Folder** → the converted folder. The log shows
-`Timing Boundaries set from runParams.txt (fill 1 ms, reverse bias 500 ms)`. Press
-**Extract & Average Transients**.
-
 ![Live Tools with the 23 Sep run loaded](images/gui_live_tools.png)
 
-The lower plot shows one averaged transient per temperature, colored by temperature. The
-fast recovery at the low temperatures (dark curves) is the trap emission. It speeds up
-with temperature and leaves the window above about 90 °C.
+The screenshot was taken when the Qualitative Analysis frame (lower part) still loaded
+saved folders; it now follows a running experiment only. Its lower plot shows one
+averaged transient per temperature of this run, colored by temperature. The fast
+recovery at the low temperatures (dark curves) is the trap emission. It speeds up with
+temperature and leaves the window above about 90 °C.
 
-**4. Quick Analysis.** Set the five rate windows to t1/t2 = `0.5/2.5`, `1/5`, `2/10`,
+**3. Quick Analysis → Offline Data → Select Source Folder** → the converted folder. The
+log shows `Offline Data: Reverse Bias set to 500 ms from the folder.` (from
+`runParams.txt`). Keep all temperatures selected and press
+**Extract & Average Transients**. The status then reads
+`47 of 47 temperature(s) extracted. Ready for Compute Boxcar Spectrums.` If some
+temperatures cannot be extracted it ends with `; see log for the rest.` instead, and the
+log gives the reason for each.
+
+**4. Quick Analysis.** Keep **Data Source** `Auto (first available)`, or choose
+`Loaded Folder (Offline Data)`. Set the five rate windows to t1/t2 = `0.5/2.5`, `1/5`, `2/10`,
 `5/25`, `10/50` ms and the **Tp search range** to `300` – `400` K. Press
 **Compute Boxcar Spectrums**, then **Execute Arrhenius Signature Solver** (defaults
 Nd = 3.2e14 cm⁻³, γ = 1.66e21).

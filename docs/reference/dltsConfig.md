@@ -105,7 +105,7 @@ A function name followed by "(callback)" means a nested function inside it (usua
 
 | Name | Initial / `init()` | Set by | Read by | Meaning |
 |---|---|---|---|---|
-| `run_dataFolder` | `None` | `rdT.init_experiment` | nothing | Folder of the current run (ends with `\`). |
+| `run_dataFolder` | `None` | `rdT.init_experiment` | `ldT._qualitative_live_update` | Folder of the current run (ends with `\`); the Qualitative Analysis frame adopts it. |
 | `run_dataFileNames` | `None` / `[]` | `rdT.init_experiment` | `ldT._schedule_live_poll`, `hw` (`hw_run.live_worker`) | One file path per grid step; the live watcher waits for each to exist. |
 | `run_outputFileType` | `None` | `rdT.init_experiment` | nothing | Lower-cased Data File Format of the current run. |
 
@@ -138,42 +138,54 @@ A function name followed by "(callback)" means a nested function inside it (usua
 | `livePlot_offlineRunToken` | `None` / `0` | `ldT._build_autoPlotFrame`, `ldT._reset_live_plot_state` | `ldT._load_offline_run`, `ldT._recompute_denoise_and_redraw` | Offline load counter, as `livePlot_liveRunToken`. |
 | `livePlot_offlineIngestBusy` | `None` / `False` | `ldT._build_autoPlotFrame`, `ldT._load_offline_run`, `ldT._recompute_denoise_and_redraw`, `ldT._reset_live_plot_state` | `ldT._recompute_denoise_and_redraw`, `daT._calculate_rate_windows` | `True` while an offline load worker runs. |
 
-### Manual / qualitative analysis
+### Manual / qualitative analysis (Live Tools, live run only)
 
 | Name | Initial / `init()` | Set by | Read by | Meaning |
 |---|---|---|---|---|
-| `manual_dataDirectory` | `None` | `ldT._scan_manual_directory_async` (callback) | `ldT._browse_manual_folder`, `ldT._append_manual_folder` | Last loaded source folder. |
-| `manual_datasetRegistry` | `None` / `{}` | `ldT._scan_manual_directory_async` (callback) | `ldT._append_manual_folder`, `ldT._process_raw_transients` | Temperature → a file path (legacy file), `('legacy_chunk', file_path, chunk_id)` or `('zi', data_file, chunk_id)`. |
-| `manual_ziMode` | `None` | `ldT._scan_manual_directory_async` (callback) | the same callback | `True`, `False` or `'mixed'`: format of the most recently loaded data. |
-| `manual_ziParamsByFile` | `None` / `{}` | `ldT._scan_manual_directory_async` (callback) | `ldT._process_raw_transients` | ZI data file → `{'gridColOffset', 'gridColDelta', 'chunkSize'}`. |
-| `manual_ziDataFile` | `None` | `ldT._scan_manual_directory_async` (callback) | nothing | Most recently loaded ZI file (display only). |
-| `manual_ziGridColOffset` | `None` | same | nothing | Its grid column offset. |
-| `manual_ziGridColDelta` | `None` | same | nothing | Its grid column spacing. |
-| `manual_ziChunkSize` | `None` | same | nothing | Its chunk size. |
-| `manual_sourceFolders` | `None` / `[]` | `ldT._scan_manual_directory_async` (callback) | the same callback | Folders combined into the registry so far. |
-| `manual_samplingRate` | `None` | nothing | `ldT._process_raw_transients` | Always `None`; the reader falls back to `1.8666666666666665e-05` (a sample interval in s, despite the name). |
-| `manual_processedTransients` | `None` / `{}` | `ldT._build_manualPlotFrame`, `ldT._process_raw_transients` (callback) | `daT._calculate_rate_windows`, `daT._get_processed_transients_for_source` | Temperature → `{time_ms, avg_cap_pf, C_infinity}` from **Extract & Average Transients**. |
-| `manual_paramVars` | `None` / `{}` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients`, `ldT._scan_manual_directory_async` (callback) | `tk.StringVar`s `fp_ms` (Filling Duration, default `'1.0'`), `rb_ms` (Reverse Bias, `'500.0'`), `slice_start` (`'2.0'`), `slice_end`. |
-| `manual_tempListbox` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients`, `ldT._clear_manual_temps`, `ldT._select_all_manual_temps`, `ldT._scan_manual_directory_async` (callback) | Temperature list box. |
-| `manual_folderLabel` | `None` | `ldT._build_manualPlotFrame` | `ldT._scan_manual_directory_async` | Shows the loaded folder(s). |
-| `manual_selectFolderButton` | `None` | `ldT._build_manualPlotFrame` | `ldT._set_manual_buttons_state` | **Select Source Folder** button. |
-| `manual_appendFolderButton` | `None` | `ldT._build_manualPlotFrame` | `ldT._set_manual_buttons_state` | **Append Source Folder** button. |
-| `manual_extractButton` | `None` | `ldT._build_manualPlotFrame` | `ldT._set_manual_buttons_state` | **Extract & Average Transients** button. |
-| `manual_processingBusy` | `None` | `ldT._build_manualPlotFrame`, `ldT._process_raw_transients` | `ldT._process_raw_transients`, `ldT._browse_manual_folder`, `ldT._append_manual_folder`, `ldT._scan_manual_directory_async` | `True` while the transient-extraction worker runs. |
-| `manual_loadingBusy` | `None` | `ldT._build_manualPlotFrame`, `ldT._scan_manual_directory_async` | `ldT._browse_manual_folder`, `ldT._append_manual_folder`, `ldT._process_raw_transients`, `ldT._scan_manual_directory_async` | `True` while the folder-scan worker runs. |
-| `manual_transientExecutor` | `None` | `ldT._get_transient_executor` | `ldT._get_transient_executor`, `main._finish_close` (shutdown) | Persistent `ProcessPoolExecutor` for transient extraction. |
+| `manual_datasetRegistry` | `None` / `{}` | `ldT._adopt_live_run_folder`, `ldT._qualitative_live_update` (adds new steps) | `ldT._process_raw_transients`, `ldT._qualitative_live_update` | Temperature (°C) → step file path of the run folder being followed (legacy per-temperature entries only; see `quickData_datasetRegistry` for every format a saved folder can hold). |
+| `manual_samplingRate` | `None` | nothing | `ldT._extract_transients_async` | Always `None`; the reader falls back to `1.8666666666666665e-05` (a sample interval in s, despite the name) for files without usable time stamps. |
+| `manual_processedTransients` | `None` / `{}` | `ldT._build_manualPlotFrame`, `ldT._process_raw_transients` (callback) | `daT._calculate_rate_windows`, `daT._get_processed_transients_for_source` | Temperature → `{time_ms, avg_cap_pf, C_infinity, setpoint_C, stage_C, acquired_at}` of the live run: the `Live Run (Qualitative Analysis)` Data Source. |
+| `manual_paramVars` | `None` / `{}` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients`, `ldT._adopt_live_run_folder`, `ldT._plot_slice_ms`, `ldT._sync_slice_end_to_rb`, `daT._rb_ms_for_source` | `tk.StringVar`s `fp_ms` (Filling Duration, default `'1.0'`), `rb_ms` (Reverse Bias, `'500.0'`), `slice_start` (`'2.0'`), `slice_end` (`'490.0'`). |
+| `manual_autoSliceEnd` | `None` (`490.0` after `init()`) | `ldT._build_manualPlotFrame`, `ldT._set_auto_slice_end` | `ldT._sync_slice_end_to_rb` | Last Analysis Slice End (ms) set automatically from Reverse Bias; while `slice_end` still holds it, it follows `rb_ms` edits (98 %). |
+| `manual_tempListbox` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients`, `ldT._clear_manual_temps`, `ldT._select_all_manual_temps`, `ldT._adopt_live_run_folder`, `ldT._qualitative_live_update` | Temperature list box. |
+| `manual_folderLabel` | `None` | `ldT._build_manualPlotFrame` | `ldT._adopt_live_run_folder` | `Run folder: ...` label of the Live Run group. |
+| `manual_extractButton` | `None` | `ldT._build_manualPlotFrame` | `ldT._set_manual_buttons_state` | **Extract & Average Transients** button, disabled while a worker is running. |
+| `manual_processingBusy` | `None` | `ldT._build_manualPlotFrame`, `ldT._process_raw_transients` | `ldT._process_raw_transients`, `ldT._qualitative_live_update` | `True` while `_process_raw_transients`' background worker runs. |
+| `manual_transientExecutor` | `None` | `ldT._get_transient_executor` | `ldT._get_transient_executor`, `main._finish_close` (shutdown) | Persistent `ProcessPoolExecutor` for transient extraction (Qualitative frame and Quick Analysis Offline Data), so repeat extractions skip the child process's one-time import cold start. |
 | `manual_figure` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Qualitative Analysis figure. |
-| `manual_ax` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Left axes: Averaged Capacitance Transients Profile. |
-| `manual_axTemps` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Right axes: Temperature Trace, one point (°C) per extracted step in acquisition order, last point labeled as the latest. |
-| `manual_autoSliceEnd` | `None` (`490.0` after `init()`) | `ldT._build_manualPlotFrame`, `ldT._set_auto_slice_end` | `ldT._sync_slice_end_to_rb` | Last Analysis Slice End (ms) set automatically; while the field still holds it, it follows Reverse Bias (98%). |
+| `manual_ax` | `None` | `ldT._build_manualPlotFrame`, `ldT._process_raw_transients` (callback) | `ldT._process_raw_transients` (callback) | Left axes: Averaged Capacitance Transients Profile. |
+| `manual_axTemps` | `None` | `ldT._build_manualPlotFrame`, `ldT._process_raw_transients` (callback) | `ldT._process_raw_transients` (callback) | Right axes: Temperature Trace (°C vs time of measurement), one point per extracted step, last point labeled as the latest. |
 | `manual_canvas` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Its Tk canvas. |
-| `manual_statusLabel` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients`, `ldT._scan_manual_directory_async` | Status label. |
+| `manual_statusLabel` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` | Status label. |
+| `manual_liveFollowVar` | `None` | `ldT._build_manualPlotFrame` | `ldT._qualitative_live_update` | `tk.BooleanVar` of **Follow live run (auto-update)**: re-extract as run files are written. |
+| `manual_liveRunFolder` | `None` | `ldT.start_thread` (clears), `ldT._adopt_live_run_folder` | `ldT._qualitative_live_update` | Run folder the Qualitative frame adopted as its source while following. |
+| `manual_liveFileMtimes` | `None` / `{}` | `ldT._build_manualPlotFrame`, `ldT.start_thread` (clears), `ldT._qualitative_live_update` | `ldT._changed_run_files` | Run data file → modification time it was last extracted at (new or rewritten = changed). |
+| `manual_livePollActive` | `None` / `False` | `ldT._build_manualPlotFrame`, `ldT._start_qualitative_live_follow`, `ldT._qualitative_live_tick` | `ldT._start_qualitative_live_follow` | `True` while the follow loop (`_qualitative_live_tick`) is scheduled. |
+
+### Quick Analysis: Offline Data (saved folder loader)
+
+| Name | Initial / `init()` | Set by | Read by | Meaning |
+|---|---|---|---|---|
+| `quickData_dataDirectory` | `None` | `daT._scan_quick_folder_async` (callback) | `daT._browse_quick_folder` | Most recently selected (not appended) folder; the folder dialogs start there. |
+| `quickData_datasetRegistry` | `None` / `{}` | `daT._build_offlineDataFrame`, `daT._scan_quick_folder_async` (callback) | `daT._browse_quick_folder`, `daT._extract_quick_transients` | Temperature (°C) → a file path (plain legacy file), `('legacy_chunk', file_path, chunk_id)` (chunk_id may be `None`), `('zi', data_file, chunk_id)`, or `('zi_subfolder', data_file, None)`. Explicitly tagged so entries from different-format sources can coexist after an append. |
+| `quickData_ziParamsByFile` | `None` / `{}` | `daT._build_offlineDataFrame`, `daT._scan_quick_folder_async` (callback) | `daT._extract_quick_transients` | ZI data file → `{'gridColOffset', 'gridColDelta', 'chunkSize'}`; keyed per file so appended ZI sources keep their own acquisition parameters. |
+| `quickData_sourceFolders` | `None` / `[]` | `daT._build_offlineDataFrame`, `daT._scan_quick_folder_async` (callback) | the same callback | Folders combined into `quickData_datasetRegistry` so far. |
+| `quickData_processedTransients` | `None` / `{}` | `daT._build_offlineDataFrame`, `daT._scan_quick_folder_async` (callback, clears), `daT._extract_quick_transients` (callback) | `daT._get_processed_transients_for_source`, `daT._calculate_rate_windows` | Temperature → `{time_ms, avg_cap_pf, C_infinity, ...}`: the `Loaded Folder (Offline Data)` Data Source of Rate Window Analysis. |
+| `quickData_paramVars` | `None` / `{}` | `daT._build_offlineDataFrame` | `daT._scan_quick_folder_async` (callback), `daT._extract_quick_transients`, `daT._rb_ms_for_source` | `tk.StringVar`s `fp_ms` (Filling Duration, default `'1.0'`) and `rb_ms` (Reverse Bias, `'500.0'`). |
+| `quickData_tempListbox` | `None` | `daT._build_offlineDataFrame` | `daT._scan_quick_folder_async` (callback), `daT._extract_quick_transients` | Temperature list box. |
+| `quickData_folderLabel` | `None` | `daT._build_offlineDataFrame` | `daT._scan_quick_folder_async` (callback) | `Source: ...` label. |
+| `quickData_selectFolderButton` | `None` | `daT._build_offlineDataFrame` | `daT._set_quick_buttons_state` | **Select Source Folder** button, disabled while a scan or extraction is running. |
+| `quickData_appendFolderButton` | `None` | `daT._build_offlineDataFrame` | `daT._set_quick_buttons_state` | **Append Source Folder** button. |
+| `quickData_extractButton` | `None` | `daT._build_offlineDataFrame` | `daT._set_quick_buttons_state` | **Extract & Average Transients** button. |
+| `quickData_statusLabel` | `None` | `daT._build_offlineDataFrame` | `daT._scan_quick_folder_async`, `daT._extract_quick_transients` | Status label. |
+| `quickData_loadingBusy` | `None` / `False` | `daT._build_offlineDataFrame`, `daT._scan_quick_folder_async` | `daT._quick_busy` | `True` while `_scan_quick_folder_async`' background worker runs. |
+| `quickData_processingBusy` | `None` / `False` | `daT._build_offlineDataFrame`, `daT._extract_quick_transients` | `daT._quick_busy` | `True` while `_extract_quick_transients`' background worker runs. |
 
 ### Data analysis (rate window / Arrhenius)
 
 | Name | Initial / `init()` | Set by | Read by | Meaning |
 |---|---|---|---|---|
-| `rateWindow_dataSourceVar` | `None` | `daT._build_rateWindowFrame` | `daT._calculate_rate_windows` | `tk.StringVar`: Qualitative Analysis / Automated Live / Automated Offline / Auto. |
+| `rateWindow_dataSourceVar` | `None` | `daT._build_rateWindowFrame` | `daT._calculate_rate_windows` | `tk.StringVar`: Loaded Folder / Live Run Qualitative / Automated Live / Automated Offline / Auto. |
 | `rateWindow_statusLabel` | `None` | `daT._build_rateWindowFrame` | `daT._calculate_rate_windows` | Which data source was used and how many temperatures. |
 | `rateWindow_signalMethodVar` | `None` | `daT._build_rateWindowFrame` | `daT._calculate_rate_windows` | Measured C (default) / Smoothed C. |
 | `rateWindow_denoiseVar` | `None` | `daT._build_rateWindowFrame` | `daT._calculate_rate_windows` | `'None (raw)'` (default) / pca / wavelet / sgolay / lowess. |
@@ -285,8 +297,12 @@ Declares all globals except `d_params_for_push` as `global` and resets a subset 
 | `livePlot_processedFiles` | `set()` |
 | `livePlot_liveEmission0Data`, `livePlot_liveAllEmissionsData`, `livePlot_offlineEmission0Data`, `livePlot_offlineAllEmissionsData` | `{}` |
 | `livePlot_liveIngestBusy`, `livePlot_offlineIngestBusy` | `False` |
-| `manual_datasetRegistry`, `manual_ziParamsByFile`, `manual_processedTransients`, `manual_paramVars` | `{}` |
-| `manual_sourceFolders` | `[]` |
+| `manual_datasetRegistry`, `manual_processedTransients`, `manual_paramVars`, `manual_liveFileMtimes` | `{}` |
+| `manual_autoSliceEnd` | `490.0` |
+| `manual_livePollActive` | `False` |
+| `quickData_datasetRegistry`, `quickData_ziParamsByFile`, `quickData_processedTransients`, `quickData_paramVars` | `{}` |
+| `quickData_sourceFolders` | `[]` |
+| `quickData_loadingBusy`, `quickData_processingBusy` | `False` |
 | `rateWindow_signals`, `rateWindow_extractedPeaks` | `{}` |
 | `detailed_data` | `{}` |
 | `detailed_temps` | `[]` |
@@ -421,7 +437,7 @@ The module has no `_name` functions.
 
 - The GUI never calls `init()`. Flags such as `run_busy`, `run_abortRequested` and `app_closing` start as `None` and work only because `None` is falsy; `livePlot_liveRunToken` and similar are guarded with `or 0` in `liveDataTab`.
 - `init()` does not declare `d_params_for_push` as `global` and does not reset it (it is unused anyway).
-- Unused globals: `sourcePrefixSelection`, `d_params_for_push`, `root_data_folder`, `run_stepStatus`. Written but never read: `run_dataFolder`, `run_outputFileType`, `run_paused`, `rateWindow_denoisedEmissions`, `manual_ziDataFile`, `manual_ziGridColOffset`, `manual_ziGridColDelta`, `manual_ziChunkSize`, `detailed_lastResMw`, `detailed_lastResStd`, `detailed_lastNt`, `postprocessingTab`.
+- Unused globals: `sourcePrefixSelection`, `d_params_for_push`, `root_data_folder`, `run_stepStatus`. Written but never read: `run_outputFileType`, `run_paused`, `rateWindow_denoisedEmissions`, `detailed_lastResMw`, `detailed_lastResStd`, `detailed_lastNt`, `postprocessingTab`.
 - `manual_samplingRate` is read but never set, so `liveDataTab` uses its fallback of 1.8666666666666665e-05 s whenever a step file has no usable `timeStampImps`.
 - `detailedProcessingBusy` breaks the `detailed_` naming pattern.
 - `log_to_textbox()` updates Tk widgets from worker threads, which Tkinter does not guarantee to be safe.

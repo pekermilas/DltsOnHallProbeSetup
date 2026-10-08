@@ -52,8 +52,8 @@ with its parameters and return value, how to call it, and known limitations.
 |---|---|
 | [DLTSGUI_MainWindow](reference/DLTSGUI_MainWindow.md) | GUI entry point, tab construction, close and room-temperature return |
 | [runParamsTab](reference/runParamsTab.md) | Input Parameters tab |
-| [liveDataTab](reference/liveDataTab.md) | Live Tools tab: run control, live/offline plots, Qualitative Analysis extractors |
-| [dataAnalysisTab](reference/dataAnalysisTab.md) | Quick Analysis tab: rate windows and Arrhenius |
+| [liveDataTab](reference/liveDataTab.md) | Live Tools tab: run control, live/offline plots, Qualitative Analysis of the running experiment, transient extractors |
+| [dataAnalysisTab](reference/dataAnalysisTab.md) | Quick Analysis tab: Offline Data folder loader, rate windows and Arrhenius |
 | [detailedAnalysisTab](reference/detailedAnalysisTab.md) | Detailed Analysis tab: multi-window analysis, maps, weighted fits |
 | [runDlts_Tools](reference/runDlts_Tools.md) | `dltsRun`: the run sequence, Redo/Retake, file naming |
 | [zurichInstruments_Control](reference/zurichInstruments_Control.md) | `ziDevice`: MFIA parameters, acquisition, file writers |

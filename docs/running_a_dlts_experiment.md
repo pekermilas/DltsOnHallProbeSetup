@@ -121,30 +121,55 @@ If a step fails (an instrument error, or a file that cannot be written), the run
 stops, the step is marked failed, earlier files are kept, and the stage returns to room
 temperature. Resume/Redo/Retake stay available.
 
-## 4. Look at the transients (Qualitative Analysis, lower part of Live Tools)
+## 4. Look at the transients
 
-1. **Select Source Folder** and pick the run folder (or **Append Source Folder** to add
+### During the run (Qualitative Analysis, lower part of Live Tools)
+
+The Qualitative Analysis frame follows the running experiment; it does not load saved
+folders. When the run writes its first step file, the frame takes the run folder as its
+data (**Live Run** shows `Run folder: <name>`), selects every step and extracts it. While
+**Follow live run (auto-update)** is checked, each new step, and each step rewritten by
+Redo or Remove & Retake, is extracted as soon as its file is written.
+
+- **Timing Boundaries**: **Reverse Bias (ms)** sets the length of each averaged
+  transient. When the run folder already has a `runParams.txt` (after a completed main
+  sequence), the fields are set from it (reverse bias = State Enable Time, fill = State
+  Disable Time). **Analysis Slice End** follows Reverse Bias (98 %) until you type your
+  own value.
+- To change the selection or Reverse Bias, edit them and press
+  **Extract & Average Transients**.
+- The left plot shows the averaged transients. The right plot, **Temperature Trace**,
+  shows the stage temperature of each extracted step against its time of measurement
+  (the measured stage temperature for `.h5` files, otherwise the setpoint); the last
+  point is labeled `Latest: X °C at HH:MM:SS`.
+
+### Saved runs (Quick Analysis → Offline Data)
+
+1. In the **Offline Data** column on the left of the Quick Analysis tab, press
+   **Select Source Folder** and pick the run folder (or **Append Source Folder** to add
    another one). It recognizes three layouts: this software's per-temperature
    `.txt`/`.h5` files, a single ZI MFIA CSV export, and ZI subfolder-per-temperature
    exports.
 2. **Timing Boundaries** fill in from the folder's `runParams.txt` (reverse bias =
-   State Enable Time, fill = State Disable Time). Check **Reverse Bias (ms)**: it sets
-   the length of each averaged transient.
+   State Enable Time, fill = State Disable Time), or from a ZI folder name. Check
+   **Reverse Bias (ms)**: it sets the length of each averaged transient.
 3. Choose temperatures in **Available Temperatures Filter**, then
-   **Extract & Average Transients**.
+   **Extract & Average Transients**. The result is the `Loaded Folder (Offline Data)`
+   Data Source of step 5. Loading another folder clears it.
 
 Every reverse-bias window in each file is found from the excitation channel (the
-threshold is midway between the file's own two Aux levels) and averaged. The plot shows
-the Analysis Slice (default 2 ms to 98 % of the reverse bias). Temperatures that cannot
-be extracted are listed in the log with the reason (no pulses found, or the reverse bias
-is longer than the recorded data).
+threshold is midway between the file's own two Aux levels) and averaged. The Qualitative
+plot shows the Analysis Slice (default 2 ms to 98 % of the reverse bias). Temperatures
+that cannot be extracted are listed in the log with the reason (no pulses found, or the
+reverse bias is longer than the recorded data).
 
 ## 5. Rate windows and Arrhenius (Quick Analysis tab)
 
 ![Quick Analysis tab](images/gui_quick_analysis.png)
 
-1. **Data Source**: Auto uses the Qualitative Analysis transients first, then Live or
-   Offline data.
+1. **Data Source**: Auto uses the Offline Data transients (`Loaded Folder`) first, then
+   the live run's Qualitative Analysis transients (`Live Run`), then Live or Offline data
+   of the Automated / Live Data frame.
 2. **Configure Rate Windows**: five t1/t2 pairs (ms), by default the same as Detailed
    Analysis' standard windows. The emission rate of each window is
    `e_n = ln(t2/t1) / (t2 - t1)` in s⁻¹, with t1 and t2 converted from ms to s. Choose windows so the peaks fall inside the scanned

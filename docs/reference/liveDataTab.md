@@ -2,7 +2,7 @@
 
 ## What it's for
 
-`liveDataTab.py` builds the **Live Tools** tab. From this tab you start a DLTS temperature scan and control it: pause, resume, redo steps, or remove and retake them. The tab shows each temperature's emission transients as the files arrive or from a finished run. Its **Qualitative Analysis** section extracts and averages capacitance transients from a data folder in any of the three supported formats. The pure extraction functions (`_compute_*`) are also used by the Detailed Analysis tab and by the tests and benchmarks.
+`liveDataTab.py` builds the **Live Tools** tab. From this tab you start a DLTS temperature scan and control it: pause, resume, redo steps, or remove and retake them. The tab shows each temperature's emission transients as the files arrive or from a finished run. Its **Qualitative Analysis** section follows the running experiment: it extracts and averages the capacitance transients of the run folder as step files are written, and plots them next to the run's temperature trace. Saved folders are loaded in the **Offline Data** column of the Quick Analysis tab ([dataAnalysisTab](dataAnalysisTab.md)), which uses this module's folder scan (`_scan_folder`) and extraction (`_extract_transients_async`). The pure extraction functions (`_compute_*`) are also used by the Detailed Analysis tab and by the tests and benchmarks.
 
 ## What the user sees
 
@@ -20,6 +20,7 @@ The tab has three stacked areas:
 - sets the buttons to the `running` state (only **Pause** enabled);
 - clears the Live view state (`_reset_live_plot_state('live')`), which bumps `dltsc.livePlot_liveRunToken` and switches the view to **Live**;
 - starts the output-file watcher (`_schedule_live_poll`);
+- clears `manual_liveRunFolder` and `manual_liveFileMtimes` and starts the Qualitative Analysis follow loop (`_start_qualitative_live_follow`);
 - starts a daemon thread running `start_dlts()`;
 - starts the step-list refresh loop (`_poll_step_listbox_while_busy`, every 500 ms while `run_busy`).
 
@@ -82,29 +83,18 @@ Live watcher: `_schedule_live_poll` checks `dltsc.run_dataFileNames` once a seco
 
 ### Qualitative Analysis (bottom pane)
 
-A left column (230 px, scrollable with the mouse wheel while the pointer is over it) and a plot on the right.
+A left column (230 px, scrollable with the mouse wheel while the pointer is over it) and a figure with two plots on the right. The frame shows live-run data only. To analyze a saved folder, use **Select Source Folder** in the **Offline Data** column of the Quick Analysis tab.
 
-**Directory Loader Config**
+**Live Run**
 
-- **Select Source Folder** (`_browse_manual_folder`): folder picker **Select DLTS Source Folder**, starting in the last folder or the working directory. It first logs a one-line preview: `Manual analysis: selected <path> -- N item(s): ... — <format guess>`. Then it scans the folder on a background thread and **replaces** the current dataset.
-- **Append Source Folder** (`_append_manual_folder`): folder picker **Select DLTS Source Folder to Append**. It **adds** that folder's temperatures to the current dataset. A temperature that is already loaded keeps its first-loaded copy, and the log lists the skipped ones. With nothing loaded yet, it behaves like **Select Source Folder**.
-- Label: `Source: (none selected)`, then `Source: <folder>` or `Source: N folder(s) combined (latest: <folder>)`.
+- Label `Run folder: (waiting for a run)` until the running experiment writes its first step file, then `Run folder: <folder name>`.
+- Grey hint `Saved data: Quick Analysis tab.`
 
-Both buttons, and **Extract & Average Transients**, are disabled while a scan or an extraction is running.
-
-Three folder formats are detected, in this order:
-
-| Format | Registry tag | How it is recognized | Temperatures from |
-|---|---|---|---|
-| ZI single CSV | `'zi'` | A file matching `*imps_0_sample_param1_avg_header*.csv` directly in the folder | `history_name` in the header CSV, pattern `^(\d+)C_` (non-negative whole °C only); one chunk per temperature in one data CSV |
-| ZI subfolder per temperature | `'zi_subfolder'` | Subfolders named like `0C`, `100C`, `n10C`, `120C_000` (`_ZI_SUBFOLDER_PATTERN`), each with its own `*imps_0_sample_param1_avg_<n>.csv` | Subfolder name; `n` means negative |
-| Legacy per-temperature files | plain path or `'legacy_chunk'` | File names matching `_LEGACY_FILENAME_PATTERN`, for example `p25p0.txt`, `n10p5.h5`, `P120C_001.csv`; plus semicolon CSVs with `chunk`, `smoothed_value`, or `timestamp` in their header | File name, or a fixed chunk-to-temperature map for multi-chunk CSVs |
-
-The output of **Run DLTS** (`p25p0.txt` or `.h5` files) is the legacy per-temperature format.
+When the running experiment writes its first step file into a folder the frame is not following yet (**Run DLTS** clears the followed folder, so each new run is adopted), the frame adopts the run folder as its data (`_adopt_live_run_folder`). Adopting runs on the Tk thread: it indexes the folder's step files with `_compute_legacy_dataset`, lists them all selected in the temperature list, and, when the folder has a `runParams.txt`, sets the Timing Boundaries from it. It logs `Qualitative Analysis: following live run folder <path>`. Then it extracts every step (`_process_raw_transients`). While **Follow live run (auto-update)** is checked, every later new or rewritten step file is added (selected) and the selection is re-extracted; see `_qualitative_live_update`. A run folder holds only Run DLTS step files (`.txt` or `.h5`), the legacy per-temperature format.
 
 **Available Temperatures Filter**
 
-- A multi-select listbox (3 rows high, scrolls) showing each temperature as `T °C`, sorted. After each scan all entries are selected.
+- A multi-select listbox (3 rows high, scrolls) showing each temperature as `T °C`, sorted. When a run folder is adopted all entries are selected; steps added later are selected, and the selection of the others is kept.
 - **Select All** and **Clear All**.
 
 **Timing Boundaries** (`dltsc.manual_paramVars`)
@@ -116,17 +106,21 @@ The output of **Run DLTS** (`p25p0.txt` or `.h5` files) is the legacy per-temper
 | Analysis Slice Start (ms): | `slice_start` | `2.0` | Plot only: the Qualitative plot starts here (`_plot_slice_ms`) |
 | Analysis Slice End (ms): | `slice_end` | `490.0` | Plot only: the Qualitative plot ends here |
 
-These fields are filled automatically on a **Select Source Folder** scan, but not on an append:
+When a run folder is adopted, these fields are set from its `runParams.txt` (`_legacy_run_timing`): Fill = **State Disable Time** × 1000, reverse bias = **State Enable Time** × 1000, slice end = 0.98 × reverse bias. The log shows `Qualitative Analysis: Timing Boundaries set from runParams.txt (fill F ms, reverse bias R ms).` A run folder has `runParams.txt` only after a main sequence completed (see `finish_experiment()`), so during a first run the fields keep their values.
 
-- Legacy folder: from `runParams.txt` in that folder (`_legacy_run_timing`). Fill = **State Disable Time** × 1000, reverse bias = **State Enable Time** × 1000, slice end = 0.98 × reverse bias. The log shows `Manual analysis: Timing Boundaries set from runParams.txt (fill F ms, reverse bias R ms).` `runParams.txt` exists only after a main sequence completed.
-- ZI formats: from the folder name, regexes `FP\w+?(\d+(?:\.\d+)?)ms` and `RB[\w\+\-]+?(\d+(?:\.\d+)?)ms`, for example `..._FP_1ms_RB-5V_500ms`. Slice end = 0.98 × RB.
+**Analysis Slice End** follows **Reverse Bias**: while it still holds the value last set automatically (`dltsc.manual_autoSliceEnd`, initially 490), editing **Reverse Bias (ms)** sets it to 98 % of the new value (`_sync_slice_end_to_rb`, a `trace_add('write')` callback). A slice end typed by the user is left alone.
 
 **Execution Action**
 
-- **Extract & Average Transients** (`_process_raw_transients`, bold, light green): reads **Reverse Bias (ms)**. A non-numeric value logs `Manual analysis: Reverse Bias (ms) must be numeric.` It splits the selected temperatures by format tag and submits `_compute_mixed_transients` to a single-worker `ProcessPoolExecutor` (`dltsc.manual_transientExecutor`, created on first use and reused). A background thread waits for the result, and the plot is drawn on the Tk thread. The results are stored in `dltsc.manual_processedTransients`. The Quick Analysis tab (`dataAnalysisTab`) reads them from there.
-- Status label: `Status: Idle`, `Processing N temperature(s)...`, `Transients ensembled completely — N traces.`, or `N of M traces; see log for the rest.` Every skipped temperature is logged with its reason, for example `Manual analysis: 25.0°C: no fill pulses found: ...`.
+- **Extract & Average Transients** (`_process_raw_transients`, bold, light green): re-extracts the selected temperatures of the run folder by hand, for example after changing **Reverse Bias (ms)** or the selection. A non-numeric value logs `Qualitative Analysis: Reverse Bias (ms) must be numeric.` The extraction runs in a single-worker `ProcessPoolExecutor` (`_extract_transients_async`, `dltsc.manual_transientExecutor`, created on first use and reused). A background thread waits for the result, and the plots are drawn on the Tk thread. The results are stored in `dltsc.manual_processedTransients`. The Quick Analysis tab reads them from there as the `Live Run (Qualitative Analysis)` Data Source.
+- **Follow live run (auto-update)** check box (`dltsc.manual_liveFollowVar`, on by default): adopt the run folder and re-extract as step files are written. Unchecked, the frame does not change during a run.
+- Status label: `Status: Idle`, `Processing N temperature(s)...`, `Transients ensembled completely — N traces.`, or `N of M traces; see log for the rest.` Every skipped temperature is logged with its reason, for example `Qualitative Analysis: 25.0°C: no fill pulses found: ...`.
 
-Plot: **Averaged Capacitance Transients Profile**, x axis **Time from Reverse Bias Start (ms)**, one line per temperature. Only the Analysis Slice (Start to End) is drawn, so the fill-pulse edge at t = 0 does not set the y scale; the extracted data passed to other tabs is not cut. Up to `_MAX_LEGEND_TRACES` (10) traces get a legend (`T°C`, upper right); more traces are colored by temperature (plasma colormap) with a **Temperature (°C)** color bar instead. The y axis is **Capacitance (pF)**, or nF, µF, or mF chosen from the largest value (`_capacitance_axis_units`). Offset notation is off. Each curve is thinned to at most 3000 points for drawing (`_downsample_for_plot`). With no results, the plot shows `No transients extracted. See the log for the reason per temperature.`
+The figure (10 × 4 in, 100 dpi, with a navigation toolbar) is rebuilt on each extraction and has two plots side by side.
+
+Left plot: **Averaged Capacitance Transients Profile**, x axis **Time from Reverse Bias Start (ms)**, one line per temperature. Only the Analysis Slice (Start to End) is drawn, so the fill-pulse edge at t = 0 does not set the y scale; the extracted data passed to other tabs is not cut. Up to `_MAX_LEGEND_TRACES` (10) traces get a legend (`T°C`, upper right); more traces are colored by temperature (plasma colormap) with a **Temperature (°C)** color bar instead. The y axis is **Capacitance (pF)**, or nF, µF, or mF chosen from the largest value (`_capacitance_axis_units`). Offset notation is off. Each curve is thinned to at most 3000 points for drawing (`_downsample_for_plot`). With no results, the plot shows `No transients extracted. See the log for the reason per temperature.`
+
+Right plot: **Temperature Trace** (`_draw_qualitative_temperatures`), one filled red circle per extracted step joined by lines, sorted by time. The x axis, **Time of Measurement**, is the step's acquisition time (`acquired_at`: the `.h5` attribute, or the modification time of a `.txt` JSON file), with matplotlib's `ConciseDateFormatter`. The y axis, **Temperature (°C)**, is the measured stage temperature when the `.h5` file stores it (`stage_temperature_C`), otherwise the setpoint. The last point is labeled `Latest: X.XX °C at HH:MM:SS`. A single point gets a 10-minute x range around it. With no step, the plot shows `No temperature steps extracted.` Because it is redrawn on every extraction, it grows by one point per finished step during a run.
 
 ## Import
 
@@ -146,15 +140,15 @@ Importing the module creates no widgets. It imports `numpy`, `pandas`, `matplotl
 | `_ZI_SUBFOLDER_PATTERN` | `re.compile(r'^(n?)(\d+)C(?:_\d+)?$', re.IGNORECASE)` | ZI per-temperature subfolder name. Group 1 is `n` for negative, group 2 is whole degrees. |
 | `_MAX_PLOT_POINTS` | `3000` | Default point limit of `_downsample_for_plot`. |
 | `_MAX_LEGEND_TRACES` | `10` | Above this many traces the Qualitative plot uses a temperature color bar instead of a legend. |
-| `_manualColorbar` | `None` or matplotlib `Colorbar` | The Qualitative plot's current color bar; removed before each redraw. |
+| `_QUAL_LIVE_POLL_MS` | `2000` | Period (ms) of the Qualitative Analysis follow loop. |
 | `_MIN_PULSE_HEIGHT_V` | `0.05` (V) | Smallest excitation swing that `_find_reverse_bias_starts` treats as real pulsing. |
 
 Fixed values inside functions:
 
 | Where | Value | Meaning |
 |---|---|---|
-| `_process_raw_transients` | `samplingRateS = dltsc.manual_samplingRate or 1.8666666666666665e-05` | Fallback sample period (s) for legacy files, about 53.57 kSa/s. `.txt`/`.h5` step files use their own `timeStampImps` spacing instead; `dltsc.manual_samplingRate` is never set anywhere. |
-| `_process_raw_transients` | `cInfTargetMs = 0.90 * rb_ms` | Time at which `C_infinity` is read. |
+| `_extract_transients_async` | `samplingRateS = dltsc.manual_samplingRate or 1.8666666666666665e-05` | Fallback sample period (s) for legacy files, about 53.57 kSa/s. `.txt`/`.h5` step files use their own `timeStampImps` spacing instead; `dltsc.manual_samplingRate` is never set anywhere. |
+| `_extract_transients_async` | `cInfTargetMs = 0.90 * rb_ms` | Time at which `C_infinity` is read. |
 | ZI defaults | `gridColOffset = -0.001` s, `gridColDelta = 1.86667e-05` s, `chunkSize = 32768` | Used when a ZI header CSV is missing or unreadable. |
 | `_compute_legacy_dataset` | chunk map `{0: 120.0, 1: 125.0, ..., 8: 160.0}` | Temperatures assigned to chunks of a multi-chunk legacy CSV. |
 
@@ -167,7 +161,8 @@ Fixed values inside functions:
 | Automated plot | `livePlot_activeMode`, `livePlot_modeVar`, `livePlot_denoiseMethodVar`, `livePlot_datasetVar`, `livePlot_datasetCombo`, `livePlot_figure`, `livePlot_axEmission0`, `livePlot_axAllEmissions`, `livePlot_canvas`, `livePlot_statusLabel` |
 | Live state | `livePlot_liveImpdData`, `livePlot_liveEmission0Data`, `livePlot_liveAllEmissionsData`, `livePlot_liveDatasetSel`, `livePlot_liveRunToken`, `livePlot_pollAfterId`, `livePlot_processedFiles`, `livePlot_liveIngestBusy` |
 | Offline state | `livePlot_offlineImpdData`, `livePlot_offlineEmission0Data`, `livePlot_offlineAllEmissionsData`, `livePlot_offlineDatasetSel`, `livePlot_offlineRunToken`, `livePlot_offlineIngestBusy` |
-| Qualitative Analysis | `manual_dataDirectory`, `manual_datasetRegistry`, `manual_ziMode`, `manual_ziParamsByFile`, `manual_ziDataFile`, `manual_ziGridColOffset`, `manual_ziGridColDelta`, `manual_ziChunkSize`, `manual_sourceFolders`, `manual_samplingRate` (read only), `manual_processedTransients`, `manual_paramVars`, `manual_tempListbox`, `manual_folderLabel`, `manual_selectFolderButton`, `manual_appendFolderButton`, `manual_extractButton`, `manual_processingBusy`, `manual_loadingBusy`, `manual_transientExecutor`, `manual_figure`, `manual_ax`, `manual_canvas`, `manual_statusLabel` |
+| Qualitative Analysis | `manual_datasetRegistry`, `manual_samplingRate` (read only), `manual_processedTransients`, `manual_paramVars`, `manual_autoSliceEnd`, `manual_tempListbox`, `manual_folderLabel`, `manual_extractButton`, `manual_processingBusy`, `manual_transientExecutor`, `manual_figure`, `manual_ax`, `manual_axTemps`, `manual_canvas`, `manual_statusLabel` |
+| Qualitative live follow | `manual_liveFollowVar`, `manual_liveRunFolder`, `manual_liveFileMtimes`, `manual_livePollActive`; reads `run_dataFolder` (written by `runDlts_Tools`) |
 
 The snapshot dicts (`livePlot_*Emission0Data`, `livePlot_*AllEmissionsData`) map the Kelvin temperature to a copy of that temperature's `impdData.dataEmissions` record. The redraw reads the keys `xTimeStampImps` (or `x`), `ymean` (or `y`), and `yFiltered` for emission 0, and `xTimeStampImps` (or `x`) and `y` (1-D or 2-D, one column per block) for all emissions.
 
@@ -213,7 +208,7 @@ When `run_busy`, sets `dltsc.run_pauseRequested = True`, disables **Pause**, and
 
 #### _run_control_thread(indices=None, deleteFirst=False, isMainSequence=False)
 
-The shared launcher for Resume, Redo, and Retake. It does nothing if there is no `run_dltsInstance` or if `run_busy` is set. Otherwise it sets `run_busy`, clears `run_pauseRequested`, sets the buttons to `running`, and starts a daemon thread calling `run_dltsInstance.run_experiment(indices=indices, deleteFirst=deleteFirst)`. The result goes to `_handle_run_status` through `root.after`. It also starts the step-list refresh loop. It does not restart the Live file watcher.
+The shared launcher for Resume, Redo, and Retake. It does nothing if there is no `run_dltsInstance` or if `run_busy` is set. Otherwise it sets `run_busy`, clears `run_pauseRequested`, sets the buttons to `running`, and starts a daemon thread calling `run_dltsInstance.run_experiment(indices=indices, deleteFirst=deleteFirst)`. The result goes to `_handle_run_status` through `root.after`. It also starts the step-list refresh loop and the Qualitative Analysis follow loop (`_start_qualitative_live_follow`). It does not restart the Live file watcher.
 
 #### _resume_run()
 
@@ -347,39 +342,72 @@ Seeds the Live and Offline globals that `dltsConfig.init()` would normally set (
 
 Builds the **Run Control** frame: **Pause**, **Resume**, **Redo Selected**, and **Remove & Retake Selected** (all disabled at start), and the step listbox with its scrollbar.
 
-### Qualitative Analysis: GUI and scanning
+### Qualitative Analysis: GUI and folder scanning
 
 #### _set_manual_buttons_state(state)
 
-Sets `state` (`'normal'` or `'disabled'`) on **Select Source Folder**, **Append Source Folder**, and **Extract & Average Transients**.
+Sets `state` (`'normal'` or `'disabled'`) on **Extract & Average Transients**, the frame's only action button.
 
 #### _describe_folder_contents(dir_path, max_entries=12)
 
-Returns a one-line preview string: `"N item(s): a, b, ... (M more)  —  <guess>"`. The guess is `looks like ZI single-file format ...`, `looks like ZI subfolder-per-temperature format`, `looks like legacy per-temperature files`, or `format not recognized from filenames ...`. It returns `folder is empty` or `cannot list folder: <error>` when appropriate. It only lists the folder and reads no files. The Detailed Analysis tab also uses it.
-
-#### _browse_manual_folder()
-
-**Select Source Folder** handler: dialog, log preview, then `_scan_manual_directory_async(dir_path, isAppend=False)`. It does nothing while a scan or an extraction is busy.
-
-#### _append_manual_folder()
-
-**Append Source Folder** handler. It falls back to `_browse_manual_folder()` when the registry is empty; otherwise it runs a dialog, logs the preview, and calls `_scan_manual_directory_async(dir_path, isAppend=True)`.
+Returns a one-line preview string: `"N item(s): a, b, ... (M more)  —  <guess>"`. The guess is `looks like ZI single-file format ...`, `looks like ZI subfolder-per-temperature format`, `looks like legacy per-temperature files`, or `format not recognized from filenames ...`. It returns `folder is empty` or `cannot list folder: <error>` when appropriate. It only lists the folder and reads no files. The Offline Data column of the Quick Analysis tab and the Detailed Analysis tab use it.
 
 #### _registry_format_label(registry)
 
-Returns `'ZI'`, `'Legacy'`, or `'Mixed'` according to the tags present in the registry. This is the value stored in `dltsc.manual_ziMode` and shown in the status as `[ZI]`, `[Legacy]`, or `[Mixed]`.
+Returns `'ZI'`, `'Legacy'`, or `'Mixed'` according to the tags present in the registry. The Quick Analysis Offline Data status shows it as `[ZI]`, `[Legacy]`, or `[Mixed]`.
 
-#### _scan_manual_directory_async(dir_path, isAppend)
+#### _scan_folder(dir_path)
 
-Sets `manual_loadingBusy`, disables the buttons, and starts a daemon thread. The thread detects the format (ZI single CSV, then ZI subfolders, then legacy with `_legacy_run_timing`) and builds the registry. `apply()` on the Tk thread:
+Detects the format of a saved data folder and indexes its temperatures. Pure computation with no Tk calls, so it is safe on a background thread; `dataAnalysisTab._scan_quick_folder_async` runs it off the Tk thread.
 
-- replaces or merges `manual_datasetRegistry` and `manual_sourceFolders`;
-- stores the ZI grid parameters in `manual_ziParamsByFile` and the `manual_zi*` globals;
-- fills the Timing Boundaries (not on append);
-- refills and selects all entries in the temperature listbox;
-- logs errors and sets the status `[<format>] N temperature step(s) from S source(s).`
+Three folder formats are detected, in this order:
 
-A replacing scan also clears `manual_ziParamsByFile` and sets `manual_dataDirectory`.
+| Format | Registry tag | How it is recognized | Temperatures from | `fpMs` / `rbMs` from |
+|---|---|---|---|---|
+| ZI single CSV | `'zi'` | A file matching `*imps_0_sample_param1_avg_header*.csv` directly in the folder | `history_name` in the header CSV, pattern `^(\d+)C_` (non-negative whole °C only); one chunk per temperature in one data CSV | Folder name |
+| ZI subfolder per temperature | `'zi_subfolder'` | Subfolders named like `0C`, `100C`, `n10C`, `120C_000` (`_ZI_SUBFOLDER_PATTERN`), each with its own `*imps_0_sample_param1_avg_<n>.csv` | Subfolder name; `n` means negative | Folder name |
+| Legacy per-temperature files | plain path or `'legacy_chunk'` | File names matching `_LEGACY_FILENAME_PATTERN`, for example `p25p0.txt`, `n10p5.h5`, `P120C_001.csv`; plus semicolon CSVs with `chunk`, `smoothed_value`, or `timestamp` in their header | File name, or a fixed chunk-to-temperature map for multi-chunk CSVs | `runParams.txt` (`_legacy_run_timing`) |
+
+The output of **Run DLTS** (`p25p0.txt` or `.h5` files) is the legacy per-temperature format. The folder-name regexes are `FP\w+?(\d+(?:\.\d+)?)ms` and `RB[\w\+\-]+?(\d+(?:\.\d+)?)ms`, for example `..._FP_1ms_RB-5V_500ms`.
+
+| Name | Type | Default | Meaning |
+|---|---|---|---|
+| `dir_path` | str | none | Folder to scan. |
+
+**Returns** a dict `{'registry', 'ziParamsByFile', 'fpMs', 'rbMs', 'errors'}`: the temperature → source registry, ZI data file → `{'gridColOffset', 'gridColDelta', 'chunkSize'}`, the fill and reverse-bias durations in ms as floats (or `None` when the folder does not state them), and a list of messages for the log. An exception while scanning is reported in `errors` as `error scanning folder: <error>`.
+
+**Side effects** Reads files only.
+
+**Called by** `dataAnalysisTab._scan_quick_folder_async`.
+
+### Qualitative Analysis: following the live run
+
+The follow loop runs on the Tk thread through `root.after`. `start_thread()` and `_run_control_thread()` (Resume, Redo, Retake) start it.
+
+#### _start_qualitative_live_follow()
+
+Schedules `_qualitative_live_tick` in `_QUAL_LIVE_POLL_MS` (2000 ms) unless the loop is already scheduled (`manual_livePollActive`).
+
+#### _qualitative_live_tick()
+
+One tick: calls `_qualitative_live_update()` and reschedules itself while `run_busy` is set or that call reports pending work, so the last step is still picked up after the run ends. It stops when the GUI is closing.
+
+#### _qualitative_live_update()
+
+One follow step. It does nothing (and returns `False`) when **Follow live run (auto-update)** is unchecked or `dltsc.run_dataFolder` is not set. While an extraction is running it returns `True` to retry on the next tick. It looks for run data files (`dltsc.run_dataFileNames`) that exist and whose modification time differs from the one last extracted (`_changed_run_files`, `manual_liveFileMtimes`). A step still being written as `*.h5.tmp` does not exist under its final name yet, so it is not picked up early. With changes:
+
+- if the run folder is not the adopted one (`manual_liveRunFolder`, compared with `_same_folder`), it calls `_adopt_live_run_folder(folder)` and then `_process_raw_transients()`;
+- otherwise it re-indexes the folder with `_compute_legacy_dataset`, adds new steps to the registry and the list (selected, keeping the selection of the others), and calls `_process_raw_transients()`.
+
+**Returns** `True` while there is still work to do, otherwise `False`.
+
+#### _adopt_live_run_folder(folder)
+
+Makes the run folder the frame's data, synchronously on the Tk thread (a run folder holds only step files, so indexing it is one directory listing). It sets `manual_liveRunFolder`, replaces `manual_datasetRegistry` with `_compute_legacy_dataset(folder, ...)`, logs `Qualitative Analysis: following live run folder <path>` and any indexing errors, and sets the Live Run label to `Run folder: <name>`. When `_legacy_run_timing(folder)` returns values, it sets **Filling Duration** and **Reverse Bias**, sets **Analysis Slice End** through `_set_auto_slice_end`, and logs the Timing Boundaries line. Finally it refills the temperature list with every entry selected. It does not extract; the caller does.
+
+#### _same_folder(a, b) and _changed_run_files()
+
+`_same_folder` compares two paths after `normpath` and `normcase`; an empty path never matches. `_changed_run_files` returns `{path: mtime}` for the run data files that exist and were not yet extracted at their current modification time.
 
 #### _select_all_manual_temps()
 
@@ -416,7 +444,7 @@ Reads `header_filename` (semicolon CSV with the columns `chunk_number`, `history
 
 **Side effects** Reads files only.
 
-**Called by** `_scan_manual_directory_async` and `detailedAnalysisTab`.
+**Called by** `_scan_folder` and `detailedAnalysisTab`.
 
 #### _compute_zi_subfolder_dataset(dir_path, errorMsgs)
 
@@ -424,7 +452,7 @@ Scans the subfolders of `dir_path` that match `_ZI_SUBFOLDER_PATTERN`. For each,
 
 **Returns** `(registry, ziParamsByFile)`, where `ziParamsByFile[dataFile] = {'gridColOffset', 'gridColDelta', 'chunkSize'}`.
 
-**Called by** `_scan_manual_directory_async` and `detailedAnalysisTab`.
+**Called by** `_scan_folder` and `detailedAnalysisTab`.
 
 **Example**
 
@@ -449,7 +477,7 @@ Lists the files in `dir_path`, without recursing:
 
 **Returns** `registry` (dict).
 
-**Called by** `_scan_manual_directory_async`, `detailedAnalysisTab`, the tests, and the benchmarks.
+**Called by** `_scan_folder`, `_adopt_live_run_folder`, `_qualitative_live_update`, `detailedAnalysisTab`, the tests, and the benchmarks.
 
 **Example** (see the full pipeline example under `_compute_legacy_transients`)
 
@@ -471,7 +499,7 @@ Reads `runParams.txt` (JSON) in `dir_path`.
 
 **Side effects** None.
 
-**Called by** `_scan_manual_directory_async`, and the benchmarks in `benchmarks/hardware/hw_analyze.py`.
+**Called by** `_scan_folder`, `_adopt_live_run_folder`, and the benchmarks in `benchmarks/hardware/hw_analyze.py`.
 
 **Example**
 
@@ -490,13 +518,17 @@ processedTransients = {
         'time_ms':    ndarray,     # time axis, ms from reverse-bias start
         'avg_cap_pf': ndarray,     # averaged capacitance, pF
         'C_infinity': float,       # avg_cap_pf at the sample nearest cInfTargetMs
+        # legacy entries (_compute_legacy_transients) only:
+        'setpoint_C': float,       # .h5 'setpoint_C' attribute, else the registry key
+        'stage_C':    float,       # .h5 'stage_temperature_C' attribute, else NaN
+        'acquired_at': str or None,  # ISO time: .h5 'acquired_at', or a .txt file's mtime
     },
     ...
 }
 executionErrors = ['30.0°C: no fill pulses found: ...', ...]   # one string per skipped temperature
 ```
 
-They take only plain Python and numpy data, so they can run in a child process. This shape is what `dltsc.manual_processedTransients` holds, and what `dataAnalysisTab` and `detailedAnalysisTab` consume.
+They take only plain Python and numpy data, so they can run in a child process. This shape is what `dltsc.manual_processedTransients` and `dltsc.quickData_processedTransients` hold, and what `dataAnalysisTab` and `detailedAnalysisTab` consume. The Temperature Trace plot uses `setpoint_C`, `stage_C`, and `acquired_at`.
 
 #### _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziParamsByFile)
 
@@ -538,14 +570,14 @@ Runs the three extractors on their subsets and merges the results. This is the f
 
 **Returns** `(processedTransients, executionErrors)`.
 
-**Called by** `_process_raw_transients` (in the child process) and `detailedAnalysisTab`.
+**Called by** `_extract_transients_async` (in the child process) and `detailedAnalysisTab`.
 
 #### _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datasetRegistry, samplingRateS)
 
 Extracts and averages transients from legacy entries:
 
 - `('legacy_chunk', path, chunk)`: it reads the semicolon CSV and filters on the first column when `chunk` is not `None`. It drops rows with any NaN and uses the last column whose name contains `value`, `smoothed`, `cap`, or `impedance` (otherwise the last column). F values are converted to pF. The time axis is `arange(n) * samplingRateS * 1000` ms.
-- `.txt` (JSON) or `.h5`: it reads `AuxInput1` (excitation, V) and `ImpedanceIm` (F). For `.h5` it reads only these two channels, through `iaT.read_h5_record`. It converts to float32 and multiplies `ImpedanceIm` by 1e12 (pF). It finds the reverse-bias starts with `_find_reverse_bias_starts` and cuts `int(rbDurationMs * 1e-3 / samplingRateS)` samples after each start, keeping only full windows. The windows are averaged. Time is `arange(len) * samplingRateS * 1000` ms, with t = 0 at the last fill sample.
+- `.txt` (JSON) or `.h5`: it reads `AuxInput1` (excitation, V) and `ImpedanceIm` (F). For `.h5` it reads only these two channels plus `timeStampImps` and the step attributes, through `_read_h5_step`; for `.txt` the acquisition time is the file's modification time. It converts to float32 and multiplies `ImpedanceIm` by 1e12 (pF). The sample period `dtS` is the file's own `timeStampImps` median spacing (`_sample_interval_s`), or `samplingRateS` when the file has no usable time stamps. It finds the reverse-bias starts with `_find_reverse_bias_starts` and cuts `int(rbDurationMs * 1e-3 / dtS)` samples after each start, keeping only full windows. The windows are averaged. Time is `arange(len) * dtS * 1000` ms, with t = 0 at the last fill sample.
 - `.csv` (plain): column 0 is taken as `time_ms` and column 1 as `avg_cap_pf`, both as they are.
 - Any other extension: logged as `unsupported file type`.
 
@@ -655,13 +687,41 @@ Returns `(x, y)` unchanged if `len(x) <= maxPoints`. Otherwise it returns every 
 
 Returns `dltsc.manual_transientExecutor`, creating a `ProcessPoolExecutor(max_workers=1)` on first use. The pool is reused, so only the first extraction pays the child's import start-up time. `DLTSGUI_MainWindow._finish_close` shuts it down.
 
+#### _extract_transients_async(datasetRegistry, selectedTemps, rbDurationMs, ziParamsByFile, onDone)
+
+Extracts and averages the selected temperatures off the Tk thread, then calls `onDone(processedTransients, executionErrors)` on the Tk thread (through `root.after(0, ...)`). Shared by the Qualitative frame (`_process_raw_transients`) and the Quick Analysis Offline Data column (`dataAnalysisTab._extract_quick_transients`).
+
+| Name | Type | Default | Meaning |
+|---|---|---|---|
+| `datasetRegistry` | dict | none | Temperature → source registry (any mix of ZI and legacy entries). Copied before use. |
+| `selectedTemps` | list of float | none | Temperatures to extract. |
+| `rbDurationMs` | float | none | Reverse Bias (ms). `C_infinity` is read at 0.9 × this value. |
+| `ziParamsByFile` | dict or None | none | ZI grid parameters per data file; `{}` for a live run folder. |
+| `onDone` | callable | none | Receives `(processedTransients, executionErrors)` on the Tk thread. |
+
+It splits the selection into `ziTemps`, `ziSubfolderTemps`, and `legacyTemps` by each entry's own registry tag. A daemon thread submits `_compute_mixed_transients(...)` to the shared process pool (`_get_transient_executor`) and blocks on `future.result()`. A crash in the child process is passed to `onDone` as `({}, ['extraction process failed: <error>'])`.
+
+**Returns** `None`.
+
 #### _process_raw_transients()
 
-**Extract & Average Transients** handler. It returns silently if the registry is empty or a worker is busy. It logs an error if no temperature is selected or **Reverse Bias (ms)** is not numeric. Otherwise it sets `manual_processingBusy`, disables the buttons, and splits the selection into `ziTemps`, `ziSubfolderTemps`, and `legacyTemps` by registry tag. A daemon thread submits `_compute_mixed_transients(...)` to the process pool and blocks on `future.result()`. `apply()` on the Tk thread stores `manual_processedTransients`, draws the plot, logs each error, and sets the status. A crash in the child process is reported as `extraction process failed: <error>`.
+**Extract & Average Transients** handler of the Qualitative frame; the follow loop calls it too. It returns silently if the registry is empty or a worker is busy. It logs an error if no temperature is selected or **Reverse Bias (ms)** is not numeric. Otherwise it sets `manual_processingBusy`, disables the button, and calls `_extract_transients_async(manual_datasetRegistry, selectedTemps, rbMs, {}, apply)`. `apply()` on the Tk thread stores `manual_processedTransients`, rebuilds the figure (left axes `manual_ax`, right axes `manual_axTemps`), draws both plots, logs each error, and sets the status.
+
+#### _draw_qualitative_temperatures(ax, processedTransients)
+
+Draws the **Temperature Trace** into `ax`, as described under "Qualitative Analysis (bottom pane)". A step whose `acquired_at` is missing or not an ISO date-time is left out.
+
+#### _sample_interval_s(timeStamps, fallbackS) and _read_h5_step(filePath)
+
+`_sample_interval_s` returns the median positive, finite spacing of `timeStamps` (s), or `fallbackS` when there are fewer than two usable time stamps. `_read_h5_step` returns `(channels, attrs)` of one `.h5` step file: the `AuxInput1`, `ImpedanceIm`, and `timeStampImps` channels, and the attributes `setpoint_C`, `stage_C` (from `stage_temperature_C`), and `acquired_at`. It raises `KeyError` when `AuxInput1` or `ImpedanceIm` is missing.
+
+#### _sync_slice_end_to_rb(*_) and _set_auto_slice_end(rbMs)
+
+`_set_auto_slice_end` sets **Analysis Slice End** to 0.98 × `rbMs` and stores that value in `dltsc.manual_autoSliceEnd`. `_sync_slice_end_to_rb`, a `trace_add('write')` callback on **Reverse Bias (ms)**, calls it for a positive Reverse Bias while the slice end is empty or still equals `manual_autoSliceEnd`.
 
 #### _build_manualPlotFrame(parent)
 
-Seeds `manual_processedTransients`, `manual_processingBusy`, and `manual_loadingBusy`, then builds the whole **Qualitative Analysis** pane: the scrollable left column (with a mouse-wheel binding active while the pointer is over it), the four group boxes, the figure, the canvas, and the toolbar.
+Seeds `manual_processedTransients`, `manual_processingBusy`, `manual_liveFileMtimes`, and `manual_livePollActive`, then builds the whole **Qualitative Analysis** pane: the scrollable left column (with a mouse-wheel binding active while the pointer is over it), the four group boxes (Live Run, Available Temperatures Filter, Timing Boundaries, Execution Action), the two-axes figure, the canvas, and the toolbar.
 
 ## Threading model
 
@@ -669,8 +729,9 @@ Seeds `manual_processedTransients`, `manual_processingBusy`, and `manual_loading
 - **Run threads** (daemon `threading.Thread`): `start_dlts` for **Run DLTS**, and the `_run_control_thread` worker for Resume, Redo, and Retake. They drive the hardware through `runDlts_Tools`. `dltsc.run_busy` allows only one at a time: every launcher returns early while it is set, and `_return_to_room_temp_async` keeps it set during the ramp back. Pausing sets `run_pauseRequested`, and the loop in `run_experiment()` returns `'paused'` before the next step.
 - **Room-return thread**: `_return_to_room_temp_async` runs `return_to_room_temp()`, which can block for many minutes.
 - **Plot worker threads**: `_ingest_files_async`, `_load_offline_run`, and `_recompute_denoise_and_redraw` do `impdData` loading, clustering, and denoising. `livePlot_liveIngestBusy` and `livePlot_offlineIngestBusy` stop a second worker on the same mode.
-- **Qualitative threads**: `_scan_manual_directory_async` (folder scan) and the waiter thread in `_process_raw_transients`. `manual_loadingBusy` and `manual_processingBusy` gate them, and the three buttons are disabled meanwhile.
-- **Process pool**: one worker process (`dltsc.manual_transientExecutor`) runs `_compute_mixed_transients`. It has its own interpreter and GIL, so long extractions do not slow the Tk thread. This is why `DLTSGUI_MainWindow` guards GUI construction with `__name__ == '__main__'` and calls `multiprocessing.freeze_support()`.
+- **Qualitative follow loop**: `_qualitative_live_tick` runs on the Tk thread every 2 s through `root.after`. Adopting a run folder (`_adopt_live_run_folder`) is one directory listing and also runs on the Tk thread.
+- **Extraction threads**: the waiter thread in `_extract_transients_async`, used by `_process_raw_transients` (gated by `manual_processingBusy`) and by the Quick Analysis Offline Data column (gated by `quickData_processingBusy`). The Offline Data folder scan (`_scan_folder`) runs on its own thread in `dataAnalysisTab`.
+- **Process pool**: one worker process (`dltsc.manual_transientExecutor`), shared by the Qualitative frame and the Quick Analysis Offline Data column, runs `_compute_mixed_transients`. It has its own interpreter and GIL, so long extractions do not slow the Tk thread. This is why `DLTSGUI_MainWindow` guards GUI construction with `__name__ == '__main__'` and calls `multiprocessing.freeze_support()`.
 - **Marshaling**: workers hand results back with `dltsc.root.after(0, callback)`, and Tk calls happen only in those callbacks. The exception is `dltsc.log_to_textbox`, which the run threads (inside `runDlts_Tools`) and `start_dlts` call directly from their background threads.
 - **Run tokens**: `livePlot_liveRunToken` and `livePlot_offlineRunToken` are incremented on each reset. Pollers and workers carry the token they started with and discard their results if it has changed, so a stale watcher or loader from an earlier run cannot overwrite newer data.
 
@@ -679,14 +740,14 @@ Seeds `manual_processedTransients`, `manual_processingBusy`, and `manual_loading
 - **NaNs in `AuxInput1`** no longer shift the pulse windows: `[nan, 0, 0, -5, -5, -5, 0, -5, -5]` gives `[2, 6]` (fixed after this page was first written; covered by `tests/test_transient_extraction.py`).
 - **Sample period.** Legacy `.txt`/`.h5` extraction takes the sample period from each file's `timeStampImps` (median spacing, `_sample_interval_s`), so a run at another **Data Transfer Rate** gets the right window length and time axis. Only files without usable time stamps, and chunked CSVs, fall back to 1.8666666666666665e-05 s (about 53.57 kSa/s).
 - **Timing Boundaries.** Only **Reverse Bias (ms)** affects extraction. **Analysis Slice Start/End (ms)** window the Qualitative plot only; **Filling Duration (ms)** is display only.
-- `runParams.txt` is written only when a main sequence completes. A paused, failed, or closed-early run folder has none, so the Timing Boundaries keep their previous values for it.
+- `runParams.txt` is written only when a main sequence completes. A paused, failed, or closed-early run folder has none, and neither has a first run while it is still in progress, so the Timing Boundaries keep their previous values when such a folder is adopted (Qualitative frame) or loaded (Quick Analysis Offline Data).
 - **Folder-name timing regex.** The ZI `FP`/`RB` patterns need at least one character between `FP`/`RB` and the number. `FP_1ms_RB_500ms` gives 1 and 500 ms. `FP1ms_RB500ms` gives FP = 500 and RB = 00. `FP10ms` gives FP = 0.
 - ZI single-CSV temperatures must be non-negative whole degrees (`^(\d+)C_` on `history_name`).
 - Multi-chunk legacy CSVs use a hard-coded chunk map from 120 to 160 °C in 5 °C steps. Chunks above 8 are dropped.
 - `_LEGACY_FILENAME_PATTERN` needs a leading `p`/`n` and a lower-case extension. `p25.TXT`, `25C.txt`, and `p25p0.json` are not recognized. **Load Existing Run (Offline)** does offer `*.json` in its filter.
 - Plain two-column legacy `.csv` files are taken as they are: column 0 must already be in ms and column 1 in pF.
 - **Possible Live-view mix-up on a second run.** `start_thread` starts the watcher before `init_experiment()` publishes the new `dltsc.run_dataFileNames`. On a second **Run DLTS** in the same session, the first ticks can still see the previous run's file list. Those files exist, so they are ingested into the new Live view. If they finish ingesting before the new list is published, the watcher decides that all files are done and stops, and the new run's files are never shown. This is inferred from the code and was not observed in the GUI.
-- The Live watcher is started only by **Run DLTS**. Files rewritten by **Redo Selected** or **Remove & Retake Selected** are already marked processed and are not reloaded. Use **Load Existing Run (Offline)** to view them.
+- The Live watcher is started only by **Run DLTS**. Files rewritten by **Redo Selected** or **Remove & Retake Selected** are already marked processed and are not reloaded. Use **Load Existing Run (Offline)** to view them. (The Qualitative Analysis frame does re-extract rewritten files, because its follow loop compares modification times.)
 - A step file that always fails to load is retried every second for as long as the watcher runs, and each failure is logged.
 - If `init_experiment()`, `run_experiment()`, or `return_to_room_temp()` raises an exception instead of returning a status, the `root.after` callback is never scheduled. `run_busy` then stays `True` and the buttons stay in `running` or `returning` until restart. `run_experiment()` catches step errors itself, so this needs an error outside its `try`.
 - `dltsc.log_to_textbox` is called from background threads (the run threads and `start_dlts`), which updates a Tk widget off the main thread.

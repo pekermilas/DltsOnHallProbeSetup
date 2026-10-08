@@ -59,7 +59,7 @@ name = prefix + str(np.abs(T)).replace('.', 'p') + ext
 
 The name is built from `str()` of the number. `instecTempStage_Control.build_temp_grid()` returns a float numpy array (`Tinit + step * np.arange(n)`), so whole-degree setpoints give `p25p0`. Fractional steps can give floating-point artifacts in the name. Checked with the same expression: a 0 to 1 °C grid in 0.1 °C steps gives `p0p30000000000000004`, `p0p6000000000000001`, `p0p7000000000000001`, and a grid starting at -1 °C gives `n0p3999999999999999` and similar. The readers still parse these names (the fraction is just a long digit string).
 
-The readers accept a wider pattern. `liveDataTab._LEGACY_FILENAME_PATTERN`, used by the Qualitative Analysis folder scan in the Live Tools tab and by the Detailed Analysis tab:
+The readers accept a wider pattern. `liveDataTab._LEGACY_FILENAME_PATTERN`, used by the folder scans of the Quick Analysis tab (Offline Data), the Live Tools tab (Qualitative Analysis, live run folder), and the Detailed Analysis tab:
 
 ```python
 re.compile(r'^([npNP])(\d+)(?:[pP](\d+))?[cC]?(?:_\d+)?\.(txt|csv|h5)$')
@@ -74,7 +74,7 @@ re.compile(r'^([npNP])(\d+)(?:[pP](\d+))?[cC]?(?:_\d+)?\.(txt|csv|h5)$')
 | `(?:_\d+)?` | optional `_<n>` suffix, ignored |
 | `(txt\|csv\|h5)` | extension |
 
-`convert_json_to_h5.STEP_FILE_PATTERN` is the same pattern with the extensions `txt|json` instead. Note that `.json` step files are not picked up by the Live Tools / Detailed Analysis folder scan.
+`convert_json_to_h5.STEP_FILE_PATTERN` is the same pattern with the extensions `txt|json` instead. Note that `.json` step files are not picked up by these folder scans.
 
 `impedanceAnalysis_Tools.impdData.read_data()` (Live Tools, Offline Run) applies the same name rule (`_STEP_STEM_PATTERN`, which also accepts a name without the sign letter as positive) and keys each file by its exact setpoint in kelvin, `T_C + 273.15`: `p25p0` gives 298.15, `p50p5` 323.65, `n10p5` 262.65, `p25C` 298.15. Earlier versions truncated to whole degrees and added 273 (`p50p5` gave 323), and failed on names with a `C`.
 
@@ -123,7 +123,7 @@ A JSON object with every run parameter: the MFIA parameters, then the temperatur
 
 The meaning and units of each parameter are described in [runParamsTab.md](runParamsTab.md). Two are used by the readers:
 
-- `State Enable Time` (s) is the reverse-bias duration and `State Disable Time` (s) the fill-pulse duration. `liveDataTab._legacy_run_timing()` reads them to preset the Qualitative Analysis timing fields (here 6 ms and 3 ms).
+- `State Enable Time` (s) is the reverse-bias duration and `State Disable Time` (s) the fill-pulse duration. `liveDataTab._legacy_run_timing()` reads them to preset the timing fields of the Quick Analysis Offline Data column and of the Qualitative Analysis frame (here 6 ms and 3 ms).
 - `Number of Points (power of 2)` sets the samples per step: 2^18 = 262144 here.
 
 `impdData.read_data()` looks for `runParams.txt` in the folder of the first selected file and prints a warning if it is missing.
@@ -270,7 +270,7 @@ To get a readable copy of a step file, use `convert_h5_to_text.py` or **Export H
 
 ## Zurich Instruments MFIA CSV exports
 
-The Qualitative Analysis section of the Live Tools tab and the Detailed Analysis tab also load data exported with the Zurich Instruments LabOne software instead of this application. When you pick a folder, both tabs (`liveDataTab._scan_manual_directory_async()` and `detailedAnalysisTab._load_detailed_data()`) try these formats in order and use the first that matches:
+The Offline Data column of the Quick Analysis tab and the Detailed Analysis tab also load data exported with the Zurich Instruments LabOne software instead of this application. When you pick a folder, both tabs (`liveDataTab._scan_folder()`, run by `dataAnalysisTab._scan_quick_folder_async()`, and `detailedAnalysisTab._load_detailed_data()`) try these formats in order and use the first that matches:
 
 1. single combined ZI export,
 2. subfolder-per-temperature ZI export,

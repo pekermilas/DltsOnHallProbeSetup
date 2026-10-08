@@ -2,15 +2,48 @@
 
 ## What it's for
 
-`dataAnalysisTab.py` builds the **Quick Analysis** tab. It turns averaged capacitance transients (one per temperature) into double-boxcar DLTS spectra for five rate windows, finds the peak temperature of each spectrum, and fits an Arrhenius line through the peaks. From the fit it reports the defect activation energy, the apparent capture cross-section and the trap density. The code is a tkinter port of tabs 2 and 3 ("Rate Window Analysis" and "Arrhenius Defect Mapping") of `DrKayisScript.py`.
+`dataAnalysisTab.py` builds the **Quick Analysis** tab. It turns averaged capacitance transients (one per temperature) into double-boxcar DLTS spectra for five rate windows, finds the peak temperature of each spectrum, and fits an Arrhenius line through the peaks. From the fit it reports the defect activation energy, the apparent capture cross-section and the trap density. The code is a tkinter port of tabs 2 and 3 ("Rate Window Analysis" and "Arrhenius Defect Mapping") of `DrKayisScript.py`. Its **Offline Data** column loads a saved data folder and extracts the averaged transients from it (tab 1 of that script, sharing the extraction code of the Live Tools tab).
 
 The analysis steps (C∞, S(T), peak finding, the Arrhenius fit and N_T) are the functions of [detailedAnalysisTab](detailedAnalysisTab.md). On averaged transients, Quick Analysis therefore gives the same Et, σ and N_T as the **Standard** result of Detailed Analysis. This needs the same data, the same windows (the defaults are the same), the same search range, the same reverse-bias duration and the smoothing spline. See "Matching Detailed Analysis" below.
 
 ## What the user sees
 
-The tab is a horizontal `tk.PanedWindow` with two resizable frames of equal starting width (700 px each). The left frame is **Rate Window Analysis**. The right frame is **Arrhenius Defect Mapping**. Each frame has a plot with a matplotlib navigation toolbar on top and a scrollable control area underneath (requested height `QUICK_CONTROLS_HEIGHT` = 260 px). The mouse wheel scrolls the control area while the pointer is over it.
+The tab has a fixed-width **Offline Data** column on the left and, to its right, a horizontal `tk.PanedWindow` with two resizable frames of equal starting width (700 px each). The left frame of the pane is **Rate Window Analysis**. The right frame is **Arrhenius Defect Mapping**. Each frame has a plot with a matplotlib navigation toolbar on top and a scrollable control area underneath (requested height `QUICK_CONTROLS_HEIGHT` = 260 px). The mouse wheel scrolls the control area while the pointer is over it.
 
-### Left frame: "Rate Window Analysis"
+### Left column: "Offline Data"
+
+Loads a saved data folder, extracts and averages its transients, and makes them the `Loaded Folder (Offline Data)` Data Source of Rate Window Analysis. This is where saved data is analyzed; the Qualitative Analysis frame of the Live Tools tab only follows a running experiment. The column is 230 px wide and scrolls with the mouse wheel while the pointer is over it (`_build_offlineDataFrame`). The folder scan and the extraction are the Live Tools tab's functions `liveDataTab._scan_folder` and `liveDataTab._extract_transients_async`.
+
+**Directory Loader Config**
+
+- **Select Source Folder** (`_browse_quick_folder(isAppend=False)`): folder picker **Select DLTS Source Folder**, starting in the last selected folder or the working directory. It first logs a one-line preview, `Offline Data: selected <path> -- N item(s): ... — <format guess>` (`liveDataTab._describe_folder_contents`). Then it scans the folder on a background thread and **replaces** the current dataset.
+- **Append Source Folder** (`_browse_quick_folder(isAppend=True)`): folder picker **Select DLTS Source Folder to Append**. It **adds** that folder's temperatures to the current dataset. A temperature that is already loaded keeps its first-loaded copy, and the log lists the skipped ones. With nothing loaded yet, it behaves like **Select Source Folder**.
+- Label: `Source: (none selected)`, then `Source: <folder>` or `Source: N folder(s) combined (latest: <folder>)`.
+
+The three folder formats (ZI single CSV, ZI subfolder per temperature, legacy per-temperature files, tried in that order) are those of [liveDataTab](liveDataTab.md#_scan_folderdir_path). The output of **Run DLTS** is the legacy format. Every new load, including an append, clears the previous extraction (`dltsc.quickData_processedTransients = {}`), so the Data Source never mixes results from different datasets.
+
+**Available Temperatures Filter**
+
+- A multi-select listbox (8 rows high, scrolls) showing each temperature as `T °C`, sorted. After each load all entries are selected.
+- **Select All** and **Clear All**.
+
+**Timing Boundaries** (`dltsc.quickData_paramVars`)
+
+| Label | Key | Default | Used for |
+|---|---|---|---|
+| Filling Duration (ms): | `fp_ms` | `1.0` | Display only |
+| Reverse Bias (ms): | `rb_ms` | `500.0` | Extraction (legacy window length, `C_infinity` at 90 % of it) and the reverse-bias duration of the `Loaded Folder` source (Step 2 below) |
+
+On **Select Source Folder** (not on an append) both fields are preset from the folder when it states them: from `runParams.txt` for a legacy run folder (fill = **State Disable Time** × 1000, reverse bias = **State Enable Time** × 1000), or from the `FP..ms` / `RB..ms` parts of a ZI folder name. The log shows `Offline Data: Reverse Bias set to R ms from the folder.` Otherwise the fields keep their values.
+
+**Execution Action**
+
+- **Extract & Average Transients** (`_extract_quick_transients`, bold, light green): extracts and averages the selected temperatures in the shared process pool and stores the result in `dltsc.quickData_processedTransients`. **Reverse Bias (ms)** must be a positive number, otherwise the log shows `Offline Data: Reverse Bias (ms) must be a positive number.`
+- Status label: `Status: Idle`, `Loading <folder>...` / `Appending <folder>...`, `[ZI|Legacy|Mixed] N temperature step(s) from S source(s). Click Extract & Average.`, `Processing N temperature(s)...`, then `N of M temperature(s) extracted. Ready for Compute Boxcar Spectrums.` or `N of M temperature(s) extracted; see log for the rest.` Every skipped temperature is logged as `Offline Data: <reason>`.
+
+**Select Source Folder**, **Append Source Folder** and **Extract & Average Transients** are disabled while a scan or an extraction runs (`_set_quick_buttons_state`).
+
+### Pane, left frame: "Rate Window Analysis"
 
 Plot: title "Multi-Window DLTS Signal Spectrum (Pseudo-Voigt Refinement)" before the first run, "Multi-Window DLTS Signal Spectrum (<peak method>)" after a run. X axis "Temperature (K)", Y axis "DLTS Signal (ΔC / C∞)".
 
@@ -18,10 +51,10 @@ Controls, top row (three groups side by side):
 
 | Group | Widget | Default | What it does |
 |---|---|---|---|
-| **Data Source** | read-only combobox | `Auto (first available)` | Chooses where the transients come from. Options: `Auto (first available)`, `Qualitative Analysis`, `Automated/Live Data — Live`, `Automated/Live Data — Offline`. See "Data sources" below. |
+| **Data Source** | read-only combobox | `Auto (first available)` | Chooses where the transients come from. Options: `Auto (first available)`, `Loaded Folder (Offline Data)`, `Live Run (Qualitative Analysis)`, `Automated/Live Data — Live`, `Automated/Live Data — Offline`. See "Data sources" below. |
 | **Data Source** | status label | `No data source resolved yet.` | After each **Compute Boxcar Spectrums** click it shows `Using: <source> / <method> (<n> temperature(s)).`, or the reason nothing was computed. |
 | **DLTS Signal Calculation** | `Method:` combobox | `Measured C (nearest sample)` | Options: `Measured C (nearest sample)`, `Smoothed C (impdData, spline-interpolated)`. |
-| **DLTS Signal Calculation** | `Denoise (Live/Offline-backed Measured C, or Smoothed C, only):` combobox | `None (raw)` | Options: `None (raw)`, `pca`, `wavelet`, `sgolay`, `lowess`. Only used when the signal is computed through an `impdData` instance (Live/Offline). It has no effect for Qualitative Analysis data. |
+| **DLTS Signal Calculation** | `Denoise (Live/Offline-backed Measured C, or Smoothed C, only):` combobox | `None (raw)` | Options: `None (raw)`, `pca`, `wavelet`, `sgolay`, `lowess`. Only used when the signal is computed through an `impdData` instance (Live/Offline). It has no effect for Loaded Folder or Live Run (Qualitative Analysis) data. |
 | **Peak-Finding Method** | combobox | `Smoothing Spline` | Options: `Smoothing Spline`, `Curve Fit (Pseudo-Voigt)`, `Curve Fit (Gaussian)`, `Curve Fit (Lorentzian)`, `Curve Fit (Voigt)`. |
 | **Peak-Finding Method** | `Tp search range (K, blank = no bound):` two entries | `250.0` to `400.0` | Only points with lower ≤ T ≤ upper (in K) go to the peak finder. A blank entry means no bound on that side. Bounds are drawn as dotted gray vertical lines. |
 
@@ -41,7 +74,7 @@ The number of sets is the length of `DEFAULT_RATE_WINDOWS`.
 
 **Extracted Peaks** table (`ttk.Treeview`, 4 rows visible, scrolls): columns `Window` (`Set n`), `Emission e_n (s⁻¹)` (2 decimals), `T_peak (K)` (2 decimals, `± err` when available), `Max Extrema ΔC/C∞` (5 decimals, the largest |S| in the search range, with its sign), and `Arrhenius fit`. The last column reads `skipped (no peak)` for a skipped window and `no Tp error (edge)` for an edge peak. After the solver runs it reads `used` or `excluded (edge peak)`.
 
-### Right frame: "Arrhenius Defect Mapping"
+### Pane, right frame: "Arrhenius Defect Mapping"
 
 Plot: title "Arrhenius Plot Representation for Trap Signature Extraction", X axis "Reciprocal Temperature (1000 / T) (K⁻¹)", Y axis "ln(e_n / T²)".
 
@@ -60,12 +93,13 @@ The solver plots the fitted points as red squares "Experimental Extrema Points" 
 
 | Selection | Where the data comes from |
 |---|---|
-| `Qualitative Analysis` | `dltsc.manual_processedTransients`, filled by **Extract & Average Transients** in the Qualitative Analysis frame of the Live Tools tab. Keys are °C. |
+| `Loaded Folder (Offline Data)` | `dltsc.quickData_processedTransients`, filled by **Extract & Average Transients** in this tab's Offline Data column (a saved folder). Keys are °C. |
+| `Live Run (Qualitative Analysis)` | `dltsc.manual_processedTransients`, filled by the Qualitative Analysis frame of the Live Tools tab, which follows the running experiment's folder. Keys are °C. |
 | `Automated/Live Data — Live` | The Run DLTS session in progress: `dltsc.livePlot_liveImpdData` (an `impdData` instance) or, if that is `None`, the averaged snapshot `dltsc.livePlot_liveAllEmissionsData`. |
 | `Automated/Live Data — Offline` | A previously loaded run: `dltsc.livePlot_offlineImpdData` or `dltsc.livePlot_offlineAllEmissionsData`. |
-| `Auto (first available)` | Measured C: Qualitative Analysis first, then Live, then Offline. Smoothed C: Live `impdData`, then Offline `impdData` (never Qualitative Analysis). |
+| `Auto (first available)` | Measured C: Loaded Folder first, then Live Run (Qualitative Analysis), then Live, then Offline. Smoothed C: Live `impdData`, then Offline `impdData` (never Loaded Folder or Live Run). |
 
-`Smoothed C` always needs an `impdData` instance (Live or Offline). With Qualitative Analysis, or with no instance, the status label shows the error and nothing is computed.
+Loaded Folder and Live Run (Qualitative Analysis) hold averaged transients only, with no `impdData` instance (`_AVERAGED_ONLY_SOURCES`). `Smoothed C` always needs an `impdData` instance (Live or Offline). With Loaded Folder, Live Run, or no instance, the status label shows the error and nothing is computed.
 
 ## Import
 
@@ -88,10 +122,12 @@ daT.construct_dataAnalysisTab()
 | `QUICK_CONTROLS_HEIGHT` | `260` (int) | Requested height (px) of the scrollable control area under each plot. |
 | `DEFAULT_RATE_WINDOWS` | `[('5.0','25.0'), ('10.0','50.0'), ('20.0','100.0'), ('50.0','250.0'), ('100.0','490.0')]` | Default (t1, t2) per set, ms, built from `dA.DEFAULT_STD_WINDOWS`. Its length sets the number of sets. |
 | `DATA_SOURCE_AUTO` | `'Auto (first available)'` | Data Source option. |
-| `DATA_SOURCE_QUALITATIVE` | `'Qualitative Analysis'` | Data Source option. |
+| `DATA_SOURCE_LOADED` | `'Loaded Folder (Offline Data)'` | Data Source option: this tab's Offline Data column. |
+| `DATA_SOURCE_QUALITATIVE` | `'Live Run (Qualitative Analysis)'` | Data Source option: the Live Tools tab's Qualitative Analysis frame. |
 | `DATA_SOURCE_LIVE` | `'Automated/Live Data — Live'` | Data Source option. |
 | `DATA_SOURCE_OFFLINE` | `'Automated/Live Data — Offline'` | Data Source option. |
-| `DATA_SOURCE_OPTIONS` | list of the four above | Combobox values. |
+| `DATA_SOURCE_OPTIONS` | list of the five above | Combobox values. |
+| `_AVERAGED_ONLY_SOURCES` | `(DATA_SOURCE_LOADED, DATA_SOURCE_QUALITATIVE)` | Sources that hold averaged transients only (no `impdData` instance). |
 | `SIGNAL_METHOD_MEASURED` | `'Measured C (nearest sample)'` | Signal method option (default). |
 | `SIGNAL_METHOD_SMOOTHED` | `'Smoothed C (impdData, spline-interpolated)'` | Signal method option. |
 | `SIGNAL_METHOD_OPTIONS` | list of the two above | Combobox values. |
@@ -122,11 +158,16 @@ Shared state in `dltsConfig` (`dltsc`) that this module reads or writes:
 | `arrhenius_ndVar`, `arrhenius_gammaVar` | `tk.StringVar` | Nd and γ entries. |
 | `arrhenius_energyLabel`, `arrhenius_captureLabel`, `arrhenius_densityLabel` | `ttk.Label` | Result labels. |
 | `arrhenius_figure`, `arrhenius_ax`, `arrhenius_canvas` | matplotlib objects | Right plot. |
+| `quickData_dataDirectory`, `quickData_datasetRegistry`, `quickData_ziParamsByFile`, `quickData_sourceFolders` | str, dicts, list | Offline Data: last selected folder, temperature → source registry, ZI grid parameters per data file, folders combined so far. |
+| `quickData_processedTransients` | dict `T_C -> {'time_ms', 'avg_cap_pf', 'C_infinity', ...}` | Offline Data extraction result: the `Loaded Folder` source. |
+| `quickData_paramVars` | dict of `tk.StringVar` (`fp_ms`, `rb_ms`) | Offline Data Timing Boundaries. |
+| `quickData_tempListbox`, `quickData_folderLabel`, `quickData_selectFolderButton`, `quickData_appendFolderButton`, `quickData_extractButton`, `quickData_statusLabel` | Tk widgets | Offline Data widgets. |
+| `quickData_loadingBusy`, `quickData_processingBusy` | bool | `True` while the folder-scan or the extraction worker runs. |
 | read only: `manual_processedTransients`, `manual_paramVars['rb_ms']`, `livePlot_liveImpdData`, `livePlot_offlineImpdData`, `livePlot_liveAllEmissionsData`, `livePlot_offlineAllEmissionsData`, `livePlot_liveIngestBusy`, `livePlot_offlineIngestBusy`, `tabControl`, `dataAnalysisTab` | various | Inputs from other tabs and the main window. |
 
 ## Analysis method
 
-All times typed in the GUI are in ms. Temperatures are in K inside the analysis (Qualitative Analysis keys are °C and get +273.15).
+All times typed in the GUI are in ms. Temperatures are in K inside the analysis (Loaded Folder and Live Run keys are °C and get +273.15).
 
 **Step 1. Get one averaged transient per temperature.** (`_get_processed_transients_for_source`, `_processed_transients_from_automated`, or `impdData.selected_emissions` inside `calculate_delC_normalized`.)
 
@@ -140,7 +181,7 @@ T_C        = round(T_K - 273.15, 6)         # impdData keys are exact K (298.15 
 
 (That function still stores a `C_infinity` at 90 % of the span, for other callers. The analysis below recomputes C∞.)
 
-**Step 2. Reverse bias and C∞** (`_rb_ms_for_source`, `_transient_records`). The reverse-bias duration `rb_ms` is the **Reverse Bias (ms)** field of Qualitative Analysis for that source; for a Live/Offline snapshot, or when that field is not a positive number, it is the longest transient's span. C∞ is Detailed Analysis' convention:
+**Step 2. Reverse bias and C∞** (`_rb_ms_for_source`, `_transient_records`). The reverse-bias duration `rb_ms` is the **Reverse Bias (ms)** field of the source's own extraction: the Offline Data column for Loaded Folder, the Qualitative Analysis frame for Live Run; for a Live/Offline snapshot, or when that field is not a positive number, it is the longest transient's span. C∞ is Detailed Analysis' convention:
 
 ```text
 C_inf = mean C(t) over 0.40 * rb_ms <= t <= 0.90 * rb_ms     # dA._cinf_range_mean
@@ -156,7 +197,7 @@ e_n = ln(t2 / t1) / ((t2 - t1) * 1e-3)      # t1, t2 in ms -> e_n in s^-1
 
 **Step 4. DLTS signal S(T).** Two code paths:
 
-a. No `impdData` instance (Qualitative Analysis, or an averaged Live/Offline snapshot), Measured C only. This is `dA._rate_window_signal` on the records of Step 2:
+a. No `impdData` instance (Loaded Folder, Live Run, or an averaged Live/Offline snapshot), Measured C only. This is `dA._rate_window_signal` on the records of Step 2:
 
 ```text
 C(t)     = nearest measured sample to t
@@ -214,10 +255,10 @@ On averaged transients (path a), both tabs call the same functions for every ste
 
 | Setting | Quick Analysis | Detailed Analysis |
 |---|---|---|
-| Data | Qualitative Analysis extraction of the run folder | **Load Data** on the same folder |
-| Reverse bias | Qualitative Analysis **Reverse Bias (ms)** | **RB duration (ms)**, same value |
+| Data | Offline Data extraction of the run folder | **Load Data** on the same folder |
+| Reverse bias | Offline Data **Reverse Bias (ms)** | **RB duration (ms)**, same value |
 | C∞ range | fixed 0.40 to 0.90 | **Start / End (frac RB)** 0.40 / 0.90 (defaults) |
-| Signal | `Measured C`, source `Qualitative Analysis` | `Measured C (nearest sample)`, denoise `None (raw)` |
+| Signal | `Measured C`, source `Loaded Folder (Offline Data)` (or `Auto`) | `Measured C (nearest sample)`, denoise `None (raw)` |
 | Windows | the five sets | the five **Standard Windows** (same defaults) |
 | Search range | Tp search range | **T min / T max** (same defaults) |
 | Peak method | `Smoothing Spline` | `Smoothing Spline (bootstrap)` |
@@ -231,7 +272,7 @@ The `impdData` path (b) normalizes by the last sample and uses cross-repeat erro
 
 ### construct_dataAnalysisTab()
 
-Adds the **Quick Analysis** tab to `dltsc.tabControl` and builds both frames.
+Adds the **Quick Analysis** tab to `dltsc.tabControl` and builds the Offline Data column and both analysis frames.
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
@@ -239,7 +280,7 @@ Adds the **Quick Analysis** tab to `dltsc.tabControl` and builds both frames.
 
 **Returns** `None`.
 
-**Side effects** Calls `dltsc.tabControl.add(dltsc.dataAnalysisTab, text='Quick Analysis')` and `tabControl.pack(expand=1, fill="both")`; creates the `tk.PanedWindow`, then calls `_build_rateWindowFrame` and `_build_arrheniusFrame`, which create every widget and `dltsc.rateWindow_*` / `dltsc.arrhenius_*` global listed above. `dltsc.dataAnalysisTab` must already be a `ttk.Frame` inside `dltsc.tabControl`.
+**Side effects** Calls `dltsc.tabControl.add(dltsc.dataAnalysisTab, text='Quick Analysis')` and `tabControl.pack(expand=1, fill="both")`; builds the Offline Data column (`_build_offlineDataFrame`) in grid column 0, creates the `tk.PanedWindow` in column 1, then calls `_build_rateWindowFrame` and `_build_arrheniusFrame`. Together they create every widget and `dltsc.quickData_*` / `dltsc.rateWindow_*` / `dltsc.arrhenius_*` global listed above. `dltsc.dataAnalysisTab` must already be a `ttk.Frame` inside `dltsc.tabControl`.
 
 **Called by** `DLTSGUI_MainWindow.py` (`daT.construct_dataAnalysisTab()`).
 
@@ -255,7 +296,7 @@ Maps a Data Source label to an `impdData` instance.
 |---|---|---|---|
 | `source` | str | | One of the `DATA_SOURCE_*` labels. |
 
-**Returns** `(impd, resolvedLabel)`, or `(None, None)` when that source has no instance. `Qualitative Analysis` always gives `(None, None)`. `Auto` tries `livePlot_liveImpdData`, then `livePlot_offlineImpdData`.
+**Returns** `(impd, resolvedLabel)`, or `(None, None)` when that source has no instance. `Loaded Folder` and `Live Run (Qualitative Analysis)` always give `(None, None)`. `Auto` tries `livePlot_liveImpdData`, then `livePlot_offlineImpdData`.
 
 **Side effects** None.
 
@@ -263,7 +304,7 @@ Maps a Data Source label to an `impdData` instance.
 
 ### _processed_transients_from_automated(mode)
 
-Converts the Automated/Live Data frame's "All Emissions Aligned" snapshot into the Qualitative Analysis shape.
+Converts the Automated/Live Data frame's "All Emissions Aligned" snapshot into the averaged-transient shape of the Loaded Folder and Live Run sources.
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
@@ -302,7 +343,7 @@ Resolves a Data Source label to averaged transients.
 |---|---|---|---|
 | `source` | str | | One of the `DATA_SOURCE_*` labels. |
 
-**Returns** `(processedTransients, resolvedLabel, errorReason)`. On success `errorReason` is `None`; on failure the first two are `None` and `errorReason` is a message such as `"Qualitative Analysis has no extracted transients yet."`. `Auto` order: Qualitative Analysis, Live snapshot, Offline snapshot.
+**Returns** `(processedTransients, resolvedLabel, errorReason)`. On success `errorReason` is `None`; on failure the first two are `None` and `errorReason` is a message such as `"Offline Data has no extracted transients yet: select a folder, then click Extract & Average Transients."` or `"Qualitative Analysis (live run) has no extracted transients yet."`. `Auto` order: Loaded Folder, Live Run (Qualitative Analysis), Live snapshot, Offline snapshot.
 
 **Side effects** None.
 
@@ -317,7 +358,7 @@ Resolves a Data Source label to averaged transients.
 | `label` | str | | Resolved Data Source label. |
 | `processedTransients` | dict | | `T_C -> {'time_ms', ...}`. |
 
-**Returns** the reverse-bias duration in ms (see Step 2).
+**Returns** the reverse-bias duration in ms (see Step 2): `quickData_paramVars['rb_ms']` for `Loaded Folder`, `manual_paramVars['rb_ms']` for `Live Run (Qualitative Analysis)`, when that is a positive number; otherwise the longest transient's span.
 
 ### _transient_records(processedTransients, rb_ms)
 
@@ -407,6 +448,34 @@ Builds the left frame (plot, toolbar, scrollable controls, button, table) inside
 ### _build_arrheniusFrame(parent)
 
 Builds the right frame (plot, toolbar, Material Parameters, solver button, results group) inside `parent` and creates the `dltsc.arrhenius_*` widgets and variables. Uses the same row weights and control height as the left frame so both plots are the same height.
+
+### Offline Data column
+
+#### _build_offlineDataFrame(parent)
+
+Builds the Offline Data column inside `parent`: the bold heading, a 230 px scrollable canvas, and the four groups described under "Left column: Offline Data". Seeds `quickData_datasetRegistry`, `quickData_ziParamsByFile`, `quickData_sourceFolders` and `quickData_processedTransients` if they are `None`, sets both busy flags to `False`, and creates the `dltsc.quickData_*` widgets and `quickData_paramVars`.
+
+#### _browse_quick_folder(isAppend=False)
+
+**Select Source Folder** (`isAppend=False`) and **Append Source Folder** (`isAppend=True`) handler. It does nothing while a scan or an extraction is busy (`_quick_busy`). An append with an empty registry is treated as a first load. After the folder dialog it logs the preview and calls `_scan_quick_folder_async(dir_path, isAppend)`.
+
+#### _scan_quick_folder_async(dir_path, isAppend)
+
+Sets `quickData_loadingBusy`, disables the buttons, and runs `liveDataTab._scan_folder(dir_path)` on a daemon thread. `apply()` on the Tk thread:
+
+- replaces (`isAppend=False`) or merges (`isAppend=True`, first-loaded copy wins) `quickData_datasetRegistry` and `quickData_sourceFolders`; a replacing load also sets `quickData_dataDirectory`, clears `quickData_ziParamsByFile`, and presets **Filling Duration** / **Reverse Bias** from the scan's `fpMs` / `rbMs` when they are not `None`;
+- adds the scan's ZI grid parameters to `quickData_ziParamsByFile`;
+- clears `quickData_processedTransients`;
+- refills the temperature listbox and selects every entry;
+- logs the scan errors and sets the status `[<format>] N temperature step(s) from S source(s). Click Extract & Average.`
+
+#### _extract_quick_transients()
+
+**Extract & Average Transients** handler. Returns silently when nothing is loaded or a worker is busy. Logs an error when no temperature is selected or **Reverse Bias (ms)** is not a positive number. Otherwise it sets `quickData_processingBusy`, disables the buttons, and calls `liveDataTab._extract_transients_async(quickData_datasetRegistry, selectedTemps, rbMs, quickData_ziParamsByFile, apply)`. `apply()` stores the result in `quickData_processedTransients`, logs each error, sets the status, and logs `Offline Data: extracted N averaged transient(s) (Data Source 'Loaded Folder (Offline Data)').`
+
+#### _set_quick_buttons_state(state) and _quick_busy()
+
+`_set_quick_buttons_state` sets `state` (`'normal'` or `'disabled'`) on **Select Source Folder**, **Append Source Folder** and **Extract & Average Transients**. `_quick_busy` returns `True` while `quickData_loadingBusy` or `quickData_processingBusy` is set.
 
 ### _on_mousewheel(event) (nested, one in each `_build_*` function)
 

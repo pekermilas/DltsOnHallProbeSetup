@@ -1,6 +1,9 @@
 import tkinter as tk
+import threading
+import os
 
 from tkinter import ttk
+from tkinter import filedialog
 
 import numpy as np
 from matplotlib.figure import Figure
@@ -9,6 +12,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import dltsConfig as dltsc
 import impedanceAnalysis_Tools as iaT
 import detailedAnalysisTab as dA   # shares its raw-transient noise estimate and Arrhenius line fit
+import liveDataTab as ldT          # shares its folder scan and transient extraction
 
 # Physical constants and material defaults come from Detailed Analysis, so both
 # tabs use the same values.
@@ -37,12 +41,19 @@ DEFAULT_RATE_WINDOWS = [(f'{t1:.1f}', f'{t2:.1f}') for t1, t2 in dA.DEFAULT_STD_
 
 # Data Source options for Rate Window Analysis. Selection is optional -- 'Auto'
 # (the default) resolves to whichever source actually has data, so the frame
-# works with no configuration as long as ANY of the three has been populated.
+# works with no configuration as long as ANY of them has been populated.
+# 'Loaded Folder' is this tab's own Offline Data column (a saved folder,
+# extracted here); 'Qualitative Analysis' is the Live Tools tab's frame, which
+# only follows the running experiment.
 DATA_SOURCE_AUTO = 'Auto (first available)'
-DATA_SOURCE_QUALITATIVE = 'Qualitative Analysis'
+DATA_SOURCE_LOADED = 'Loaded Folder (Offline Data)'
+DATA_SOURCE_QUALITATIVE = 'Live Run (Qualitative Analysis)'
 DATA_SOURCE_LIVE = 'Automated/Live Data — Live'
 DATA_SOURCE_OFFLINE = 'Automated/Live Data — Offline'
-DATA_SOURCE_OPTIONS = [DATA_SOURCE_AUTO, DATA_SOURCE_QUALITATIVE, DATA_SOURCE_LIVE, DATA_SOURCE_OFFLINE]
+DATA_SOURCE_OPTIONS = [DATA_SOURCE_AUTO, DATA_SOURCE_LOADED, DATA_SOURCE_QUALITATIVE,
+                       DATA_SOURCE_LIVE, DATA_SOURCE_OFFLINE]
+# Sources holding already-averaged transients only (no impdData instance).
+_AVERAGED_ONLY_SOURCES = (DATA_SOURCE_LOADED, DATA_SOURCE_QUALITATIVE)
 
 # DLTS signal calculation method: how C(t1)/C(t2)/C_infinity are read off each
 # temperature's transient to build the DLTS-signal-vs-temperature curve.
@@ -80,15 +91,15 @@ def _resolve_impd_for_source(source):
     """Resolve a Data Source selection to a live impdData instance, for the
     Measured C / Smoothed C signal methods. Returns (impd, resolvedLabel), or
     (None, None) if that source has no impdData instance behind it (always
-    true for Qualitative Analysis).
+    true for Loaded Folder and Qualitative Analysis).
     """
     if source == DATA_SOURCE_LIVE:
         return (dltsc.livePlot_liveImpdData, DATA_SOURCE_LIVE) if dltsc.livePlot_liveImpdData is not None else (None, None)
     if source == DATA_SOURCE_OFFLINE:
         return (dltsc.livePlot_offlineImpdData, DATA_SOURCE_OFFLINE) if dltsc.livePlot_offlineImpdData is not None else (None, None)
-    if source == DATA_SOURCE_QUALITATIVE:
+    if source in _AVERAGED_ONLY_SOURCES:
         return None, None
-    # Auto: Live then Offline -- Qualitative Analysis never has an instance.
+    # Auto: Live then Offline -- Loaded Folder / Qualitative Analysis never have an instance.
     if dltsc.livePlot_liveImpdData is not None:
         return dltsc.livePlot_liveImpdData, DATA_SOURCE_LIVE
     if dltsc.livePlot_offlineImpdData is not None:
@@ -179,10 +190,17 @@ def _get_processed_transients_for_source(source):
     errorReason). processedTransients is None (with errorReason set) if that
     source currently has nothing to offer.
     """
+    if source == DATA_SOURCE_LOADED:
+        data = dltsc.quickData_processedTransients or {}
+        if not data:
+            return None, None, ("Offline Data has no extracted transients yet: select a folder, "
+                                "then click Extract & Average Transients.")
+        return data, DATA_SOURCE_LOADED, None
+
     if source == DATA_SOURCE_QUALITATIVE:
         data = dltsc.manual_processedTransients or {}
         if not data:
-            return None, None, "Qualitative Analysis has no extracted transients yet."
+            return None, None, "Qualitative Analysis (live run) has no extracted transients yet."
         return data, DATA_SOURCE_QUALITATIVE, None
 
     if source == DATA_SOURCE_LIVE:
@@ -197,8 +215,11 @@ def _get_processed_transients_for_source(source):
             return None, None, "Automated/Live Data has no Offline data loaded."
         return data, DATA_SOURCE_OFFLINE, None
 
-    # Auto: Qualitative Analysis first (the original, unconfigured behavior),
-    # then whichever of Live/Offline currently has data.
+    # Auto: a folder loaded in this tab first (the user asked for it here),
+    # then the live run's Qualitative Analysis, then whichever of Live/Offline
+    # currently has data.
+    if dltsc.quickData_processedTransients:
+        return dltsc.quickData_processedTransients, DATA_SOURCE_LOADED, None
     if dltsc.manual_processedTransients:
         return dltsc.manual_processedTransients, DATA_SOURCE_QUALITATIVE, None
     liveData = _processed_transients_from_automated('live')
@@ -208,8 +229,8 @@ def _get_processed_transients_for_source(source):
     if offlineData:
         return offlineData, DATA_SOURCE_OFFLINE, None
     return None, None, (
-        "No data available yet from Qualitative Analysis or Automated/Live Data (Live/Offline). "
-        "Extract transients, run DLTS, or load an offline run first.")
+        "No data available yet. Load and extract a folder in Offline Data, run DLTS, "
+        "or load an offline run in Automated/Live Data first.")
 
 #---------------------SHARED WITH DETAILED ANALYSIS-------------------------#
 # The signal read-off, C_infinity, peak finding (with its edge-peak guard and
@@ -217,12 +238,14 @@ def _get_processed_transients_for_source(source):
 # through detailedAnalysisTab's own functions, so the two tabs give the same
 # Et, sigma and Nt for the same transients, windows, search range and peak method.
 def _rb_ms_for_source(label, processedTransients):
-    """Reverse-bias duration (ms) C_infinity and Nt are referenced to: Qualitative
-    Analysis' own 'Reverse Bias (ms)' field for that source, else (or if it is not
-    a positive number) the longest transient's span."""
-    if label == DATA_SOURCE_QUALITATIVE and 'rb_ms' in (dltsc.manual_paramVars or {}):
+    """Reverse-bias duration (ms) C_infinity and Nt are referenced to: the 'Reverse
+    Bias (ms)' field of the source's own extraction (Offline Data or Qualitative
+    Analysis), else (or if it is not a positive number) the longest transient's span."""
+    paramVars = {DATA_SOURCE_LOADED: dltsc.quickData_paramVars,
+                 DATA_SOURCE_QUALITATIVE: dltsc.manual_paramVars}.get(label) or {}
+    if 'rb_ms' in paramVars:
         try:
-            rb = float(dltsc.manual_paramVars['rb_ms'].get())
+            rb = float(paramVars['rb_ms'].get())
             if rb > 0:
                 return rb
         except (ValueError, AttributeError):
@@ -315,13 +338,15 @@ def _calculate_rate_windows():
         # bars). Resolved via instance-availability directly, not through
         # _get_processed_transients_for_source() first, since an impd-backed
         # source doesn't need (and may not have) an averaged-snapshot cache.
-        if source in (DATA_SOURCE_QUALITATIVE, DATA_SOURCE_LIVE, DATA_SOURCE_OFFLINE):
+        if source != DATA_SOURCE_AUTO:
             resolvedLabel = source
         else:
-            # Auto: Qualitative Analysis first (matches
-            # _get_processed_transients_for_source()'s own Auto priority),
-            # then whichever of Live/Offline has something to offer.
-            if dltsc.manual_processedTransients:
+            # Auto: Loaded Folder, then the live run's Qualitative Analysis
+            # (matches _get_processed_transients_for_source()'s own Auto
+            # priority), then whichever of Live/Offline has something to offer.
+            if dltsc.quickData_processedTransients:
+                resolvedLabel = DATA_SOURCE_LOADED
+            elif dltsc.manual_processedTransients:
                 resolvedLabel = DATA_SOURCE_QUALITATIVE
             elif dltsc.livePlot_liveImpdData is not None or dltsc.livePlot_liveAllEmissionsData:
                 resolvedLabel = DATA_SOURCE_LIVE
@@ -354,8 +379,8 @@ def _calculate_rate_windows():
         impd, resolvedLabel = _resolve_impd_for_source(source)
         if impd is None:
             errorReason = ("Smoothed C needs Automated/Live Data (Live or Offline) as the "
-                           "Data Source -- it reads per-repeat instrument data that Qualitative Analysis, "
-                           "which only stores an already-averaged transient, doesn't have.")
+                           "Data Source -- it reads per-repeat instrument data that Loaded Folder and "
+                           "Qualitative Analysis, which only store an already-averaged transient, don't have.")
             dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
             if dltsc.rateWindow_statusLabel is not None:
                 dltsc.rateWindow_statusLabel.config(text=errorReason)
@@ -881,6 +906,224 @@ def _build_arrheniusFrame(parent):
     dltsc.arrhenius_densityLabel.pack(anchor='w', padx=4, pady=(0, 4))
 
 
+#---------------------OFFLINE DATA (SAVED FOLDER LOADER, LEFT COLUMN)-------------------------#
+# Moved here from the Live Tools tab's Qualitative Analysis frame, which now only
+# follows the running experiment. Loads a saved folder (ZI single-file, ZI
+# subfolder-per-temperature, or legacy per-temperature files; several folders can
+# be combined with Append), extracts & averages the checked temperatures, and
+# feeds the result to Rate Window Analysis as the 'Loaded Folder' Data Source.
+# The scan and extraction themselves are liveDataTab's (ldT._scan_folder,
+# ldT._extract_transients_async).
+def _set_quick_buttons_state(state):
+    """Enable/disable the Offline Data buttons while a worker is running."""
+    for button in (dltsc.quickData_selectFolderButton, dltsc.quickData_appendFolderButton,
+                   dltsc.quickData_extractButton):
+        if button is not None:
+            button.config(state=state)
+
+def _quick_busy():
+    return bool(dltsc.quickData_loadingBusy or dltsc.quickData_processingBusy)
+
+def _browse_quick_folder(isAppend=False):
+    """Select Source Folder (isAppend=False) or Append Source Folder: add
+    another folder's temperatures to the current dataset instead of replacing
+    it, so a run that was split into pieces or taken across different
+    dates/sessions can still be analyzed together."""
+    if _quick_busy():
+        return
+    if isAppend and not dltsc.quickData_datasetRegistry:
+        isAppend = False   # nothing loaded yet: append is just a first load
+    dir_path = filedialog.askdirectory(
+        title="Select DLTS Source Folder to Append" if isAppend else "Select DLTS Source Folder",
+        initialdir=dltsc.quickData_dataDirectory or os.getcwd())
+    if dir_path:
+        dltsc.log_to_textbox(f"Offline Data: selected {dir_path} -- {ldT._describe_folder_contents(dir_path)}")
+        _scan_quick_folder_async(dir_path, isAppend)
+
+def _scan_quick_folder_async(dir_path, isAppend):
+    """Index dir_path's temperatures on a background thread (ldT._scan_folder),
+    then merge (isAppend) them into the Offline Data set or replace it, on the
+    main thread. A new or changed set clears the previous extraction."""
+    dltsc.quickData_loadingBusy = True
+    _set_quick_buttons_state('disabled')
+    dltsc.quickData_statusLabel.config(
+        text=f"{'Appending' if isAppend else 'Loading'} {os.path.basename(dir_path)}...")
+
+    def worker():
+        scan = ldT._scan_folder(dir_path)
+
+        def apply():
+            dltsc.quickData_loadingBusy = False
+            _set_quick_buttons_state('normal')
+            registry = scan['registry']
+            if isAppend:
+                skipped = sorted(t for t in registry if t in dltsc.quickData_datasetRegistry)
+                dltsc.quickData_datasetRegistry.update(
+                    {t: v for t, v in registry.items() if t not in dltsc.quickData_datasetRegistry})
+                dltsc.quickData_sourceFolders.append(dir_path)
+                if skipped:
+                    dltsc.log_to_textbox(
+                        f"Offline Data: skipped {len(skipped)} temperature(s) already present "
+                        f"from a previous source (kept the first-loaded copy): {skipped}")
+                dltsc.quickData_folderLabel.config(
+                    text=f"Source: {len(dltsc.quickData_sourceFolders)} folder(s) combined "
+                         f"(latest: {os.path.basename(dir_path)})")
+            else:
+                dltsc.quickData_datasetRegistry = dict(registry)
+                dltsc.quickData_sourceFolders = [dir_path]
+                dltsc.quickData_dataDirectory = dir_path
+                dltsc.quickData_ziParamsByFile = {}
+                dltsc.quickData_folderLabel.config(text=f"Source: {os.path.basename(dir_path)}")
+                if scan['fpMs'] is not None:
+                    dltsc.quickData_paramVars['fp_ms'].set(f"{scan['fpMs']:g}")
+                if scan['rbMs'] is not None:
+                    dltsc.quickData_paramVars['rb_ms'].set(f"{scan['rbMs']:g}")
+                    dltsc.log_to_textbox(f"Offline Data: Reverse Bias set to {scan['rbMs']:g} ms from the folder.")
+            dltsc.quickData_ziParamsByFile.update(scan['ziParamsByFile'])
+            dltsc.quickData_processedTransients = {}
+
+            dltsc.quickData_tempListbox.delete(0, tk.END)
+            for temp in sorted(dltsc.quickData_datasetRegistry):
+                dltsc.quickData_tempListbox.insert(tk.END, f"{temp} °C")
+            dltsc.quickData_tempListbox.select_set(0, tk.END)
+
+            for msg in scan['errors']:
+                dltsc.log_to_textbox(f"Offline Data: {msg}")
+            dltsc.quickData_statusLabel.config(
+                text=f"[{ldT._registry_format_label(dltsc.quickData_datasetRegistry)}] "
+                     f"{len(dltsc.quickData_datasetRegistry)} temperature step(s) from "
+                     f"{len(dltsc.quickData_sourceFolders)} source(s). Click Extract & Average.")
+
+        dltsc.root.after(0, apply)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+def _extract_quick_transients():
+    """Extract & average the checked Offline Data temperatures (off the main
+    thread); the result is Rate Window Analysis' 'Loaded Folder' source."""
+    if not dltsc.quickData_datasetRegistry or _quick_busy():
+        return
+    sortedTemps = sorted(dltsc.quickData_datasetRegistry)
+    selectedTemps = [sortedTemps[i] for i in dltsc.quickData_tempListbox.curselection()]
+    if not selectedTemps:
+        dltsc.log_to_textbox("Offline Data: select at least one temperature.")
+        return
+    try:
+        rbMs = float(dltsc.quickData_paramVars['rb_ms'].get())
+        if rbMs <= 0:
+            raise ValueError()
+    except ValueError:
+        dltsc.log_to_textbox("Offline Data: Reverse Bias (ms) must be a positive number.")
+        return
+
+    dltsc.quickData_processingBusy = True
+    _set_quick_buttons_state('disabled')
+    dltsc.quickData_statusLabel.config(text=f"Processing {len(selectedTemps)} temperature(s)...")
+
+    def apply(processedTransients, executionErrors):
+        dltsc.quickData_processingBusy = False
+        _set_quick_buttons_state('normal')
+        dltsc.quickData_processedTransients = processedTransients
+        for err in executionErrors:
+            dltsc.log_to_textbox(f"Offline Data: {err}")
+        dltsc.quickData_statusLabel.config(
+            text=f"{len(processedTransients)} of {len(selectedTemps)} temperature(s) extracted"
+                 + ("; see log for the rest." if executionErrors else ". Ready for Compute Boxcar Spectrums."))
+        dltsc.log_to_textbox(f"Offline Data: extracted {len(processedTransients)} averaged transient(s) "
+                             f"(Data Source '{DATA_SOURCE_LOADED}').")
+
+    ldT._extract_transients_async(dltsc.quickData_datasetRegistry, selectedTemps, rbMs,
+                                  dltsc.quickData_ziParamsByFile, apply)
+
+def _build_offlineDataFrame(parent):
+    """Offline Data column (left side of the tab): Directory Loader Config,
+    Available Temperatures Filter, Timing Boundaries and Execution Action.
+    Scrollable, like the Live Tools tab's left columns, so every control stays
+    reachable on a short window."""
+    if dltsc.quickData_datasetRegistry is None:
+        dltsc.quickData_datasetRegistry = dict()
+    if dltsc.quickData_ziParamsByFile is None:
+        dltsc.quickData_ziParamsByFile = dict()
+    if dltsc.quickData_sourceFolders is None:
+        dltsc.quickData_sourceFolders = list()
+    if dltsc.quickData_processedTransients is None:
+        dltsc.quickData_processedTransients = dict()
+    dltsc.quickData_loadingBusy = False
+    dltsc.quickData_processingBusy = False
+
+    parent.grid_rowconfigure(1, weight=1)
+    parent.grid_columnconfigure(0, weight=1)
+    ttk.Label(parent, text='Offline Data', font=('Segoe UI', 10, 'bold')).grid(
+        row=0, column=0, sticky='w', padx=4, pady=4)
+
+    container = tk.Frame(parent)
+    container.grid(row=1, column=0, sticky='nsew', padx=4, pady=(0, 4))
+    canvas = tk.Canvas(container, width=230, highlightthickness=0)
+    scroll = ttk.Scrollbar(container, orient='vertical', command=canvas.yview)
+    canvas.configure(yscrollcommand=scroll.set)
+    canvas.pack(side='left', fill='both', expand=True)
+    scroll.pack(side='right', fill='y')
+    panel = tk.Frame(canvas)
+    panelWindow = canvas.create_window((0, 0), window=panel, anchor='nw')
+    panel.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+    canvas.bind('<Configure>', lambda e: canvas.itemconfigure(panelWindow, width=e.width))
+
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+    canvas.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _on_mousewheel))
+    canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
+
+    # --- Directory Loader Config ---
+    ioGroup = tk.LabelFrame(panel, text='Directory Loader Config')
+    ioGroup.pack(fill='x', pady=(0, 4))
+    dltsc.quickData_selectFolderButton = ttk.Button(ioGroup, text='Select Source Folder',
+                                                    command=lambda: _browse_quick_folder(isAppend=False))
+    dltsc.quickData_selectFolderButton.pack(fill='x', padx=4, pady=(4, 2))
+    dltsc.quickData_appendFolderButton = ttk.Button(ioGroup, text='Append Source Folder',
+                                                    command=lambda: _browse_quick_folder(isAppend=True))
+    dltsc.quickData_appendFolderButton.pack(fill='x', padx=4, pady=(0, 2))
+    dltsc.quickData_folderLabel = ttk.Label(ioGroup, text='Source: (none selected)', wraplength=220, justify='left')
+    dltsc.quickData_folderLabel.pack(fill='x', padx=4, pady=(0, 4))
+
+    # --- Available Temperatures Filter ---
+    tempGroup = tk.LabelFrame(panel, text='Available Temperatures Filter')
+    tempGroup.pack(fill='x', pady=(0, 4))
+    listFrame = tk.Frame(tempGroup)
+    listFrame.pack(fill='both', expand=True, padx=4, pady=(4, 2))
+    listScroll = ttk.Scrollbar(listFrame, orient='vertical')
+    dltsc.quickData_tempListbox = tk.Listbox(listFrame, selectmode=tk.MULTIPLE, exportselection=False,
+                                             height=8, yscrollcommand=listScroll.set)
+    listScroll.config(command=dltsc.quickData_tempListbox.yview)
+    dltsc.quickData_tempListbox.pack(side='left', fill='both', expand=True)
+    listScroll.pack(side='right', fill='y')
+    utilFrame = tk.Frame(tempGroup)
+    utilFrame.pack(fill='x', padx=4, pady=(0, 4))
+    ttk.Button(utilFrame, text='Select All', command=lambda: dltsc.quickData_tempListbox.select_set(0, tk.END)).pack(
+        side='left', fill='x', expand=True, padx=(0, 2))
+    ttk.Button(utilFrame, text='Clear All', command=lambda: dltsc.quickData_tempListbox.select_clear(0, tk.END)).pack(
+        side='left', fill='x', expand=True, padx=(2, 0))
+
+    # --- Timing Boundaries (set from the folder when it says them) ---
+    paramGroup = tk.LabelFrame(panel, text='Timing Boundaries')
+    paramGroup.pack(fill='x', pady=(0, 4))
+    dltsc.quickData_paramVars = {'fp_ms': tk.StringVar(value='1.0'), 'rb_ms': tk.StringVar(value='500.0')}
+    for row, (key, label) in enumerate((('fp_ms', 'Filling Duration (ms):'), ('rb_ms', 'Reverse Bias (ms):'))):
+        ttk.Label(paramGroup, text=label).grid(row=row, column=0, sticky='w', padx=4, pady=1)
+        ttk.Entry(paramGroup, textvariable=dltsc.quickData_paramVars[key], width=10).grid(
+            row=row, column=1, sticky='ew', padx=4, pady=1)
+    paramGroup.grid_columnconfigure(1, weight=1)
+
+    # --- Execution Action ---
+    execGroup = tk.LabelFrame(panel, text='Execution Action')
+    execGroup.pack(fill='x')
+    dltsc.quickData_extractButton = tk.Button(execGroup, text='Extract & Average Transients',
+                                              font=('Segoe UI', 9, 'bold'), bg='#e8f5e9',
+                                              command=_extract_quick_transients)
+    dltsc.quickData_extractButton.pack(fill='x', padx=4, pady=(4, 2))
+    dltsc.quickData_statusLabel = ttk.Label(execGroup, text='Status: Idle', wraplength=220, justify='left')
+    dltsc.quickData_statusLabel.pack(fill='x', padx=4, pady=(0, 4))
+
+
 #---------------------TAB CONSTRUCTION-------------------------#
 def construct_dataAnalysisTab():
     tabControl = dltsc.tabControl
@@ -889,12 +1132,19 @@ def construct_dataAnalysisTab():
     tabControl.pack(expand=1, fill="both")
 
     dltsc.dataAnalysisTab.grid_rowconfigure(0, weight=1)
-    dltsc.dataAnalysisTab.grid_columnconfigure(0, weight=1)
+    dltsc.dataAnalysisTab.grid_columnconfigure(0, weight=0)
+    dltsc.dataAnalysisTab.grid_columnconfigure(1, weight=1)
+
+    # Offline Data column (saved-folder loader) on the left, fixed width.
+    offlineFrame = tk.Frame(dltsc.dataAnalysisTab, highlightbackground="gray",
+                            highlightthickness=1, highlightcolor='gray')
+    offlineFrame.grid(row=0, column=0, padx=(10, 0), pady=10, sticky='ns')
+    _build_offlineDataFrame(offlineFrame)
 
     # Rate Window Analysis (left) and Arrhenius Defect Mapping (right), side by
     # side in a resizable pane.
     analysisPanes = tk.PanedWindow(dltsc.dataAnalysisTab, orient=tk.HORIZONTAL, sashrelief='raised', sashwidth=6)
-    analysisPanes.grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
+    analysisPanes.grid(row=0, column=1, padx=10, pady=10, sticky='nsew')
 
     rateWindowFrame = tk.Frame(analysisPanes, highlightbackground="gray",
                                highlightthickness=1, highlightcolor='gray')

@@ -11,9 +11,10 @@ from tkinter import filedialog
 
 import numpy as np
 import pandas as pd
+import datetime
 import h5py
 import matplotlib
-import matplotlib.ticker
+import matplotlib.dates
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -837,6 +838,9 @@ def _build_runControlPanel(parent):
 #---------------------MANUAL / QUALITATIVE ANALYSIS-------------------------#
 # Ported from DrKayisScript.py's "1. Transient Extraction" tab (PyQt6) into tkinter,
 # plotting into an embedded canvas here instead of that script's own window.
+# Live data only: the frame follows the running experiment's folder. Saved
+# folders are loaded in the Quick Analysis tab (dataAnalysisTab's Offline Data
+# column), which reuses the folder scan and extraction below.
 def _set_manual_buttons_state(state):
     """Enable/disable the Qualitative Analysis frame's action buttons.
 
@@ -844,10 +848,6 @@ def _set_manual_buttons_state(state):
     feedback (instead of a silent no-op) while a background worker is in flight,
     and preventing a second worker from starting on top of it.
     """
-    if dltsc.manual_selectFolderButton is not None:
-        dltsc.manual_selectFolderButton.config(state=state)
-    if dltsc.manual_appendFolderButton is not None:
-        dltsc.manual_appendFolderButton.config(state=state)
     if dltsc.manual_extractButton is not None:
         dltsc.manual_extractButton.config(state=state)
 
@@ -889,36 +889,6 @@ def _describe_folder_contents(dir_path, max_entries=12):
 
     return f"{len(entries)} item(s): {listing}  —  {guess}"
 
-def _browse_manual_folder():
-    if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
-        return
-    dir_path = filedialog.askdirectory(
-        title="Select DLTS Source Folder",
-        initialdir=dltsc.manual_dataDirectory or os.getcwd()
-    )
-    if dir_path:
-        dltsc.log_to_textbox(f"Manual analysis: selected {dir_path} -- {_describe_folder_contents(dir_path)}")
-        _scan_manual_directory_async(dir_path, isAppend=False)
-
-def _append_manual_folder():
-    """Add another folder's temperatures to the current dataset instead of
-    replacing it, so a run that was split into pieces or taken across
-    different dates/sessions can still be analyzed together.
-    """
-    if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
-        return
-    if not dltsc.manual_datasetRegistry:
-        # Nothing loaded yet -- append is just a first load in that case.
-        _browse_manual_folder()
-        return
-    dir_path = filedialog.askdirectory(
-        title="Select DLTS Source Folder to Append",
-        initialdir=dltsc.manual_dataDirectory or os.getcwd()
-    )
-    if dir_path:
-        dltsc.log_to_textbox(f"Manual analysis: selected {dir_path} -- {_describe_folder_contents(dir_path)}")
-        _scan_manual_directory_async(dir_path, isAppend=True)
-
 # Both are ZI MFIA CSV exports -- 'zi' is one combined multi-chunk file (a
 # whole sweep in one CSV, temperatures told apart by chunk number), 'zi_subfolder'
 # is one subfolder per temperature (the DLTS_APP.py / Detailed Analysis tab
@@ -934,149 +904,64 @@ def _registry_format_label(registry):
         return "Mixed"
     return "ZI" if hasZi else "Legacy"
 
-def _scan_manual_directory_async(dir_path, isAppend, onDone=None):
-    """Auto-detect ZI vs. legacy format and index the available temperatures in
-    dir_path, then merge (isAppend=True) into the current dataset or replace
-    it (isAppend=False) with them. onDone, if given, is called on the main
-    thread once the scan has been applied (Follow live run extracts from it).
+def _scan_folder(dir_path):
+    """Auto-detect the format of a saved data folder and index its temperatures.
 
-    Runs the directory scan/parse on a background thread, like Run DLTS does for
-    the experiment itself, so scanning a large folder never freezes the GUI. Only
-    plain Python/pandas work happens on the worker thread; all Tk widget updates
-    are marshaled back onto the main thread via root.after().
+    Pure computation (no Tk calls), safe on a background thread; the Quick
+    Analysis tab's folder loader (dataAnalysisTab._scan_quick_folder_async)
+    runs it off the main thread. Formats, tried in order: a single combined
+    ZI export (a header CSV matching *imps_0_sample_param1_avg_header*.csv
+    directly in dir_path) -> a subfolder-per-temperature ZI export (the
+    DLTS_APP.py / Detailed Analysis tab convention: one subdirectory per
+    temperature, e.g. '0C'/'n10C'/'120C_000', each with its own such CSV) ->
+    legacy per-temperature files.
+
+    Returns a dict: 'registry' (temp C -> source, see dltsConfig.quickData_datasetRegistry),
+    'ziParamsByFile' (ZI data file -> its acquisition grid params), 'fpMs' /
+    'rbMs' (fill / reverse-bias ms from the folder name or runParams.txt, None
+    if unknown) and 'errors' (messages for the log).
     """
-    if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
-        return
-    dltsc.manual_loadingBusy = True
-    _set_manual_buttons_state('disabled')
-    action = "Appending" if isAppend else "Loading"
-    if dltsc.manual_folderLabel is not None and not isAppend:
-        dltsc.manual_folderLabel.config(text=f"Source: {os.path.basename(dir_path)} (scanning...)")
-    if dltsc.manual_statusLabel is not None:
-        dltsc.manual_statusLabel.config(text=f"{action} {os.path.basename(dir_path)}...")
-
-    def worker():
-        errorMsgs = []
-        registry = {}
-        ziDetected = False
-        ziInfo = None
-        ziSubfolderParams = None
-        legacyTiming = None
-        try:
-            # Detect format, in order: a single combined ZI export (a header
-            # CSV matching *imps_0_sample_param1_avg_header*.csv directly in
-            # dir_path) -> a subfolder-per-temperature ZI export (the
-            # DLTS_APP.py / Detailed Analysis tab convention: dir_path holds
-            # one subdirectory per temperature, e.g. '0C'/'n10C'/'120C_000',
-            # each with its own such CSV) -> legacy per-temperature files.
-            zi_headers = [f for f in os.listdir(dir_path)
-                          if re.search(r'imps_0_sample_param1_avg_header', f, re.IGNORECASE)
-                          and f.endswith('.csv')]
-            if zi_headers:
-                ziDetected = True
-                registry, ziInfo = _compute_zi_dataset(dir_path, zi_headers[0], errorMsgs)
-            else:
-                registry, ziSubfolderParams = _compute_zi_subfolder_dataset(dir_path, errorMsgs)
-                if registry:
-                    ziDetected = True
-                else:
-                    registry = _compute_legacy_dataset(dir_path, errorMsgs)
-                    legacyTiming = _legacy_run_timing(dir_path)
-        except Exception as exc:
-            errorMsgs.append(f"error scanning folder: {exc}")
-
-        def apply():
-            dltsc.manual_loadingBusy = False
-            _set_manual_buttons_state('normal')
-
-            if isAppend:
-                if dltsc.manual_datasetRegistry is None:
-                    dltsc.manual_datasetRegistry = {}
-                skipped = sorted(t for t in registry if t in dltsc.manual_datasetRegistry)
-                added = {t: v for t, v in registry.items() if t not in dltsc.manual_datasetRegistry}
-                dltsc.manual_datasetRegistry.update(added)
-                if dltsc.manual_sourceFolders is None:
-                    dltsc.manual_sourceFolders = []
-                dltsc.manual_sourceFolders.append(dir_path)
-                if skipped:
-                    dltsc.log_to_textbox(
-                        f"Manual analysis: skipped {len(skipped)} temperature(s) already present "
-                        f"from a previous source (kept the first-loaded copy): {skipped}")
-            else:
-                dltsc.manual_datasetRegistry = registry
-                dltsc.manual_sourceFolders = [dir_path]
-                dltsc.manual_dataDirectory = dir_path
-                dltsc.manual_ziParamsByFile = {}
-                if dltsc.manual_folderLabel is not None:
-                    dltsc.manual_folderLabel.config(text=f"Source: {os.path.basename(dir_path)}")
-
+    result = {'registry': {}, 'ziParamsByFile': {}, 'fpMs': None, 'rbMs': None, 'errors': []}
+    errorMsgs = result['errors']
+    try:
+        zi_headers = [f for f in os.listdir(dir_path)
+                      if re.search(r'imps_0_sample_param1_avg_header', f, re.IGNORECASE)
+                      and f.endswith('.csv')]
+        if zi_headers:
+            registry, ziInfo = _compute_zi_dataset(dir_path, zi_headers[0], errorMsgs)
+            result['registry'] = registry
             if ziInfo is not None:
-                ziParams = {'gridColOffset': ziInfo['gridColOffset'], 'gridColDelta': ziInfo['gridColDelta'],
-                            'chunkSize': ziInfo['chunkSize']}
-                dltsc.manual_ziParamsByFile[ziInfo['dataFile']] = ziParams
-                dltsc.manual_ziDataFile = ziInfo['dataFile']
-                dltsc.manual_ziGridColOffset = ziParams['gridColOffset']
-                dltsc.manual_ziGridColDelta = ziParams['gridColDelta']
-                dltsc.manual_ziChunkSize = ziParams['chunkSize']
-                if not isAppend:
-                    if ziInfo.get('fpMs') is not None:
-                        dltsc.manual_paramVars['fp_ms'].set(ziInfo['fpMs'])
-                    if ziInfo.get('rbMs') is not None:
-                        dltsc.manual_paramVars['rb_ms'].set(ziInfo['rbMs'])
-                        _set_auto_slice_end(float(ziInfo['rbMs']))
-            elif ziSubfolderParams:
-                # One params entry per temperature's own file (each subfolder
-                # carries its own header CSV) rather than a single shared one.
-                dltsc.manual_ziParamsByFile.update(ziSubfolderParams)
-                firstFile, firstParams = next(iter(ziSubfolderParams.items()))
-                dltsc.manual_ziDataFile = firstFile
-                dltsc.manual_ziGridColOffset = firstParams['gridColOffset']
-                dltsc.manual_ziGridColDelta = firstParams['gridColDelta']
-                dltsc.manual_ziChunkSize = firstParams['chunkSize']
-                if not isAppend:
-                    folder_name = os.path.basename(dir_path)
-                    fp_match = re.search(r'FP\w+?(\d+(?:\.\d+)?)ms', folder_name, re.IGNORECASE)
-                    rb_match = re.search(r'RB[\w\+\-]+?(\d+(?:\.\d+)?)ms', folder_name, re.IGNORECASE)
-                    if fp_match:
-                        dltsc.manual_paramVars['fp_ms'].set(fp_match.group(1))
-                    if rb_match:
-                        rb_ms = float(rb_match.group(1))
-                        dltsc.manual_paramVars['rb_ms'].set(str(rb_ms))
-                        _set_auto_slice_end(rb_ms)
-            elif legacyTiming and not isAppend:
-                fpMs, rbMs = legacyTiming
-                dltsc.manual_paramVars['fp_ms'].set(f"{fpMs:g}")
-                dltsc.manual_paramVars['rb_ms'].set(f"{rbMs:g}")
-                _set_auto_slice_end(rbMs)
-                dltsc.log_to_textbox(f"Manual analysis: Timing Boundaries set from runParams.txt "
-                                     f"(fill {fpMs:g} ms, reverse bias {rbMs:g} ms).")
+                result['ziParamsByFile'][ziInfo['dataFile']] = {
+                    'gridColOffset': ziInfo['gridColOffset'], 'gridColDelta': ziInfo['gridColDelta'],
+                    'chunkSize': ziInfo['chunkSize']}
+                if ziInfo.get('fpMs') is not None:
+                    result['fpMs'] = float(ziInfo['fpMs'])
+                if ziInfo.get('rbMs') is not None:
+                    result['rbMs'] = float(ziInfo['rbMs'])
+            return result
 
-            dltsc.manual_ziMode = _registry_format_label(dltsc.manual_datasetRegistry)
+        registry, ziSubfolderParams = _compute_zi_subfolder_dataset(dir_path, errorMsgs)
+        if registry:
+            # One params entry per temperature's own file (each subfolder
+            # carries its own header CSV) rather than a single shared one.
+            result['registry'] = registry
+            result['ziParamsByFile'].update(ziSubfolderParams)
+            folder_name = os.path.basename(dir_path)
+            fp_match = re.search(r'FP\w+?(\d+(?:\.\d+)?)ms', folder_name, re.IGNORECASE)
+            rb_match = re.search(r'RB[\w\+\-]+?(\d+(?:\.\d+)?)ms', folder_name, re.IGNORECASE)
+            if fp_match:
+                result['fpMs'] = float(fp_match.group(1))
+            if rb_match:
+                result['rbMs'] = float(rb_match.group(1))
+            return result
 
-            if isAppend and dltsc.manual_folderLabel is not None:
-                nSources = len(dltsc.manual_sourceFolders)
-                dltsc.manual_folderLabel.config(
-                    text=f"Source: {nSources} folder(s) combined (latest: {os.path.basename(dir_path)})")
-
-            dltsc.manual_tempListbox.delete(0, tk.END)
-            for temp in sorted(dltsc.manual_datasetRegistry.keys()):
-                dltsc.manual_tempListbox.insert(tk.END, f"{temp} °C")
-            dltsc.manual_tempListbox.select_set(0, tk.END)
-
-            for msg in errorMsgs:
-                dltsc.log_to_textbox(f"Manual analysis: {msg}")
-
-            if dltsc.manual_statusLabel is not None:
-                dltsc.manual_statusLabel.config(
-                    text=f"[{dltsc.manual_ziMode}] {len(dltsc.manual_datasetRegistry)} temperature step(s) "
-                        f"from {len(dltsc.manual_sourceFolders)} source(s).")
-
-            if onDone is not None:
-                onDone()
-
-        dltsc.root.after(0, apply)
-
-    threading.Thread(target=worker, daemon=True).start()
+        result['registry'] = _compute_legacy_dataset(dir_path, errorMsgs)
+        legacyTiming = _legacy_run_timing(dir_path)
+        if legacyTiming:
+            result['fpMs'], result['rbMs'] = legacyTiming
+    except Exception as exc:
+        errorMsgs.append(f"error scanning folder: {exc}")
+    return result
 
 def _compute_zi_dataset(dir_path, header_filename, errorMsgs):
     """Parse the ZI averaged-data folder (pure computation, safe on a background thread).
@@ -1332,6 +1217,34 @@ def _qualitative_live_tick():
     else:
         dltsc.manual_livePollActive = False
 
+def _adopt_live_run_folder(folder):
+    """Make the run folder the Qualitative frame's data: index its step files
+    (all selected), and set Timing Boundaries from its runParams.txt. A run
+    folder only holds .h5/.txt step files, so indexing it is one directory
+    listing and runs on the main thread."""
+    errorMsgs = []
+    dltsc.manual_liveRunFolder = folder
+    dltsc.manual_datasetRegistry = _compute_legacy_dataset(folder, errorMsgs)
+    dltsc.log_to_textbox(f"Qualitative Analysis: following live run folder {folder}")
+    for msg in errorMsgs:
+        dltsc.log_to_textbox(f"Qualitative Analysis: {msg}")
+    if dltsc.manual_folderLabel is not None:
+        dltsc.manual_folderLabel.config(text=f"Run folder: {os.path.basename(folder)}")
+
+    timing = _legacy_run_timing(folder)
+    if timing and dltsc.manual_paramVars:
+        fpMs, rbMs = timing
+        dltsc.manual_paramVars['fp_ms'].set(f"{fpMs:g}")
+        dltsc.manual_paramVars['rb_ms'].set(f"{rbMs:g}")
+        _set_auto_slice_end(rbMs)
+        dltsc.log_to_textbox(f"Qualitative Analysis: Timing Boundaries set from runParams.txt "
+                             f"(fill {fpMs:g} ms, reverse bias {rbMs:g} ms).")
+
+    dltsc.manual_tempListbox.delete(0, tk.END)
+    for i, temp in enumerate(sorted(dltsc.manual_datasetRegistry.keys())):
+        dltsc.manual_tempListbox.insert(tk.END, f"{temp} °C")
+        dltsc.manual_tempListbox.select_set(i)
+
 def _same_folder(a, b):
     if not a or not b:
         return False
@@ -1356,12 +1269,10 @@ def _qualitative_live_update():
     folder = dltsc.run_dataFolder
     if dltsc.manual_liveFollowVar is None or not dltsc.manual_liveFollowVar.get() or not folder:
         return False
-    if dltsc.manual_loadingBusy or dltsc.manual_processingBusy:
-        return True   # retry once the current scan/extraction is done
+    if dltsc.manual_processingBusy:
+        return True   # retry once the current extraction is done
 
     adopted = _same_folder(dltsc.manual_liveRunFolder, folder)
-    if adopted and not _same_folder(dltsc.manual_dataDirectory, folder):
-        return False  # the user loaded a different folder mid-run; leave it alone
 
     changed = _changed_run_files()
     if not changed:
@@ -1369,11 +1280,10 @@ def _qualitative_live_update():
     dltsc.manual_liveFileMtimes.update(changed)
 
     if not adopted:
-        # First file of this run: load the run folder (also sets Timing
+        # First file of this run: adopt the run folder (also sets Timing
         # Boundaries from its runParams.txt), then extract every step.
-        dltsc.manual_liveRunFolder = folder
-        dltsc.log_to_textbox(f"Qualitative Analysis: following live run folder {folder}")
-        _scan_manual_directory_async(folder, isAppend=False, onDone=_process_raw_transients)
+        _adopt_live_run_folder(folder)
+        _process_raw_transients()
         return True
 
     # Already following: add newly written steps (selected, keeping the
@@ -1443,8 +1353,12 @@ def _get_transient_executor():
         dltsc.manual_transientExecutor = ProcessPoolExecutor(max_workers=1)
     return dltsc.manual_transientExecutor
 
-def _process_raw_transients():
-    """Extract & average transients for the checked temperatures (ZI or legacy format).
+def _extract_transients_async(datasetRegistry, selectedTemps, rbDurationMs, ziParamsByFile, onDone):
+    """Extract & average the selected temperatures of datasetRegistry (any mix
+    of ZI and legacy entries) off the main thread, then call
+    onDone(processedTransients, executionErrors) on the main thread. Shared by
+    the live Qualitative frame (_process_raw_transients) and the Quick Analysis
+    tab's folder loader.
 
     Dispatches the per-temperature file I/O and math to a separate OS process
     (via ProcessPoolExecutor), not just a background thread: confirmed against a
@@ -1456,44 +1370,20 @@ def _process_raw_transients():
     GIL, so it can never contend with the Tk main thread no matter how long any
     single temperature takes to process. The calling background thread just
     blocks on the process's result, which is a cheap OS-level wait.
-    Only the resulting matplotlib plotting happens back on the main thread.
     """
-    if not dltsc.manual_datasetRegistry:
-        return
-    if dltsc.manual_processingBusy or dltsc.manual_loadingBusy:
-        return
-
-    sortedTemps = sorted(dltsc.manual_datasetRegistry.keys())
-    selectedIndices = dltsc.manual_tempListbox.curselection()
-    selectedTemps = [sortedTemps[i] for i in selectedIndices]
-
-    if not selectedTemps:
-        dltsc.log_to_textbox("Manual analysis: select at least one temperature trace.")
-        return
-
-    try:
-        rbDurationMs = float(dltsc.manual_paramVars['rb_ms'].get())
-    except ValueError:
-        dltsc.log_to_textbox("Manual analysis: Reverse Bias (ms) must be numeric.")
-        return
     cInfTargetMs = 0.90 * rbDurationMs
-
-    dltsc.manual_processingBusy = True
-    _set_manual_buttons_state('disabled')
-    dltsc.manual_statusLabel.config(text=f"Processing {len(selectedTemps)} temperature(s)...")
-
     # Snapshot everything the worker needs so it never touches Tk widgets/variables.
     # Selected temperatures are split by their OWN registry entry's format tag
     # (not a single global mode) so a combined dataset -- some temperatures
     # from an appended ZI source, others from an appended legacy source -- is
     # routed correctly instead of forcing every selection through one format.
-    datasetRegistry = dict(dltsc.manual_datasetRegistry)
+    datasetRegistry = dict(datasetRegistry)
     ziTemps = [t for t in selectedTemps
               if isinstance(datasetRegistry.get(t), tuple) and datasetRegistry[t][0] == 'zi']
     ziSubfolderTemps = [t for t in selectedTemps
                         if isinstance(datasetRegistry.get(t), tuple) and datasetRegistry[t][0] == 'zi_subfolder']
     legacyTemps = [t for t in selectedTemps if t not in ziTemps and t not in ziSubfolderTemps]
-    ziParamsByFile = dict(dltsc.manual_ziParamsByFile or {})
+    ziParamsByFile = dict(ziParamsByFile or {})
     samplingRateS = dltsc.manual_samplingRate or 1.8666666666666665e-05
 
     def worker():
@@ -1505,87 +1395,116 @@ def _process_raw_transients():
             processedTransients, executionErrors = future.result()
         except Exception as exc:
             processedTransients, executionErrors = {}, [f"extraction process failed: {exc}"]
-
-        def apply():
-            dltsc.manual_processingBusy = False
-            _set_manual_buttons_state('normal')
-            dltsc.manual_processedTransients = processedTransients
-
-            # Rebuild the figure from scratch rather than ax.clear() + removing
-            # the old color bar: colorbar.remove() does not give back the width
-            # the color bar took once tight_layout has run, so every redraw with
-            # a color bar shrank the plot further in x.
-            dltsc.manual_figure.clear()
-            dltsc.manual_ax = dltsc.manual_figure.add_subplot(1, 2, 1)
-            dltsc.manual_axTemps = dltsc.manual_figure.add_subplot(1, 2, 2)
-            _draw_qualitative_temperatures(dltsc.manual_axTemps, processedTransients)
-            scale, unit = _capacitance_axis_units([rec['avg_cap_pf'] for rec in processedTransients.values()])
-            sliceLo, sliceHi = _plot_slice_ms()
-            temps = sorted(processedTransients.keys())
-            # Many traces: color by temperature with a color bar instead of a
-            # legend that would run off the plot.
-            useColorbar = len(temps) > _MAX_LEGEND_TRACES
-            if useColorbar:
-                norm = matplotlib.colors.Normalize(vmin=min(temps), vmax=max(temps))
-                cmap = matplotlib.colormaps['plasma']
-            for temp in temps:
-                rec = processedTransients[temp]
-                t, c = np.asarray(rec['time_ms']), np.asarray(rec['avg_cap_pf'])
-                # Plot only the Analysis Slice (default 2 ms .. 98% of the reverse
-                # bias): the fill-pulse edge at t = 0 would otherwise set the y
-                # scale and flatten every transient. The data itself is unchanged.
-                keep = np.ones(t.size, dtype=bool)
-                if sliceLo is not None:
-                    keep &= t >= sliceLo
-                if sliceHi is not None:
-                    keep &= t <= sliceHi
-                if not keep.any():
-                    keep[:] = True
-                x, y = _downsample_for_plot(t[keep], c[keep])
-                dltsc.manual_ax.plot(x, np.asarray(y) * scale, label=f"{temp}°C",
-                                     color=cmap(norm(temp)) if useColorbar else None)
-            # X spans exactly the plotted data (the Analysis Slice); the default
-            # 5% margin otherwise starts the axis at negative time.
-            dltsc.manual_ax.margins(x=0)
-            if useColorbar:
-                mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
-                colorbar = dltsc.manual_figure.colorbar(mappable, ax=dltsc.manual_ax, pad=0.01)
-                colorbar.set_label('Temperature (°C)')
-            if not processedTransients:
-                dltsc.manual_ax.text(0.5, 0.5, "No transients extracted.\nSee the log for the reason per temperature.",
-                                     ha='center', va='center', transform=dltsc.manual_ax.transAxes, color='gray')
-            dltsc.manual_ax.set_xlabel("Time from Reverse Bias Start (ms)")
-            dltsc.manual_ax.set_ylabel(f"Capacitance ({unit})")
-            # No offset/multiplier notation: small changes on a large baseline
-            # would otherwise read as '+4.5e6' in the corner instead of values.
-            dltsc.manual_ax.ticklabel_format(axis='y', useOffset=False, style='plain')
-            dltsc.manual_ax.set_title("Averaged Capacitance Transients Profile")
-            dltsc.manual_ax.grid(True, linestyle=":")
-            handles, labels = dltsc.manual_ax.get_legend_handles_labels()
-            if labels and not useColorbar:
-                # A fixed corner instead of loc='best' skips matplotlib's
-                # overlap-search over every plotted point, which is otherwise a
-                # further main-thread rendering cost right when results land.
-                dltsc.manual_ax.legend(loc='upper right')
-            dltsc.manual_figure.tight_layout(pad=2.0, w_pad=3.0)
-            dltsc.manual_canvas.draw()
-            # Reset the toolbar's view history so Home/Back return to this
-            # plot's range, not the first extraction's (or a stale zoom).
-            if dltsc.manual_canvas.toolbar is not None:
-                dltsc.manual_canvas.toolbar.update()
-
-            if executionErrors:
-                for err in executionErrors:
-                    dltsc.log_to_textbox(f"Manual analysis: {err}")
-                dltsc.manual_statusLabel.config(
-                    text=f"{len(processedTransients)} of {len(selectedTemps)} traces; see log for the rest.")
-            else:
-                dltsc.manual_statusLabel.config(
-                    text=f"Transients ensembled completely — {len(processedTransients)} traces.")
-
-        dltsc.root.after(0, apply)
+        dltsc.root.after(0, lambda: onDone(processedTransients, executionErrors))
 
     threading.Thread(target=worker, daemon=True).start()
+
+def _process_raw_transients():
+    """Extract & average the checked temperatures of the live run (off the main
+    thread, see _extract_transients_async), then redraw the Qualitative plots.
+    Only the resulting matplotlib plotting happens on the main thread.
+    """
+    if not dltsc.manual_datasetRegistry:
+        return
+    if dltsc.manual_processingBusy:
+        return
+
+    sortedTemps = sorted(dltsc.manual_datasetRegistry.keys())
+    selectedIndices = dltsc.manual_tempListbox.curselection()
+    selectedTemps = [sortedTemps[i] for i in selectedIndices]
+
+    if not selectedTemps:
+        dltsc.log_to_textbox("Qualitative Analysis: select at least one temperature trace.")
+        return
+
+    try:
+        rbDurationMs = float(dltsc.manual_paramVars['rb_ms'].get())
+    except ValueError:
+        dltsc.log_to_textbox("Qualitative Analysis: Reverse Bias (ms) must be numeric.")
+        return
+
+    dltsc.manual_processingBusy = True
+    _set_manual_buttons_state('disabled')
+    dltsc.manual_statusLabel.config(text=f"Processing {len(selectedTemps)} temperature(s)...")
+
+    def apply(processedTransients, executionErrors):
+        dltsc.manual_processingBusy = False
+        _set_manual_buttons_state('normal')
+        dltsc.manual_processedTransients = processedTransients
+
+        # Rebuild the figure from scratch rather than ax.clear() + removing
+        # the old color bar: colorbar.remove() does not give back the width
+        # the color bar took once tight_layout has run, so every redraw with
+        # a color bar shrank the plot further in x.
+        dltsc.manual_figure.clear()
+        dltsc.manual_ax = dltsc.manual_figure.add_subplot(1, 2, 1)
+        dltsc.manual_axTemps = dltsc.manual_figure.add_subplot(1, 2, 2)
+        _draw_qualitative_temperatures(dltsc.manual_axTemps, processedTransients)
+        scale, unit = _capacitance_axis_units([rec['avg_cap_pf'] for rec in processedTransients.values()])
+        sliceLo, sliceHi = _plot_slice_ms()
+        temps = sorted(processedTransients.keys())
+        # Many traces: color by temperature with a color bar instead of a
+        # legend that would run off the plot.
+        useColorbar = len(temps) > _MAX_LEGEND_TRACES
+        if useColorbar:
+            norm = matplotlib.colors.Normalize(vmin=min(temps), vmax=max(temps))
+            cmap = matplotlib.colormaps['plasma']
+        for temp in temps:
+            rec = processedTransients[temp]
+            t, c = np.asarray(rec['time_ms']), np.asarray(rec['avg_cap_pf'])
+            # Plot only the Analysis Slice (default 2 ms .. 98% of the reverse
+            # bias): the fill-pulse edge at t = 0 would otherwise set the y
+            # scale and flatten every transient. The data itself is unchanged.
+            keep = np.ones(t.size, dtype=bool)
+            if sliceLo is not None:
+                keep &= t >= sliceLo
+            if sliceHi is not None:
+                keep &= t <= sliceHi
+            if not keep.any():
+                keep[:] = True
+            x, y = _downsample_for_plot(t[keep], c[keep])
+            dltsc.manual_ax.plot(x, np.asarray(y) * scale, label=f"{temp}°C",
+                                 color=cmap(norm(temp)) if useColorbar else None)
+        # X spans exactly the plotted data (the Analysis Slice); the default
+        # 5% margin otherwise starts the axis at negative time.
+        dltsc.manual_ax.margins(x=0)
+        if useColorbar:
+            mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+            colorbar = dltsc.manual_figure.colorbar(mappable, ax=dltsc.manual_ax, pad=0.01)
+            colorbar.set_label('Temperature (°C)')
+        if not processedTransients:
+            dltsc.manual_ax.text(0.5, 0.5, "No transients extracted.\nSee the log for the reason per temperature.",
+                                 ha='center', va='center', transform=dltsc.manual_ax.transAxes, color='gray')
+        dltsc.manual_ax.set_xlabel("Time from Reverse Bias Start (ms)")
+        dltsc.manual_ax.set_ylabel(f"Capacitance ({unit})")
+        # No offset/multiplier notation: small changes on a large baseline
+        # would otherwise read as '+4.5e6' in the corner instead of values.
+        dltsc.manual_ax.ticklabel_format(axis='y', useOffset=False, style='plain')
+        dltsc.manual_ax.set_title("Averaged Capacitance Transients Profile")
+        dltsc.manual_ax.grid(True, linestyle=":")
+        handles, labels = dltsc.manual_ax.get_legend_handles_labels()
+        if labels and not useColorbar:
+            # A fixed corner instead of loc='best' skips matplotlib's
+            # overlap-search over every plotted point, which is otherwise a
+            # further main-thread rendering cost right when results land.
+            dltsc.manual_ax.legend(loc='upper right')
+        dltsc.manual_figure.tight_layout(pad=2.0, w_pad=3.0)
+        dltsc.manual_canvas.draw()
+        # Reset the toolbar's view history so Home/Back return to this
+        # plot's range, not the first extraction's (or a stale zoom).
+        if dltsc.manual_canvas.toolbar is not None:
+            dltsc.manual_canvas.toolbar.update()
+
+        if executionErrors:
+            for err in executionErrors:
+                dltsc.log_to_textbox(f"Qualitative Analysis: {err}")
+            dltsc.manual_statusLabel.config(
+                text=f"{len(processedTransients)} of {len(selectedTemps)} traces; see log for the rest.")
+        else:
+            dltsc.manual_statusLabel.config(
+                text=f"Transients ensembled completely — {len(processedTransients)} traces.")
+
+    _extract_transients_async(dltsc.manual_datasetRegistry, selectedTemps, rbDurationMs, {}, apply)
 
 def _compute_zi_transients(selectedTemps, cInfTargetMs, datasetRegistry, ziParamsByFile):
     """Read each distinct ZI data CSV once, then extract every selected chunk
@@ -1913,37 +1832,44 @@ def _read_h5_step(filePath):
     return data, attrs
 
 def _draw_qualitative_temperatures(ax, processedTransients):
-    """Right Qualitative plot: the temperature trace of the data so far, one
-    filled circle per extracted step joined by line segments, in the order the
-    steps were acquired, so the last point is the latest temperature. Each
-    point is the measured stage temperature when the file stores it (.h5) and
-    the setpoint otherwise. Redrawn on every extraction, so during a run
-    followed live it grows by one point per finished step."""
-    # (temperature, acquired_at) per step; the transient's key is its setpoint
-    # in °C for every source format.
-    recs = []
+    """Right Qualitative plot: the temperature trace of the live run so far,
+    one filled circle per extracted step at its time of measurement, joined by
+    line segments, so the last point is the latest temperature. Each point is
+    the measured stage temperature when the file stores it (.h5) and the
+    setpoint otherwise. Redrawn on every extraction, so it grows by one point
+    per finished step."""
+    # (time of measurement, temperature) per step; the transient's key is its
+    # setpoint in °C. Run step files always carry a time (the .h5 acquired_at
+    # attribute, or a JSON file's mtime).
+    points = []
     for temp, rec in processedTransients.items():
+        try:
+            when = datetime.datetime.fromisoformat(rec.get('acquired_at') or '')
+        except ValueError:
+            continue
         stageC = rec.get('stage_C', np.nan)
-        tempC = stageC if np.isfinite(stageC) else rec.get('setpoint_C', temp)
-        recs.append((tempC, rec.get('acquired_at'), temp))
-    if recs and all(r[1] for r in recs):
-        recs.sort(key=lambda r: r[1])
-    else:
-        recs.sort(key=lambda r: r[2])
-    steps = np.arange(1, len(recs) + 1)
-    temps = np.array([r[0] for r in recs], dtype=float)
+        points.append((when, stageC if np.isfinite(stageC) else rec.get('setpoint_C', temp)))
+    points.sort()
 
-    if len(recs):
-        ax.plot(steps, temps, 'o-', color='tab:red', markersize=6, linewidth=1.5)
-        ax.annotate(f"Latest: {temps[-1]:.2f} °C", xy=(steps[-1], temps[-1]),
+    if points:
+        times = [p[0] for p in points]
+        temps = np.array([p[1] for p in points], dtype=float)
+        ax.plot(times, temps, 'o-', color='tab:red', markersize=6, linewidth=1.5)
+        ax.annotate(f"Latest: {temps[-1]:.2f} °C at {times[-1]:%H:%M:%S}", xy=(times[-1], temps[-1]),
                     xytext=(-6, 8), textcoords='offset points', ha='right', fontsize=9)
-        # Room above the last point for its label, and whole step numbers only.
+        locator = matplotlib.dates.AutoDateLocator()
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(matplotlib.dates.ConciseDateFormatter(locator))
+        if len(times) == 1:
+            # A single point has no span; show 10 minutes around it.
+            pad = datetime.timedelta(minutes=5)
+            ax.set_xlim(times[0] - pad, times[0] + pad)
+        # Room above the last point for its label.
         ax.margins(x=0.1, y=0.15)
-        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
     else:
         ax.text(0.5, 0.5, "No temperature steps extracted.", ha='center', va='center',
                 transform=ax.transAxes, color='gray')
-    ax.set_xlabel("Temperature Step")
+    ax.set_xlabel("Time of Measurement")
     ax.set_ylabel("Temperature (°C)")
     ax.ticklabel_format(axis='y', useOffset=False, style='plain')
     ax.set_title("Temperature Trace")
@@ -1982,8 +1908,6 @@ def _build_manualPlotFrame(parent):
         dltsc.manual_processedTransients = dict()
     if dltsc.manual_processingBusy is None:
         dltsc.manual_processingBusy = False
-    if dltsc.manual_loadingBusy is None:
-        dltsc.manual_loadingBusy = False
     if dltsc.manual_liveFileMtimes is None:
         dltsc.manual_liveFileMtimes = dict()
     if dltsc.manual_livePollActive is None:
@@ -1998,7 +1922,7 @@ def _build_manualPlotFrame(parent):
     headerFrame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=4, pady=4)
     ttk.Label(headerFrame, text='Qualitative Analysis', font=('Segoe UI', 10, 'bold')).pack(side='left')
 
-    # The left column (loader config + temperature list + timing fields + execution
+    # The left column (live run + temperature list + timing fields + execution
     # action) can be taller than the available screen height on smaller windows, so
     # it is wrapped in a scrollable canvas rather than a plain fixed frame.
     leftContainer = tk.Frame(parent)
@@ -2025,15 +1949,15 @@ def _build_manualPlotFrame(parent):
     rightPanel.grid_rowconfigure(1, weight=1)
     rightPanel.grid_columnconfigure(0, weight=1)
 
-    # --- Directory Loader Config ---
-    ioGroup = tk.LabelFrame(leftPanel, text='Directory Loader Config')
-    ioGroup.pack(fill='x', pady=(0, 4))
-    dltsc.manual_selectFolderButton = ttk.Button(ioGroup, text='Select Source Folder', command=_browse_manual_folder)
-    dltsc.manual_selectFolderButton.pack(fill='x', padx=4, pady=(4, 2))
-    dltsc.manual_appendFolderButton = ttk.Button(ioGroup, text='Append Source Folder', command=_append_manual_folder)
-    dltsc.manual_appendFolderButton.pack(fill='x', padx=4, pady=(0, 2))
-    dltsc.manual_folderLabel = ttk.Label(ioGroup, text='Source: (none selected)', wraplength=220, justify='left')
-    dltsc.manual_folderLabel.pack(fill='x', padx=4, pady=(0, 4))
+    # --- Live Run (the data source: the running experiment's folder) ---
+    # Saved folders are loaded in the Quick Analysis tab's Offline Data column.
+    runGroup = tk.LabelFrame(leftPanel, text='Live Run')
+    runGroup.pack(fill='x', pady=(0, 4))
+    dltsc.manual_folderLabel = ttk.Label(runGroup, text='Run folder: (waiting for a run)',
+                                         wraplength=220, justify='left')
+    dltsc.manual_folderLabel.pack(fill='x', padx=4, pady=(4, 0))
+    ttk.Label(runGroup, text='Saved data: Quick Analysis tab.', foreground='gray',
+              wraplength=220, justify='left').pack(fill='x', padx=4, pady=(0, 4))
 
     # --- Available Temperatures Filter ---
     # Kept short (height=3) so Timing Boundaries and Execution Action below stay
@@ -2101,7 +2025,7 @@ def _build_manualPlotFrame(parent):
     dltsc.manual_ax.set_ylabel('Capacitance (pF)')
     dltsc.manual_axTemps = dltsc.manual_figure.add_subplot(1, 2, 2)
     dltsc.manual_axTemps.set_title('Temperature Trace')
-    dltsc.manual_axTemps.set_xlabel('Temperature Step')
+    dltsc.manual_axTemps.set_xlabel('Time of Measurement')
     dltsc.manual_axTemps.set_ylabel('Temperature (°C)')
     # Without this, the default subplot margins leave too little room for the
     # x-axis label on a short canvas and it gets clipped at the bottom.

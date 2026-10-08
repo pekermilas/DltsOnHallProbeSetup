@@ -105,41 +105,25 @@ livePlot_offlineDatasetSel = None
 livePlot_offlineRunToken = None
 livePlot_offlineIngestBusy = None
 
-##---------------------MANUAL/QUALITATIVE ANALYSIS-------------------------
-manual_dataDirectory = None
-# temp -> one of:
-#   file path (str)                        -- plain legacy per-temperature file
-#   ('legacy_chunk', file_path, chunk_id)   -- legacy chunked CSV (chunk_id may be None)
-#   ('zi', data_file, chunk_id)             -- Zurich Instruments chunk; data_file's
-#                                              acquisition params live in manual_ziParamsByFile
-# Explicitly tagged (rather than bare 2-tuples) so temperatures loaded from
-# different-format sources can coexist in one registry after an append.
+##---------------------MANUAL/QUALITATIVE ANALYSIS (LIVE TOOLS, LIVE RUN ONLY)-------------------------
+# temp C -> step file path of the run folder being followed (legacy per-temperature
+# entries only; see quickData_datasetRegistry for every format a saved folder can hold)
 manual_datasetRegistry = None
-manual_ziMode = None              # True/False/'mixed': format of the most recently loaded/combined data
-manual_ziParamsByFile = None      # zi data_file path -> {'gridColOffset','gridColDelta','chunkSize'};
-                                   # keyed per file so appended ZI sources keep their own acquisition params
-manual_ziDataFile = None          # most-recently-loaded ZI data file (status/back-compat display only)
-manual_ziGridColOffset = None
-manual_ziGridColDelta = None
-manual_ziChunkSize = None
-manual_sourceFolders = None       # list of folder paths combined into manual_datasetRegistry so far
 manual_samplingRate = None
 manual_processedTransients = None # temp -> {time_ms, avg_cap_pf, C_infinity, setpoint_C, stage_C, acquired_at}
 manual_paramVars = None           # dict of tk.StringVar: fp_ms, rb_ms, slice_start, slice_end
 manual_autoSliceEnd = None        # last Analysis Slice End (ms) set automatically from Reverse Bias;
                                    # while slice_end still holds it, it follows rb_ms edits
 manual_tempListbox = None
-manual_folderLabel = None
-manual_selectFolderButton = None  # 'Select Source Folder' button, disabled while a worker is running
-manual_appendFolderButton = None  # 'Append Source Folder' button, disabled while a worker is running
+manual_folderLabel = None         # 'Run folder: ...' label of the Live Run group
 manual_extractButton = None       # 'Extract & Average Transients' button, disabled while a worker is running
 manual_processingBusy = None      # True while _process_raw_transients' background worker is running
-manual_loadingBusy = None         # True while _load_manual_directory_async' background worker is running
-manual_transientExecutor = None   # persistent ProcessPoolExecutor for _process_raw_transients, so
-                                   # repeat extractions skip the child process's one-time import cold-start
+manual_transientExecutor = None   # persistent ProcessPoolExecutor for transient extraction (live frame and
+                                   # Quick Analysis loader), so repeat extractions skip the child
+                                   # process's one-time import cold-start
 manual_figure = None
 manual_ax = None                  # left axes: Averaged Capacitance Transients Profile
-manual_axTemps = None             # right axes: step temperatures (°C)
+manual_axTemps = None             # right axes: Temperature Trace (°C vs time of measurement)
 manual_canvas = None
 manual_statusLabel = None
 manual_liveFollowVar = None       # tk.BooleanVar: 'Follow live run' -- re-extract as run files are written
@@ -147,12 +131,39 @@ manual_liveRunFolder = None       # run folder the Qualitative frame adopted as 
 manual_liveFileMtimes = None      # run data file -> mtime it was last extracted at (new/rewritten = changed)
 manual_livePollActive = None      # True while the follow loop (_qualitative_live_tick) is scheduled
 
+##---------------------QUICK ANALYSIS: OFFLINE DATA (SAVED FOLDER LOADER)-------------------------
+quickData_dataDirectory = None    # most recently selected (not appended) folder; the dialogs start there
+# temp C -> one of:
+#   file path (str)                        -- plain legacy per-temperature file
+#   ('legacy_chunk', file_path, chunk_id)   -- legacy chunked CSV (chunk_id may be None)
+#   ('zi', data_file, chunk_id)             -- Zurich Instruments chunk; data_file's
+#                                              acquisition params live in quickData_ziParamsByFile
+#   ('zi_subfolder', data_file, None)       -- ZI per-temperature subfolder export
+# Explicitly tagged (rather than bare 2-tuples) so temperatures loaded from
+# different-format sources can coexist in one registry after an append.
+quickData_datasetRegistry = None
+quickData_ziParamsByFile = None   # zi data_file path -> {'gridColOffset','gridColDelta','chunkSize'};
+                                   # keyed per file so appended ZI sources keep their own acquisition params
+quickData_sourceFolders = None    # list of folder paths combined into quickData_datasetRegistry so far
+quickData_processedTransients = None  # temp -> {time_ms, avg_cap_pf, C_infinity, ...}: the 'Loaded Folder'
+                                       # Data Source of Rate Window Analysis
+quickData_paramVars = None        # dict of tk.StringVar: fp_ms, rb_ms
+quickData_tempListbox = None
+quickData_folderLabel = None
+quickData_selectFolderButton = None   # disabled while a scan/extraction is running
+quickData_appendFolderButton = None
+quickData_extractButton = None
+quickData_statusLabel = None
+quickData_loadingBusy = None      # True while _scan_quick_folder_async' background worker is running
+quickData_processingBusy = None   # True while _extract_quick_transients' background worker is running
+
 ##---------------------DATA ANALYSIS (RATE WINDOW / ARRHENIUS)-------------------------
-# Rate Window Analysis (top frame). Reads dltsc.manual_processedTransients (populated by
-# the Qualitative Analysis "Extract & Average Transients" step in the Live Tools tab)
-# rather than loading its own data, mirroring DrKayisScript.py's Tab 2 depending on Tab 1.
+# Rate Window Analysis. Reads averaged transients from its Data Source: the Offline
+# Data column's loaded folder (dltsc.quickData_processedTransients), the live run's
+# Qualitative Analysis (dltsc.manual_processedTransients), or Automated/Live Data.
 rateWindow_dataSourceVar = None   # tk.StringVar: which processed-transients source to analyze
-                                   # (Qualitative Analysis / Automated Live / Automated Offline / Auto)
+                                   # (Loaded Folder / Live Run Qualitative / Automated Live /
+                                   # Automated Offline / Auto)
 rateWindow_statusLabel = None     # shows which data source actually got used and how many temperatures
 rateWindow_signalMethodVar = None # tk.StringVar: Measured C (default) / Smoothed C
 rateWindow_denoiseVar = None      # tk.StringVar: 'None (raw)' (default) / pca / wavelet / sgolay / lowess --
@@ -343,26 +354,15 @@ def init():
     global livePlot_offlineIngestBusy
 
     ##---------------------MANUAL/QUALITATIVE ANALYSIS-------------------------
-    global manual_dataDirectory
     global manual_datasetRegistry
-    global manual_ziMode
-    global manual_ziParamsByFile
-    global manual_ziDataFile
-    global manual_ziGridColOffset
-    global manual_ziGridColDelta
-    global manual_ziChunkSize
-    global manual_sourceFolders
     global manual_samplingRate
     global manual_processedTransients
     global manual_paramVars
     global manual_autoSliceEnd
     global manual_tempListbox
     global manual_folderLabel
-    global manual_selectFolderButton
-    global manual_appendFolderButton
     global manual_extractButton
     global manual_processingBusy
-    global manual_loadingBusy
     global manual_transientExecutor
     global manual_figure
     global manual_ax
@@ -373,6 +373,22 @@ def init():
     global manual_liveRunFolder
     global manual_liveFileMtimes
     global manual_livePollActive
+
+    ##---------------------QUICK ANALYSIS: OFFLINE DATA (SAVED FOLDER LOADER)-------------------------
+    global quickData_dataDirectory
+    global quickData_datasetRegistry
+    global quickData_ziParamsByFile
+    global quickData_sourceFolders
+    global quickData_processedTransients
+    global quickData_paramVars
+    global quickData_tempListbox
+    global quickData_folderLabel
+    global quickData_selectFolderButton
+    global quickData_appendFolderButton
+    global quickData_extractButton
+    global quickData_statusLabel
+    global quickData_loadingBusy
+    global quickData_processingBusy
 
     ##---------------------DATA ANALYSIS (RATE WINDOW / ARRHENIUS)-------------------------
     global rateWindow_dataSourceVar
@@ -480,13 +496,18 @@ def init():
     livePlot_liveIngestBusy = False
     livePlot_offlineIngestBusy = False
     manual_datasetRegistry = dict()
-    manual_ziParamsByFile = dict()
-    manual_sourceFolders = list()
     manual_processedTransients = dict()
     manual_paramVars = dict()
     manual_autoSliceEnd = 490.0
     manual_liveFileMtimes = dict()
     manual_livePollActive = False
+    quickData_datasetRegistry = dict()
+    quickData_ziParamsByFile = dict()
+    quickData_sourceFolders = list()
+    quickData_processedTransients = dict()
+    quickData_paramVars = dict()
+    quickData_loadingBusy = False
+    quickData_processingBusy = False
     rateWindow_signals = dict()
     rateWindow_extractedPeaks = dict()
     detailed_data = dict()

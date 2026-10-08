@@ -151,7 +151,7 @@ Builds the `tk.Toplevel` close dialog described above. The dialog is transient t
 
 ## Startup sequence (`__main__` block)
 
-1. `multiprocessing.freeze_support()`. The Qualitative Analysis extraction (`liveDataTab._process_raw_transients`) and the Detailed Analysis tab use `ProcessPoolExecutor`. On Windows the `spawn` start method re-imports this script in each child process. The `__main__` guard stops a child from opening another GUI, and `freeze_support()` covers frozen executables.
+1. `multiprocessing.freeze_support()`. The transient extraction (`liveDataTab._extract_transients_async`, used by Qualitative Analysis and by the Quick Analysis Offline Data column) and the Detailed Analysis tab use `ProcessPoolExecutor`. On Windows the `spawn` start method re-imports this script in each child process. The `__main__` guard stops a child from opening another GUI, and `freeze_support()` covers frozen executables.
 2. Log setup, root window, window size, and notebook style.
 3. `dltsc.tabControl = ttk.Notebook(dltsc.root, padding=0)`, then each tab frame is created and its `construct_*` function is called, in the order shown in the table above.
 4. `root.protocol("WM_DELETE_WINDOW", on_closing)`, `atexit.register(_emergency_room_return)`, and the signal handlers.

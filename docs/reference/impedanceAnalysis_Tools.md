@@ -6,7 +6,7 @@ Where the GUI uses it:
 
 | GUI file | What it calls |
 |---|---|
-| `liveDataTab.py` | Live mode: `impdData(fName=[path])` + `read_data()` for the first file, then `append_data(fName=[path])` for each new step, on a worker thread; then `cleanup_data()`, `selected_emissions(emissionIndex=0)`, `filter_emissions(method=..., emissionIndex=0, recalculate=True, interactivePlot=False)`, `selected_emissions(emissionIndex=-1)`. Offline mode: the same chain after `read_data()` on the chosen files. Also `read_h5_record(filePath, keys=('AuxInput1', 'ImpedanceIm'))`. |
+| `liveDataTab.py` | Live mode: `impdData(fName=[path])` + `read_data()` for the first file, then `append_data(fName=[path])` for each new step, on a worker thread; then `cleanup_data()`, `selected_emissions(emissionIndex=0)`, `filter_emissions(method=..., emissionIndex=0, recalculate=True, interactivePlot=False)`, `selected_emissions(emissionIndex=-1)`. Offline mode: the same chain after `read_data()` on the chosen files. (Its transient extraction reads `.h5` step files with its own `_read_h5_step`, through `h5py`, not with `read_h5_record`.) |
 | `dataAnalysisTab.py` (Quick Analysis) | `impd.calculate_delC_normalized(...)` for each rate window, then `impdData._curveFit_peakFinder(...)` or `impdData._smoothingSpline_peakFinder(...)` for the peak. |
 | `detailedAnalysisTab.py` | `impdData._pca_denoise`, `_wavelet_denoise`, `_savitzkyGolay_denoise`, `_lowess_denoise` on averaged transients, and `impdData._smoothingSpline_peakFinder` for Tp. |
 | `runParamsTab.py`, `runDLTS.py` | Import the module; no live calls (comments and commented-out code only). |

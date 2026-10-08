@@ -6,7 +6,7 @@ This page covers the files in the repository that are not part of the GUI tabs o
 |---|---|
 | `runDLTS.py` | Old command-line run script. Does not work with the current `runDlts_Tools`. |
 | `DLTS_APP.py` | Standalone tkinter app "DLTS Multiwindow Analysis". Ported into the **Detailed Analysis** tab. |
-| `DrKayisScript.py` | Standalone PyQt6 app "Offline DLTS Core Transient & Defect Signature Suite". Ported into the **Qualitative Analysis** section of the Live Tools tab and the **Quick Analysis** tab. |
+| `DrKayisScript.py` | Standalone PyQt6 app "Offline DLTS Core Transient & Defect Signature Suite". Ported into the **Quick Analysis** tab (Offline Data, rate windows, Arrhenius) and the **Qualitative Analysis** section of the Live Tools tab. |
 | `scrapwork.py` | Scratch script for trying MFIA DAQ acquisitions. Talks to the instrument when run. |
 | `postprocessingTab.py` | Empty file (0 bytes). Placeholder; imported by nothing. |
 | `tests/` | pytest test suite (no hardware needed). |
@@ -150,11 +150,11 @@ Input defaults:
 
 | DrKayisScript.py tab | Ported to |
 |---|---|
-| 1. Transient Extraction | Qualitative Analysis in the **Live Tools** tab (`liveDataTab.py`: `_compute_zi_dataset`, `_compute_legacy_dataset`, `_compute_zi_transients`, `_compute_legacy_transients`, `_LEGACY_FILENAME_PATTERN`) |
+| 1. Transient Extraction | Code in `liveDataTab.py` (`_scan_folder`, `_compute_zi_dataset`, `_compute_legacy_dataset`, `_compute_zi_transients`, `_compute_legacy_transients`, `_LEGACY_FILENAME_PATTERN`). Used for saved folders by the Offline Data column of the **Quick Analysis** tab, and for the running experiment by Qualitative Analysis in the **Live Tools** tab |
 | 2. Rate Window Analysis | **Quick Analysis** tab (`dataAnalysisTab.py`) |
 | 3. Arrhenius Defect Mapping | **Quick Analysis** tab (`dataAnalysisTab.py`) |
 
-The ports changed some things, as noted in their source comments. For example, Qualitative Analysis finds fill pulses with a threshold midway between the file's two excitation levels instead of the fixed -2.5 V used here, also reads `.h5` step files and a subfolder-per-temperature ZI export, and runs off the GUI thread. Quick Analysis makes the capture-cross-section prefactor a user input (fixed here at the silicon value `3.256e21`) and uses lmfit instead of `scipy.optimize.curve_fit`.
+The ports changed some things, as noted in their source comments. For example, the transient extraction finds fill pulses with a threshold midway between the file's two excitation levels instead of the fixed -2.5 V used here, also reads `.h5` step files and a subfolder-per-temperature ZI export, and runs off the GUI thread. Quick Analysis makes the capture-cross-section prefactor a user input (fixed here at the silicon value `3.256e21`) and uses lmfit instead of `scipy.optimize.curve_fit`.
 
 ### How to launch
 

@@ -48,8 +48,8 @@ The window opens maximized with four tabs:
 | Tab | What it is for | Reference |
 |---|---|---|
 | Input Parameters | MFIA, temperature and output settings; connect and push them to the instruments; export an HDF5 step to text | [runParamsTab](reference/runParamsTab.md) |
-| Live Tools | Run DLTS, pause/resume/redo/retake steps, watch the data come in, load a finished run, Qualitative Analysis (extract and average transients) | [liveDataTab](reference/liveDataTab.md) |
-| Quick Analysis | Five rate windows, DLTS spectra and an Arrhenius fit | [dataAnalysisTab](reference/dataAnalysisTab.md) |
+| Live Tools | Run DLTS, pause/resume/redo/retake steps, watch the data come in, load a finished run, Qualitative Analysis (averaged transients and temperature trace of the running experiment) | [liveDataTab](reference/liveDataTab.md) |
+| Quick Analysis | Offline Data (load a saved folder, extract and average transients), five rate windows, DLTS spectra and an Arrhenius fit | [dataAnalysisTab](reference/dataAnalysisTab.md) |
 | Detailed Analysis | Many rate windows, bootstrap peak errors, weighted Arrhenius fit, transient and rate-window maps | [detailedAnalysisTab](reference/detailedAnalysisTab.md) |
 
 Closing the window always returns the stage to the Room Temperature set on the Input
