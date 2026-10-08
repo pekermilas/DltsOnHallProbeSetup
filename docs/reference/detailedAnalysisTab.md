@@ -810,7 +810,7 @@ Builds the Results text shown above and writes it into `dltsc.detailed_resultsTe
 ## Notes and limitations
 
 - The **ZI MFIA GRID** fields `Grid offset (s)`, `Grid dt (s)` and `Chunk size` have no effect. `_load_detailed_data` accepts them as `grid_off`, `grid_dt`, `chunk_size` and never uses them; ZI grid values come from each header CSV (or `liveDataTab` defaults).
-- Legacy `.txt`/`.h5` files use a hard-coded sampling interval `samplingRateS=1.8666666666666665e-05` s. A run recorded at another rate gets a wrong time axis and wrong e_n.
+- Legacy `.txt`/`.h5` files use each file's own `timeStampImps` spacing as the sampling interval; `samplingRateS=1.8666666666666665e-05` s is only the fallback for files without usable time stamps.
 - `.json` run files are not loaded (the legacy filename pattern accepts `.txt`, `.csv`, `.h5` only), and the loader returns no error message for them.
 - **C₀ Estimation Window** and **RB duration (ms)** are applied at load time for C∞. Changing them without reloading only changes the N_T reference time and the transient-map range.
 - The legacy `.h5`/`.txt` extractor multiplies `ImpedanceIm` by 1e12 unconditionally. On the HDF5 test run this gives values near 5e6 "pF", so the stored channel is not a capacitance in F. S = ΔC/C∞ is a ratio and is unaffected by the scale, but the pF label is not meaningful there.

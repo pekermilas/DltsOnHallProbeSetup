@@ -164,7 +164,13 @@ def test_extract_and_average_gives_identical_transients(long_run_folders):
 
     assert txtErrors == [] and h5Errors == []
     assert sorted(fromH5) == TEMPS
-    assert_same(fromTxt, fromH5)
+    # The acquisition time comes from the .h5 attribute or the JSON file's
+    # mtime, and only .h5 stores the measured stage temperature (both feed the
+    # temperature trace); the transients themselves match.
+    stepKeys = ('acquired_at', 'stage_C')
+    assert all(fromH5[T]['acquired_at'] and fromTxt[T]['acquired_at'] for T in TEMPS)
+    strip = lambda d: {T: {k: v for k, v in rec.items() if k not in stepKeys} for T, rec in d.items()}
+    assert_same(strip(fromTxt), strip(fromH5))
 
 
 def test_detailed_analysis_load_gives_identical_data(long_run_folders):

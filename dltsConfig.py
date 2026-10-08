@@ -124,8 +124,10 @@ manual_ziGridColDelta = None
 manual_ziChunkSize = None
 manual_sourceFolders = None       # list of folder paths combined into manual_datasetRegistry so far
 manual_samplingRate = None
-manual_processedTransients = None # temp -> {time_ms, avg_cap_pf, C_infinity}
+manual_processedTransients = None # temp -> {time_ms, avg_cap_pf, C_infinity, setpoint_C, stage_C, acquired_at}
 manual_paramVars = None           # dict of tk.StringVar: fp_ms, rb_ms, slice_start, slice_end
+manual_autoSliceEnd = None        # last Analysis Slice End (ms) set automatically from Reverse Bias;
+                                   # while slice_end still holds it, it follows rb_ms edits
 manual_tempListbox = None
 manual_folderLabel = None
 manual_selectFolderButton = None  # 'Select Source Folder' button, disabled while a worker is running
@@ -136,7 +138,8 @@ manual_loadingBusy = None         # True while _load_manual_directory_async' bac
 manual_transientExecutor = None   # persistent ProcessPoolExecutor for _process_raw_transients, so
                                    # repeat extractions skip the child process's one-time import cold-start
 manual_figure = None
-manual_ax = None
+manual_ax = None                  # left axes: Averaged Capacitance Transients Profile
+manual_axTemps = None             # right axes: step temperatures (°C)
 manual_canvas = None
 manual_statusLabel = None
 manual_liveFollowVar = None       # tk.BooleanVar: 'Follow live run' -- re-extract as run files are written
@@ -352,6 +355,7 @@ def init():
     global manual_samplingRate
     global manual_processedTransients
     global manual_paramVars
+    global manual_autoSliceEnd
     global manual_tempListbox
     global manual_folderLabel
     global manual_selectFolderButton
@@ -362,6 +366,7 @@ def init():
     global manual_transientExecutor
     global manual_figure
     global manual_ax
+    global manual_axTemps
     global manual_canvas
     global manual_statusLabel
     global manual_liveFollowVar
@@ -479,6 +484,7 @@ def init():
     manual_sourceFolders = list()
     manual_processedTransients = dict()
     manual_paramVars = dict()
+    manual_autoSliceEnd = 490.0
     manual_liveFileMtimes = dict()
     manual_livePollActive = False
     rateWindow_signals = dict()

@@ -11,7 +11,9 @@ from tkinter import filedialog
 
 import numpy as np
 import pandas as pd
+import h5py
 import matplotlib
+import matplotlib.ticker
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -1021,7 +1023,7 @@ def _scan_manual_directory_async(dir_path, isAppend, onDone=None):
                         dltsc.manual_paramVars['fp_ms'].set(ziInfo['fpMs'])
                     if ziInfo.get('rbMs') is not None:
                         dltsc.manual_paramVars['rb_ms'].set(ziInfo['rbMs'])
-                        dltsc.manual_paramVars['slice_end'].set(ziInfo['sliceEnd'])
+                        _set_auto_slice_end(float(ziInfo['rbMs']))
             elif ziSubfolderParams:
                 # One params entry per temperature's own file (each subfolder
                 # carries its own header CSV) rather than a single shared one.
@@ -1040,12 +1042,12 @@ def _scan_manual_directory_async(dir_path, isAppend, onDone=None):
                     if rb_match:
                         rb_ms = float(rb_match.group(1))
                         dltsc.manual_paramVars['rb_ms'].set(str(rb_ms))
-                        dltsc.manual_paramVars['slice_end'].set(str(rb_ms * 0.98))
+                        _set_auto_slice_end(rb_ms)
             elif legacyTiming and not isAppend:
                 fpMs, rbMs = legacyTiming
                 dltsc.manual_paramVars['fp_ms'].set(f"{fpMs:g}")
                 dltsc.manual_paramVars['rb_ms'].set(f"{rbMs:g}")
-                dltsc.manual_paramVars['slice_end'].set(f"{rbMs * 0.98:g}")
+                _set_auto_slice_end(rbMs)
                 dltsc.log_to_textbox(f"Manual analysis: Timing Boundaries set from runParams.txt "
                                      f"(fill {fpMs:g} ms, reverse bias {rbMs:g} ms).")
 
@@ -1514,7 +1516,9 @@ def _process_raw_transients():
             # the color bar took once tight_layout has run, so every redraw with
             # a color bar shrank the plot further in x.
             dltsc.manual_figure.clear()
-            dltsc.manual_ax = dltsc.manual_figure.add_subplot(1, 1, 1)
+            dltsc.manual_ax = dltsc.manual_figure.add_subplot(1, 2, 1)
+            dltsc.manual_axTemps = dltsc.manual_figure.add_subplot(1, 2, 2)
+            _draw_qualitative_temperatures(dltsc.manual_axTemps, processedTransients)
             scale, unit = _capacitance_axis_units([rec['avg_cap_pf'] for rec in processedTransients.values()])
             sliceLo, sliceHi = _plot_slice_ms()
             temps = sorted(processedTransients.keys())
@@ -1563,7 +1567,7 @@ def _process_raw_transients():
                 # overlap-search over every plotted point, which is otherwise a
                 # further main-thread rendering cost right when results land.
                 dltsc.manual_ax.legend(loc='upper right')
-            dltsc.manual_figure.tight_layout(pad=2.0)
+            dltsc.manual_figure.tight_layout(pad=2.0, w_pad=3.0)
             dltsc.manual_canvas.draw()
             # Reset the toolbar's view history so Home/Back return to this
             # plot's range, not the first extraction's (or a stale zoom).
@@ -1782,6 +1786,7 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
     executionErrors = []
     for temp in sorted(selectedTemps):
         targetSource = datasetRegistry[temp]
+        stepAttrs = {}
         try:
             if isinstance(targetSource, tuple) and targetSource[0] == 'legacy_chunk':
                 _, filePath, chunkId = targetSource
@@ -1808,20 +1813,28 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
 
                 if ext in ('.txt', '.h5'):
                     if ext == '.h5':
-                        # Only the two channels used here, not all eight.
-                        data = iaT.read_h5_record(filePath, keys=('AuxInput1', 'ImpedanceIm'))
+                        # Only the channels used here, not all eight.
+                        data, stepAttrs = _read_h5_step(filePath)
                     else:
                         with open(filePath, 'r') as f:
                             data = json.load(f)
+                        # JSON stores no acquisition time; the file is written
+                        # once per step (again on a Redo), so its mtime is it.
+                        stepAttrs = {'acquired_at': time.strftime(
+                            '%Y-%m-%dT%H:%M:%S', time.localtime(os.path.getmtime(filePath)))}
                     auxV = np.array(data['AuxInput1'], dtype=np.float32)
                     rawCap = np.array(data['ImpedanceIm'], dtype=np.float32) * 1e12
+                    # The file's own sample interval: a run with another Data
+                    # Transfer Rate (e.g. a slower rate for a long reverse bias)
+                    # otherwise gets a wrong window length and time axis.
+                    dtS = _sample_interval_s(data.get('timeStampImps'), samplingRateS)
 
                     fallingTriggers, pulseMsg = _find_reverse_bias_starts(auxV)
                     if pulseMsg:
                         executionErrors.append(f"{temp}°C: {pulseMsg}")
                         continue
 
-                    cycleLen = int((rbDurationMs * 1e-3) / samplingRateS)
+                    cycleLen = int((rbDurationMs * 1e-3) / dtS)
                     validBlocks = [rawCap[trig:trig + cycleLen]
                                   for trig in fallingTriggers
                                   if trig + cycleLen <= len(rawCap)]
@@ -1829,10 +1842,10 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
                         executionErrors.append(
                             f"{temp}°C: found {len(fallingTriggers)} fill pulse(s), but none is followed by a full "
                             f"{rbDurationMs:g} ms reverse-bias window before the data ends "
-                            f"({len(rawCap) * samplingRateS * 1e3:.0f} ms recorded); lower Reverse Bias (ms).")
+                            f"({len(rawCap) * dtS * 1e3:.0f} ms recorded); lower Reverse Bias (ms).")
                         continue
                     avgCurve = np.mean(np.array(validBlocks), axis=0)
-                    timeAxisMs = np.arange(len(avgCurve)) * samplingRateS * 1000
+                    timeAxisMs = np.arange(len(avgCurve)) * dtS * 1000
 
                 elif ext == '.csv':
                     df = pd.read_csv(filePath)
@@ -1849,13 +1862,118 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
             processedTransients[temp] = {
                 'time_ms': timeAxisMs,
                 'avg_cap_pf': avgCurve,
-                'C_infinity': cInfinity
+                'C_infinity': cInfinity,
+                'setpoint_C': stepAttrs.get('setpoint_C', temp),
+                'stage_C': stepAttrs.get('stage_C', np.nan),
+                'acquired_at': stepAttrs.get('acquired_at'),
             }
 
         except Exception as exc:
             executionErrors.append(f"{temp}°C: {exc}")
 
     return processedTransients, executionErrors
+
+def _sample_interval_s(timeStamps, fallbackS):
+    """Sample interval (s) from a step file's time stamps (median spacing), or
+    fallbackS when the file has none or they are not usable."""
+    if timeStamps is None:
+        return fallbackS
+    t = np.asarray(timeStamps, dtype=np.float64)
+    if t.size < 2:
+        return fallbackS
+    steps = np.diff(t)
+    steps = steps[np.isfinite(steps) & (steps > 0)]
+    if steps.size == 0:
+        return fallbackS
+    return float(np.median(steps))
+
+def _read_h5_step(filePath):
+    """(channels, attrs) of one .h5 step file: the AuxInput1, ImpedanceIm and
+    timeStampImps channels, and its setpoint / measured stage temperature (°C)
+    and acquisition time. A missing channel or attribute is left out."""
+    data = {}
+    attrs = {}
+    with h5py.File(filePath, 'r') as f:
+        for key in ('AuxInput1', 'ImpedanceIm', 'timeStampImps'):
+            if key in f:
+                data[key] = f[key][()]
+        for attrName, key in (('setpoint_C', 'setpoint_C'), ('stage_temperature_C', 'stage_C')):
+            try:
+                value = float(f.attrs[attrName])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if np.isfinite(value):
+                attrs[key] = value
+        acquiredAt = f.attrs.get('acquired_at')
+        if acquiredAt is not None:
+            attrs['acquired_at'] = acquiredAt.decode() if isinstance(acquiredAt, bytes) else str(acquiredAt)
+    for key in ('AuxInput1', 'ImpedanceIm'):
+        if key not in data:
+            raise KeyError(f"'{key}' channel missing from {os.path.basename(filePath)}")
+    return data, attrs
+
+def _draw_qualitative_temperatures(ax, processedTransients):
+    """Right Qualitative plot: the temperature trace of the data so far, one
+    filled circle per extracted step joined by line segments, in the order the
+    steps were acquired, so the last point is the latest temperature. Each
+    point is the measured stage temperature when the file stores it (.h5) and
+    the setpoint otherwise. Redrawn on every extraction, so during a run
+    followed live it grows by one point per finished step."""
+    # (temperature, acquired_at) per step; the transient's key is its setpoint
+    # in °C for every source format.
+    recs = []
+    for temp, rec in processedTransients.items():
+        stageC = rec.get('stage_C', np.nan)
+        tempC = stageC if np.isfinite(stageC) else rec.get('setpoint_C', temp)
+        recs.append((tempC, rec.get('acquired_at'), temp))
+    if recs and all(r[1] for r in recs):
+        recs.sort(key=lambda r: r[1])
+    else:
+        recs.sort(key=lambda r: r[2])
+    steps = np.arange(1, len(recs) + 1)
+    temps = np.array([r[0] for r in recs], dtype=float)
+
+    if len(recs):
+        ax.plot(steps, temps, 'o-', color='tab:red', markersize=6, linewidth=1.5)
+        ax.annotate(f"Latest: {temps[-1]:.2f} °C", xy=(steps[-1], temps[-1]),
+                    xytext=(-6, 8), textcoords='offset points', ha='right', fontsize=9)
+        # Room above the last point for its label, and whole step numbers only.
+        ax.margins(x=0.1, y=0.15)
+        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    else:
+        ax.text(0.5, 0.5, "No temperature steps extracted.", ha='center', va='center',
+                transform=ax.transAxes, color='gray')
+    ax.set_xlabel("Temperature Step")
+    ax.set_ylabel("Temperature (°C)")
+    ax.ticklabel_format(axis='y', useOffset=False, style='plain')
+    ax.set_title("Temperature Trace")
+    ax.grid(True, linestyle=":")
+
+def _sync_slice_end_to_rb(*_):
+    """Keep Analysis Slice End at 98% of Reverse Bias while it still holds the
+    value last set automatically. Without this, typing a Reverse Bias above
+    500 ms left the 490 ms default in place and the plot stopped at 490 ms. A
+    slice end the user typed themselves is left alone."""
+    try:
+        rbMs = float(dltsc.manual_paramVars['rb_ms'].get())
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return
+    if rbMs <= 0:
+        return
+    try:
+        current = float(dltsc.manual_paramVars['slice_end'].get())
+    except (TypeError, ValueError):
+        current = None
+    if current is not None and (dltsc.manual_autoSliceEnd is None
+                                or not np.isclose(current, dltsc.manual_autoSliceEnd)):
+        return
+    _set_auto_slice_end(rbMs)
+
+def _set_auto_slice_end(rbMs):
+    """Set Analysis Slice End to 98% of the reverse bias and remember it as the
+    automatic value (see _sync_slice_end_to_rb)."""
+    dltsc.manual_autoSliceEnd = rbMs * 0.98
+    dltsc.manual_paramVars['slice_end'].set(f"{dltsc.manual_autoSliceEnd:g}")
 
 def _build_manualPlotFrame(parent):
     # dltsConfig.init() (which would normally seed these as dicts/False) is not called
@@ -1958,6 +2076,8 @@ def _build_manualPlotFrame(parent):
         ttk.Entry(paramGroup, textvariable=dltsc.manual_paramVars[key], width=10).grid(
             row=row, column=1, sticky='ew', padx=4, pady=1)
     paramGroup.grid_columnconfigure(1, weight=1)
+    dltsc.manual_autoSliceEnd = float(dltsc.manual_paramVars['slice_end'].get())
+    dltsc.manual_paramVars['rb_ms'].trace_add('write', _sync_slice_end_to_rb)
 
     # --- Execution Action ---
     execGroup = tk.LabelFrame(leftPanel, text='Execution Action')
@@ -1972,14 +2092,20 @@ def _build_manualPlotFrame(parent):
     dltsc.manual_statusLabel.pack(fill='x', padx=4, pady=(0, 4))
 
     # --- Plot area (embedded, no popup window) ---
-    dltsc.manual_figure = Figure(figsize=(6, 5), dpi=100)
-    dltsc.manual_ax = dltsc.manual_figure.add_subplot(1, 1, 1)
+    # Side by side like the Automated / Live Data frame: transients on the
+    # left, step temperatures on the right.
+    dltsc.manual_figure = Figure(figsize=(10, 4), dpi=100)
+    dltsc.manual_ax = dltsc.manual_figure.add_subplot(1, 2, 1)
     dltsc.manual_ax.set_title('Averaged Capacitance Transients Profile')
     dltsc.manual_ax.set_xlabel('Time from Reverse Bias Start (ms)')
     dltsc.manual_ax.set_ylabel('Capacitance (pF)')
+    dltsc.manual_axTemps = dltsc.manual_figure.add_subplot(1, 2, 2)
+    dltsc.manual_axTemps.set_title('Temperature Trace')
+    dltsc.manual_axTemps.set_xlabel('Temperature Step')
+    dltsc.manual_axTemps.set_ylabel('Temperature (°C)')
     # Without this, the default subplot margins leave too little room for the
     # x-axis label on a short canvas and it gets clipped at the bottom.
-    dltsc.manual_figure.tight_layout(pad=2.0)
+    dltsc.manual_figure.tight_layout(pad=2.0, w_pad=3.0)
 
     dltsc.manual_canvas = FigureCanvasTkAgg(dltsc.manual_figure, master=rightPanel)
     toolbar = NavigationToolbar2Tk(dltsc.manual_canvas, rightPanel, pack_toolbar=False)

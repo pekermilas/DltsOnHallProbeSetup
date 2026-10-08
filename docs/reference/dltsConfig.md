@@ -163,7 +163,9 @@ A function name followed by "(callback)" means a nested function inside it (usua
 | `manual_loadingBusy` | `None` | `ldT._build_manualPlotFrame`, `ldT._scan_manual_directory_async` | `ldT._browse_manual_folder`, `ldT._append_manual_folder`, `ldT._process_raw_transients`, `ldT._scan_manual_directory_async` | `True` while the folder-scan worker runs. |
 | `manual_transientExecutor` | `None` | `ldT._get_transient_executor` | `ldT._get_transient_executor`, `main._finish_close` (shutdown) | Persistent `ProcessPoolExecutor` for transient extraction. |
 | `manual_figure` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Qualitative Analysis figure. |
-| `manual_ax` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Its axes. |
+| `manual_ax` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Left axes: Averaged Capacitance Transients Profile. |
+| `manual_axTemps` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Right axes: Temperature Trace, one point (°C) per extracted step in acquisition order, last point labeled as the latest. |
+| `manual_autoSliceEnd` | `None` (`490.0` after `init()`) | `ldT._build_manualPlotFrame`, `ldT._set_auto_slice_end` | `ldT._sync_slice_end_to_rb` | Last Analysis Slice End (ms) set automatically; while the field still holds it, it follows Reverse Bias (98%). |
 | `manual_canvas` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients` (callback) | Its Tk canvas. |
 | `manual_statusLabel` | `None` | `ldT._build_manualPlotFrame` | `ldT._process_raw_transients`, `ldT._scan_manual_directory_async` | Status label. |
 
@@ -420,7 +422,7 @@ The module has no `_name` functions.
 - The GUI never calls `init()`. Flags such as `run_busy`, `run_abortRequested` and `app_closing` start as `None` and work only because `None` is falsy; `livePlot_liveRunToken` and similar are guarded with `or 0` in `liveDataTab`.
 - `init()` does not declare `d_params_for_push` as `global` and does not reset it (it is unused anyway).
 - Unused globals: `sourcePrefixSelection`, `d_params_for_push`, `root_data_folder`, `run_stepStatus`. Written but never read: `run_dataFolder`, `run_outputFileType`, `run_paused`, `rateWindow_denoisedEmissions`, `manual_ziDataFile`, `manual_ziGridColOffset`, `manual_ziGridColDelta`, `manual_ziChunkSize`, `detailed_lastResMw`, `detailed_lastResStd`, `detailed_lastNt`, `postprocessingTab`.
-- `manual_samplingRate` is read but never set, so `liveDataTab` always uses its fallback of 1.8666666666666665e-05 s.
+- `manual_samplingRate` is read but never set, so `liveDataTab` uses its fallback of 1.8666666666666665e-05 s whenever a step file has no usable `timeStampImps`.
 - `detailedProcessingBusy` breaks the `detailed_` naming pattern.
 - `log_to_textbox()` updates Tk widgets from worker threads, which Tkinter does not guarantee to be safe.
 - The log keeps only 10 lines in the GUI (`maxTextLineCount = 10`).

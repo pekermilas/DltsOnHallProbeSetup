@@ -153,7 +153,7 @@ Fixed values inside functions:
 
 | Where | Value | Meaning |
 |---|---|---|
-| `_process_raw_transients` | `samplingRateS = dltsc.manual_samplingRate or 1.8666666666666665e-05` | Sample period (s) for legacy files, about 53.57 kSa/s. `dltsc.manual_samplingRate` is never set anywhere, so the fixed value is always used. |
+| `_process_raw_transients` | `samplingRateS = dltsc.manual_samplingRate or 1.8666666666666665e-05` | Fallback sample period (s) for legacy files, about 53.57 kSa/s. `.txt`/`.h5` step files use their own `timeStampImps` spacing instead; `dltsc.manual_samplingRate` is never set anywhere. |
 | `_process_raw_transients` | `cInfTargetMs = 0.90 * rb_ms` | Time at which `C_infinity` is read. |
 | ZI defaults | `gridColOffset = -0.001` s, `gridColDelta = 1.86667e-05` s, `chunkSize = 32768` | Used when a ZI header CSV is missing or unreadable. |
 | `_compute_legacy_dataset` | chunk map `{0: 120.0, 1: 125.0, ..., 8: 160.0}` | Temperatures assigned to chunks of a multi-chunk legacy CSV. |
@@ -677,7 +677,7 @@ Seeds `manual_processedTransients`, `manual_processingBusy`, and `manual_loading
 ## Notes and limitations
 
 - **NaNs in `AuxInput1`** no longer shift the pulse windows: `[nan, 0, 0, -5, -5, -5, 0, -5, -5]` gives `[2, 6]` (fixed after this page was first written; covered by `tests/test_transient_extraction.py`).
-- **Fixed sample period.** Legacy extraction always uses 1.8666666666666665e-05 s (about 53.57 kSa/s), because `dltsc.manual_samplingRate` is never set. If the MFIA delivered a different rate, for example after changing **Data Transfer Rate**, the legacy time axis and the reverse-bias window length are wrong.
+- **Sample period.** Legacy `.txt`/`.h5` extraction takes the sample period from each file's `timeStampImps` (median spacing, `_sample_interval_s`), so a run at another **Data Transfer Rate** gets the right window length and time axis. Only files without usable time stamps, and chunked CSVs, fall back to 1.8666666666666665e-05 s (about 53.57 kSa/s).
 - **Timing Boundaries.** Only **Reverse Bias (ms)** affects extraction. **Analysis Slice Start/End (ms)** window the Qualitative plot only; **Filling Duration (ms)** is display only.
 - `runParams.txt` is written only when a main sequence completes. A paused, failed, or closed-early run folder has none, so the Timing Boundaries keep their previous values for it.
 - **Folder-name timing regex.** The ZI `FP`/`RB` patterns need at least one character between `FP`/`RB` and the number. `FP_1ms_RB_500ms` gives 1 and 500 ms. `FP1ms_RB500ms` gives FP = 500 and RB = 00. `FP10ms` gives FP = 0.
