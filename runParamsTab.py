@@ -1,5 +1,6 @@
 import tkinter as tk
 import os
+import re
 import sys
 import time
 import copy
@@ -431,14 +432,14 @@ def construct_runParamsTab():
     # lay out parameters starting at row 2 below impedance inputs
 
     dltsc.z_param_inputField = dict()
-    for i in range(len(z_param_list)):
-        variable_name = list(z_param_list)[i]
-        dltsc.z_param_inputField[variable_name] = None
 
-    for idx, (pname, pdef) in enumerate(z_param_list):
+    for idx, (plabel, pdef) in enumerate(z_param_list):
+        # Labels carry units for display only; ziDevice.params, recast_param_type
+        # and param_options are keyed by the bare name, e.g. 'Oscillation Amplitude'.
+        pname = re.sub(r'\s*\([^)]*\)$', '', plabel)
         r = idx
         c = 0
-        lbl = ttk.Label(runParamsFrame, text=pname, style=style_names['blue']['label'])
+        lbl = ttk.Label(runParamsFrame, text=plabel, style=style_names['blue']['label'])
         lbl.grid(row=r, column=c, sticky='w', padx=4, pady=2)
         var = tk.StringVar(value=pdef)
         # if parameter has a set of known options, use a Combobox dropdown
