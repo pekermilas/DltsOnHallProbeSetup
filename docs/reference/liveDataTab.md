@@ -707,9 +707,9 @@ It splits the selection into `ziTemps`, `ziSubfolderTemps`, and `legacyTemps` by
 
 **Extract & Average Transients** handler of the Qualitative frame; the follow loop calls it too. It returns silently if the registry is empty or a worker is busy. It logs an error if no temperature is selected or **Reverse Bias (ms)** is not numeric. Otherwise it sets `manual_processingBusy`, disables the button, and calls `_extract_transients_async(manual_datasetRegistry, selectedTemps, rbMs, {}, apply)`. `apply()` on the Tk thread stores `manual_processedTransients`, rebuilds the figure (left axes `manual_ax`, right axes `manual_axTemps`), draws both plots, logs each error, and sets the status.
 
-#### _draw_qualitative_temperatures(ax, processedTransients)
+#### _draw_qualitative_temperatures(ax, processedTransients, startTime=None)
 
-Draws the **Temperature Trace** into `ax`, as described under "Qualitative Analysis (bottom pane)". A step whose `acquired_at` is missing or not an ISO date-time is left out.
+Draws the **Temperature Trace** into `ax`, as described under "Qualitative Analysis (bottom pane)". A step whose `acquired_at` is missing or not an ISO date-time is left out. When `startTime` (a `datetime`; `_process_raw_transients` passes `dltsc.run_startTime` for the followed run) is given, the time axis starts there instead of at the first step's measurement time.
 
 #### _sample_interval_s(timeStamps, fallbackS) and _read_h5_step(filePath)
 

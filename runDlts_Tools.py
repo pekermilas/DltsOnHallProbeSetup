@@ -221,6 +221,7 @@ class dltsRun:
             # Publish this run's file manifest so liveDataTab.py can watch for
             # each temperature's file without reaching into this instance.
             dltsc.run_dataFolder = self.dataFolder
+            dltsc.run_startTime = timeAndDate
             dltsc.run_dataFileNames = list(self.dataFileNames)
             dltsc.run_outputFileType = self.runOutputFileType
 

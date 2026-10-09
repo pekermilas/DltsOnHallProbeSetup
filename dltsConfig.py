@@ -71,6 +71,7 @@ app_closeNowRequested = None # True when "Close now" was clicked: stop waiting, 
 
 ##---------------------RUN FILE WATCH-------------------------
 run_dataFolder = None
+run_startTime = None         # datetime the run started (its folder's MMDDYY\HHMMSS); left end of the Temperature Trace
 run_dataFileNames = None
 run_outputFileType = None
 
@@ -324,6 +325,7 @@ def init():
 
     ##---------------------RUN FILE WATCH-------------------------
     global run_dataFolder
+    global run_startTime
     global run_dataFileNames
     global run_outputFileType
 

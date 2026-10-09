@@ -12,13 +12,37 @@ Const ICON_NAME = "Simpleicons-Team-Simple-Crystal.ico"
 Const DEFAULT_REPO = "%USERPROFILE%\Documents\GitHub\DltsOnHallProbeSetup"
 Const MAX_SCAN_DEPTH = 4
 
-Dim oShell, oFSO
+Dim oShell, oFSO, strLock, bHaveLock
 Set oShell = CreateObject("Wscript.Shell")
 Set oFSO = CreateObject("Scripting.FileSystemObject")
+
+' Held by a launcher from its start until DLTSGUI.bat is running, so that of
+' two launchers started together only the later one asks (only one can create
+' the file). Left behind by a launcher that died, it is taken over.
+strLock = oShell.ExpandEnvironmentStrings("%TEMP%") & "\DLTSGUI.launch.lock"
+bHaveLock = TryLock()
+If Not bHaveLock And CountLaunchers() <= 1 Then
+    On Error Resume Next
+    oFSO.DeleteFile strLock, True
+    On Error GoTo 0
+    bHaveLock = TryLock()
+End If
+
+' A GUI that is still starting (conda activation, imports) shows no window for
+' a while, so a second click is easy. Ask before starting another one.
+If Not bHaveLock Or IsGuiRunning() Then
+    If MsgBox("A DLTS GUI is already running or still starting up." & vbCrLf & vbCrLf & _
+              "Do you want to start another instance?", _
+              vbYesNo + vbQuestion + vbDefaultButton2 + vbSystemModal, "DLTS GUI") <> vbYes Then
+        ReleaseLock
+        WScript.Quit 0
+    End If
+End If
 
 Dim strRepo
 strRepo = FindRepo()
 If strRepo = "" Then
+    ReleaseLock
     MsgBox "Could not find the " & REPO_NAME & " folder containing " & MAIN_PY & ".", _
            vbExclamation, "DLTS GUI"
     WScript.Quit 1
@@ -28,7 +52,62 @@ UpdateShortcut strRepo
 
 oShell.CurrentDirectory = strRepo
 oShell.Run "cmd /c """"" & strRepo & "\" & BAT_NAME & """ """ & strRepo & """""", 0, False
+' From here on IsGuiRunning sees the cmd/python process instead of the lock.
+ReleaseLock
 
+
+Function TryLock()
+    ' CreateTextFile without overwrite fails if the file exists, so only one
+    ' launcher gets it.
+    On Error Resume Next
+    oFSO.CreateTextFile(strLock, False).Close
+    TryLock = (Err.Number = 0)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Sub ReleaseLock()
+    If Not bHaveLock Then Exit Sub
+    On Error Resume Next
+    oFSO.DeleteFile strLock, True
+    On Error GoTo 0
+    bHaveLock = False
+End Sub
+
+Function CountLaunchers()
+    ' Running copies of this .vbs, this one included.
+    Dim oWMI, oProc
+    CountLaunchers = 0
+    On Error Resume Next
+    Set oWMI = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
+    If Err.Number <> 0 Then Err.Clear : Exit Function
+    For Each oProc In oWMI.ExecQuery("SELECT CommandLine FROM Win32_Process WHERE " & _
+            "Name='wscript.exe' OR Name='cscript.exe'")
+        If InStr(LCase(oProc.CommandLine & ""), LCase(VBS_NAME)) > 0 Then CountLaunchers = CountLaunchers + 1
+    Next
+    On Error GoTo 0
+End Function
+
+Function IsGuiRunning()
+    ' True if a python process runs MAIN_PY, or a cmd process runs BAT_NAME
+    ' (the GUI between launch and python start).
+    Dim oWMI, oProc, cmdLine
+    IsGuiRunning = False
+    On Error Resume Next
+    Set oWMI = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
+    If Err.Number <> 0 Then Err.Clear : Exit Function
+    For Each oProc In oWMI.ExecQuery("SELECT Name, CommandLine FROM Win32_Process WHERE " & _
+            "Name='python.exe' OR Name='pythonw.exe' OR Name='cmd.exe'")
+        cmdLine = LCase(oProc.CommandLine & "")
+        Select Case LCase(oProc.Name)
+            Case "python.exe", "pythonw.exe"
+                If InStr(cmdLine, LCase(MAIN_PY)) > 0 Then IsGuiRunning = True
+            Case "cmd.exe"
+                If InStr(cmdLine, LCase(BAT_NAME)) > 0 Then IsGuiRunning = True
+        End Select
+    Next
+    On Error GoTo 0
+End Function
 
 Function IsRepo(p)
     IsRepo = False

@@ -106,6 +106,7 @@ A function name followed by "(callback)" means a nested function inside it (usua
 | Name | Initial / `init()` | Set by | Read by | Meaning |
 |---|---|---|---|---|
 | `run_dataFolder` | `None` | `rdT.init_experiment` | `ldT._qualitative_live_update` | Folder of the current run (ends with `\`); the Qualitative Analysis frame adopts it. |
+| `run_startTime` | `None` | `rdT.init_experiment` | `ldT._process_raw_transients` | `datetime` the current run started (the time in its folder name); left end of the Temperature Trace time axis. |
 | `run_dataFileNames` | `None` / `[]` | `rdT.init_experiment` | `ldT._schedule_live_poll`, `hw` (`hw_run.live_worker`) | One file path per grid step; the live watcher waits for each to exist. |
 | `run_outputFileType` | `None` | `rdT.init_experiment` | nothing | Lower-cased Data File Format of the current run. |
 

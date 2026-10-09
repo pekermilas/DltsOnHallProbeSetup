@@ -17,7 +17,7 @@ GUI callers (all in `liveDataTab.py`, **Live Tools** tab):
 import runDlts_Tools as rdT
 ```
 
-The module imports `dltsConfig as dltsc` and works entirely through its globals: `dltsc.impDev`, `dltsc.tempDev`, `dltsc.z_params_vars`, `dltsc.z_params_for_push`, `dltsc.t_params_vars`, `dltsc.t_params_for_push`, `dltsc.d_params_vars`, `dltsc.run_pauseRequested`, `dltsc.run_abortRequested`, `dltsc.recast_param_type`, `dltsc.log_to_textbox`. It writes `dltsc.run_dataFolder`, `dltsc.run_dataFileNames` and `dltsc.run_outputFileType`.
+The module imports `dltsConfig as dltsc` and works entirely through its globals: `dltsc.impDev`, `dltsc.tempDev`, `dltsc.z_params_vars`, `dltsc.z_params_for_push`, `dltsc.t_params_vars`, `dltsc.t_params_for_push`, `dltsc.d_params_vars`, `dltsc.run_pauseRequested`, `dltsc.run_abortRequested`, `dltsc.recast_param_type`, `dltsc.log_to_textbox`. It writes `dltsc.run_dataFolder`, `dltsc.run_startTime`, `dltsc.run_dataFileNames` and `dltsc.run_outputFileType`.
 
 On import it also calls `warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")`.
 
@@ -163,7 +163,7 @@ No parameters.
 - Checks **Data Root Folder** (stripped of spaces): empty or relative logs an error plus `Choose it with Browse... on the Input Parameters tab, then Apply + Push Params.` and returns `-1` without creating anything.
 - Creates `<root>\MMDDYY\HHMMSS\` with `os.makedirs(exist_ok=True)`; an `OSError` (no permission, missing drive) logs `Error: cannot create the run folder ...` and returns `-1`.
 - Sets `runOutputFileType`, `dataFolder`, `dataFileNames`, `paramsFileName`.
-- Publishes `dltsc.run_dataFolder`, `dltsc.run_dataFileNames` (a copy of the list) and `dltsc.run_outputFileType`; the live-data watcher polls `run_dataFileNames`.
+- Publishes `dltsc.run_dataFolder`, `dltsc.run_startTime`, `dltsc.run_dataFileNames` (a copy of the list) and `dltsc.run_outputFileType`; the live-data watcher polls `run_dataFileNames`.
 - Logs `1. Hardware initialized.`, `2. Temperature grid set.`, `3. Output file names set.`
 - Does not reset `currentStepIndex`, `stepStatus` or `_everPulled`; use a new `dltsRun` for a new run (the GUI does).
 

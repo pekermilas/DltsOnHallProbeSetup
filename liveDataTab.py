@@ -1439,7 +1439,10 @@ def _process_raw_transients():
         dltsc.manual_figure.clear()
         dltsc.manual_ax = dltsc.manual_figure.add_subplot(1, 2, 1)
         dltsc.manual_axTemps = dltsc.manual_figure.add_subplot(1, 2, 2)
-        _draw_qualitative_temperatures(dltsc.manual_axTemps, processedTransients)
+        # The run start is only known for the run being followed.
+        startTime = (dltsc.run_startTime
+                     if _same_folder(dltsc.manual_liveRunFolder, dltsc.run_dataFolder) else None)
+        _draw_qualitative_temperatures(dltsc.manual_axTemps, processedTransients, startTime)
         scale, unit = _capacitance_axis_units([rec['avg_cap_pf'] for rec in processedTransients.values()])
         sliceLo, sliceHi = _plot_slice_ms()
         temps = sorted(processedTransients.keys())
@@ -1831,13 +1834,14 @@ def _read_h5_step(filePath):
             raise KeyError(f"'{key}' channel missing from {os.path.basename(filePath)}")
     return data, attrs
 
-def _draw_qualitative_temperatures(ax, processedTransients):
+def _draw_qualitative_temperatures(ax, processedTransients, startTime=None):
     """Right Qualitative plot: the temperature trace of the live run so far,
     one filled circle per extracted step at its time of measurement, joined by
     line segments, so the last point is the latest temperature. Each point is
     the measured stage temperature when the file stores it (.h5) and the
     setpoint otherwise. Redrawn on every extraction, so it grows by one point
-    per finished step."""
+    per finished step. The time axis starts at startTime (the run's start,
+    a datetime) when given, otherwise at the first step's time."""
     # (time of measurement, temperature) per step; the transient's key is its
     # setpoint in °C. Run step files always carry a time (the .h5 acquired_at
     # attribute, or a JSON file's mtime).
@@ -1860,12 +1864,17 @@ def _draw_qualitative_temperatures(ax, processedTransients):
         locator = matplotlib.dates.AutoDateLocator()
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(matplotlib.dates.ConciseDateFormatter(locator))
-        if len(times) == 1:
+        # Room above the last point for its label.
+        ax.margins(x=0.1, y=0.15)
+        if startTime is not None and startTime <= times[0]:
+            # Start the axis at the run start, not at the end of the first
+            # step's measurement, with 10% room after the last point.
+            pad = max((times[-1] - startTime) * 0.1, datetime.timedelta(minutes=1))
+            ax.set_xlim(startTime, times[-1] + pad)
+        elif len(times) == 1:
             # A single point has no span; show 10 minutes around it.
             pad = datetime.timedelta(minutes=5)
             ax.set_xlim(times[0] - pad, times[0] + pad)
-        # Room above the last point for its label.
-        ax.margins(x=0.1, y=0.15)
     else:
         ax.text(0.5, 0.5, "No temperature steps extracted.", ha='center', va='center',
                 transform=ax.transAxes, color='gray')
