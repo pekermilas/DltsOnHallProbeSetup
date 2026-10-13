@@ -72,17 +72,19 @@ _AVERAGED_ONLY_SOURCES = (DATA_SOURCE_LOADED, DATA_SOURCE_QUALITATIVE)
 # impdData instance (Live/Offline), and falls back to the plain nearest-
 # sample lookup (no error bars -- there's no per-repeat data to propagate
 # from) when it doesn't (Qualitative Analysis). See _calculate_rate_windows().
-# Smoothed C is unaffected: it still always requires Live/Offline, since
-# cubic-spline interpolation needs impdData's raw per-repeat samples.
+# Smoothed C works the same way: impdData's spline over the raw per-repeat
+# samples when the source has a live instance (Live/Offline), else a cubic
+# spline through the averaged transient (Detailed Analysis' Smoothed C).
 SIGNAL_METHOD_MEASURED = 'Measured C (nearest sample)'
-SIGNAL_METHOD_SMOOTHED = 'Smoothed C (impdData, spline-interpolated)'
+SIGNAL_METHOD_SMOOTHED = 'Smoothed C (spline-interpolated)'
 SIGNAL_METHOD_OPTIONS = [SIGNAL_METHOD_MEASURED, SIGNAL_METHOD_SMOOTHED]
 
-# Denoise choice for the Measured C / Smoothed C signal methods, applied only
-# when Measured C is backed by a live impdData instance (Live/Offline) --
-# Qualitative Analysis-backed Measured C has no per-repeat data to denoise.
-# 'None (raw)' uses calculate_delC_normalized()'s raw (yRaw) emission; any
-# other choice uses its denoised (yFiltered) emission via that method.
+# Denoise choice for the Measured C / Smoothed C signal methods, for every
+# Data Source. Backed by a live impdData instance (Live/Offline): 'None (raw)'
+# uses calculate_delC_normalized()'s raw (yRaw) emission, any other choice its
+# denoised (yFiltered) emission via that method. Averaged-only sources (Loaded
+# Folder, Qualitative Analysis): each averaged transient is denoised with the
+# same filter and settings (dA._denoise_transient, via _transient_records()).
 DENOISE_NONE = 'None (raw)'
 DENOISE_OPTIONS = [DENOISE_NONE, 'pca', 'wavelet', 'sgolay', 'lowess']
 
@@ -252,17 +254,21 @@ def _rb_ms_for_source(label, processedTransients):
             pass
     return max(float(np.asarray(rec['time_ms'])[-1]) for rec in processedTransients.values())
 
-def _transient_records(processedTransients, rb_ms):
+def _transient_records(processedTransients, rb_ms, denoise=DENOISE_NONE, smoothed=False):
     """Averaged transients {T_C: {'time_ms', 'avg_cap_pf', ...}} as Detailed
-    Analysis' prepared records (Measured C, no denoise), with C_infinity
-    recomputed by its convention (dA._cinf_range_mean). Returns (records, temps)."""
+    Analysis' prepared records (Measured C, or Smoothed C -- a cubic spline
+    through each transient -- if smoothed; optionally denoised per transient
+    with dA._denoise_transient -- its per-point errors still come from the raw
+    transient), with C_infinity recomputed by its convention
+    (dA._cinf_range_mean). Returns (records, temps)."""
     temps = sorted(processedTransients)
     data = {}
     for tc in temps:
         t_ms = np.asarray(processedTransients[tc]['time_ms'], dtype=np.float64)
         cap = np.asarray(processedTransients[tc]['avg_cap_pf'], dtype=np.float64)
         data[tc] = (t_ms, cap, dA._cinf_range_mean(t_ms, cap, rb_ms))
-    return dA._prepare_signal_data(data, temps, dA.SIGNAL_METHOD_MEASURED, dA.DENOISE_NONE), temps
+    signalMethod = dA.SIGNAL_METHOD_SMOOTHED if smoothed else dA.SIGNAL_METHOD_MEASURED
+    return dA._prepare_signal_data(data, temps, signalMethod, denoise), temps
 
 def _curve_fit_peak_method(curveType):
     """Peak method for dA._peak_from_signal: impdData's lmfit curve-fit finder
@@ -376,24 +382,30 @@ def _calculate_rate_windows():
             temperaturesC = sorted(processedTransients.keys())
             nTemps = len(temperaturesC)
     else:
+        # Smoothed C: impdData's per-repeat spline (Live/Offline instance) when
+        # the source has one; otherwise (Loaded Folder, Qualitative Analysis,
+        # or a Live/Offline averaged snapshot only) a cubic spline through the
+        # averaged transient -- Detailed Analysis' Smoothed C.
         impd, resolvedLabel = _resolve_impd_for_source(source)
-        if impd is None:
-            errorReason = ("Smoothed C needs Automated/Live Data (Live or Offline) as the "
-                           "Data Source -- it reads per-repeat instrument data that Loaded Folder and "
-                           "Qualitative Analysis, which only store an already-averaged transient, don't have.")
-            dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
-            if dltsc.rateWindow_statusLabel is not None:
-                dltsc.rateWindow_statusLabel.config(text=errorReason)
-            return
-        busy = (dltsc.livePlot_liveIngestBusy if resolvedLabel == DATA_SOURCE_LIVE
-               else dltsc.livePlot_offlineIngestBusy)
-        if busy:
-            errorReason = f"{resolvedLabel} is still loading/ingesting; try again once it finishes."
-            dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
-            if dltsc.rateWindow_statusLabel is not None:
-                dltsc.rateWindow_statusLabel.config(text=errorReason)
-            return
-        nTemps = len(impd.dataTemps or [])
+        if impd is not None:
+            busy = (dltsc.livePlot_liveIngestBusy if resolvedLabel == DATA_SOURCE_LIVE
+                   else dltsc.livePlot_offlineIngestBusy)
+            if busy:
+                errorReason = f"{resolvedLabel} is still loading/ingesting; try again once it finishes."
+                dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
+                if dltsc.rateWindow_statusLabel is not None:
+                    dltsc.rateWindow_statusLabel.config(text=errorReason)
+                return
+            nTemps = len(impd.dataTemps or [])
+        else:
+            processedTransients, resolvedLabel, errorReason = _get_processed_transients_for_source(source)
+            if not processedTransients:
+                dltsc.log_to_textbox(f"Rate window analysis: {errorReason}")
+                if dltsc.rateWindow_statusLabel is not None:
+                    dltsc.rateWindow_statusLabel.config(text=errorReason)
+                return
+            temperaturesC = sorted(processedTransients.keys())
+            nTemps = len(temperaturesC)
 
     denoiseChoice = dltsc.rateWindow_denoiseVar.get() if dltsc.rateWindow_denoiseVar is not None else DENOISE_NONE
     peakMethod = dltsc.rateWindow_peakMethodVar.get() if dltsc.rateWindow_peakMethodVar is not None else PEAK_METHOD_SPLINE
@@ -432,16 +444,19 @@ def _calculate_rate_windows():
     for row in dltsc.rateWindow_peakTable.get_children():
         dltsc.rateWindow_peakTable.delete(row)
 
-    useRecords = signalMethod == SIGNAL_METHOD_MEASURED and impd is None
+    useRecords = impd is None
     if useRecords:
-        # Qualitative Analysis (or a Live/Offline averaged snapshot with no
-        # impdData instance): the averaged transients go through Detailed
-        # Analysis' own pipeline -- nearest measured sample at t1/t2, C_infinity
-        # as the mean over 40-90 % of the reverse bias, and per-point errors
-        # from the transient's own sample noise (dA._rate_window_signal) -- so
-        # this tab and Detailed Analysis give the same S(T) for the same data.
+        # Loaded Folder / Qualitative Analysis (or a Live/Offline averaged
+        # snapshot with no impdData instance): the averaged transients go
+        # through Detailed Analysis' own pipeline -- optional per-transient
+        # denoise, C(t1)/C(t2) from the nearest sample (Measured C) or a cubic
+        # spline (Smoothed C), C_infinity as the mean over 40-90 % of the
+        # reverse bias, and per-point errors from the raw transient's own
+        # sample noise (dA._rate_window_signal) -- so this tab and Detailed
+        # Analysis give the same S(T) for the same data, method and denoise.
         rbMs = _rb_ms_for_source(resolvedLabel, processedTransients)
-        records, recTemps = _transient_records(processedTransients, rbMs)
+        records, recTemps = _transient_records(processedTransients, rbMs, denoiseChoice,
+                                               smoothed=(signalMethod == SIGNAL_METHOD_SMOOTHED))
         dltsc.rateWindow_transients = (records, recTemps, rbMs)
         windowResults = _window_peaks(records, recTemps, windows, tpLo, tpHi, peakMethod)
     else:
@@ -461,8 +476,8 @@ def _calculate_rate_windows():
             res = windowResults[i]
             x, y, yErr = res['T_k'], res['Signal'], res['Signal_err']
         else:
-            # Measured C backed by a live impdData instance (Live/Offline), or
-            # Smoothed C (always Live/Offline). emissionIndex=-1: the ensemble
+            # Measured C or Smoothed C backed by a live impdData instance
+            # (Live/Offline). emissionIndex=-1: the ensemble
             # average across every reverse-bias repeat, the same averaging the
             # Qualitative-Analysis-backed branch above (and Extract & Average
             # Transients) performs -- and the only index with a meaningful
@@ -642,7 +657,7 @@ def _build_rateWindowFrame(parent):
     dltsc.rateWindow_signalMethodVar = tk.StringVar(value=SIGNAL_METHOD_MEASURED)
     ttk.Combobox(sigGroup, textvariable=dltsc.rateWindow_signalMethodVar, values=SIGNAL_METHOD_OPTIONS,
                 state='readonly', width=24).pack(fill='x', padx=4, pady=(0, 4))
-    ttk.Label(sigGroup, text='Denoise (Live/Offline-backed Measured C, or Smoothed C, only):').pack(
+    ttk.Label(sigGroup, text='Denoise (any Data Source):').pack(
         anchor='w', padx=4, pady=(0, 0))
     dltsc.rateWindow_denoiseVar = tk.StringVar(value=DENOISE_NONE)
     ttk.Combobox(sigGroup, textvariable=dltsc.rateWindow_denoiseVar, values=DENOISE_OPTIONS,
@@ -935,7 +950,10 @@ def _browse_quick_folder(isAppend=False):
         isAppend = False   # nothing loaded yet: append is just a first load
     dir_path = filedialog.askdirectory(
         title="Select DLTS Source Folder to Append" if isAppend else "Select DLTS Source Folder",
-        initialdir=dltsc.quickData_dataDirectory or os.getcwd())
+        # No cwd fallback: that is the software's own folder, and a folder
+        # picked there risks writing into the source tree. Like Detailed
+        # Analysis' Load Data, open at the OS default until a folder is chosen.
+        **({'initialdir': dltsc.quickData_dataDirectory} if dltsc.quickData_dataDirectory else {}))
     if dir_path:
         dltsc.log_to_textbox(f"Offline Data: selected {dir_path} -- {ldT._describe_folder_contents(dir_path)}")
         _scan_quick_folder_async(dir_path, isAppend)

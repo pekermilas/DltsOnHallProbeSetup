@@ -1014,8 +1014,6 @@ def _detailed_plot(out, params):
             dltsc.detailed_legRW = leg_rw
             _pending_drags.append(('legend', leg_rw))
 
-    fig.suptitle('DLTS Multiwindow Analysis', fontsize=12, color=TEXT_PRI, fontweight='bold', y=1.001)
-
     # Embed in tkinter FIRST -- this connects fig.canvas, which draggable needs.
     # A full draw of this figure costs ~0.25 s of main-thread time, so it is
     # drawn exactly once: packing the canvas fires a resize, whose draw_idle
@@ -1025,7 +1023,9 @@ def _detailed_plot(out, params):
     dltsc.detailed_canvas = FigureCanvasTkAgg(fig, master=dltsc.detailed_figFrame)
     toolbar = NavigationToolbar2Tk(dltsc.detailed_canvas, dltsc.detailed_figFrame, pack_toolbar=False)
     toolbar.update()
-    toolbar.pack(side='bottom', fill='x')
+    # Above the plot, like Quick Analysis' plots: at the bottom of this tall
+    # figure it could end up below the visible window, leaving no pan/zoom.
+    toolbar.pack(side='top', fill='x')
     # Tiny requested size: the Tk canvas otherwise asks for the full figsize
     # in pixels (e.g. 1400x1100), forcing an extra geometry pass -- and an
     # extra full redraw -- before settling at the frame's fill size.
@@ -1084,6 +1084,9 @@ def _detailed_install_drag(canvas, fig, artist, kind):
 
     def _on_press(evt):
         if evt.button != 1:
+            return
+        # Toolbar pan/zoom active: that click belongs to it, not to a drag.
+        if canvas.toolbar is not None and canvas.toolbar.mode:
             return
         # Refresh transforms before hit-testing, but only if a resize has
         # made them stale: every legend/annotation has its own press handler,

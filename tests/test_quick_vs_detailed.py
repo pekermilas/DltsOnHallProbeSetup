@@ -24,8 +24,8 @@ def as_detailed_loaded(data):
     return {tc: (t, c, deT._cinf_range_mean(t, c, RB_MS)) for tc, (t, c, _) in data.items()}
 
 
-def run_both(data, windows, tpLo, tpHi, qaMethod, deMethod):
-    records, temps = qaT._transient_records(as_quick_input(data), RB_MS)
+def run_both(data, windows, tpLo, tpHi, qaMethod, deMethod, smoothed=False, denoise=deT.DENOISE_NONE):
+    records, temps = qaT._transient_records(as_quick_input(data), RB_MS, denoise, smoothed=smoothed)
     peaks = []
     for pk in qaT._window_peaks(records, temps, windows, tpLo, tpHi, qaMethod):
         if not pk['skipped']:
@@ -35,7 +35,8 @@ def run_both(data, windows, tpLo, tpHi, qaMethod, deMethod):
     loaded = as_detailed_loaded(data)
     out = deT._compute_detailed_analysis(loaded, sorted(loaded), params(
         stdWins=list(windows) + [(0, 0)], tpLo=tpLo, tpHi=tpHi, peakMethod=deMethod,
-        gamma=deT.DEFAULT_GAMMA, nd=deT.DEFAULT_ND, rbMs=RB_MS))
+        gamma=deT.DEFAULT_GAMMA, nd=deT.DEFAULT_ND, rbMs=RB_MS, denoise=denoise,
+        signalMethod=deT.SIGNAL_METHOD_SMOOTHED if smoothed else deT.SIGNAL_METHOD_MEASURED))
     return quick, out['resStd'], out['Nt']
 
 
@@ -47,6 +48,18 @@ def test_quick_and_detailed_give_the_same_result(tpLo):
     for key in ('Et', 'Et_se', 'sigma', 'sigma_se', 'R2'):
         assert quick[key] == pytest.approx(std[key], rel=1e-9), key
     assert quick['N'] == std['N'] and quick['N_excluded'] == std['N_excluded']
+    assert quick['Nt'] == pytest.approx(nt, rel=1e-12)
+    assert quick['Et'] == pytest.approx(0.60, abs=0.03)
+
+
+@pytest.mark.parametrize('smoothed,denoise', [(True, deT.DENOISE_NONE), (False, 'sgolay'), (True, 'sgolay')])
+def test_averaged_sources_support_smoothed_and_denoise(smoothed, denoise):
+    """Smoothed C and denoising on averaged-only sources (Loaded Folder,
+    Qualitative Analysis) give the same result as Detailed Analysis."""
+    quick, std, nt = run_both(synthetic_run(), deT.DEFAULT_STD_WINDOWS, 290.0, 400.0,
+                              qaT.PEAK_METHOD_SPLINE, deT.PEAK_METHOD_SPLINE, smoothed, denoise)
+    for key in ('Et', 'Et_se', 'sigma', 'R2'):
+        assert quick[key] == pytest.approx(std[key], rel=1e-9), key
     assert quick['Nt'] == pytest.approx(nt, rel=1e-12)
     assert quick['Et'] == pytest.approx(0.60, abs=0.03)
 
