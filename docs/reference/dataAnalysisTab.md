@@ -70,9 +70,11 @@ Controls, top row (three groups side by side):
 
 The number of sets is the length of `DEFAULT_RATE_WINDOWS`.
 
-**Compute Boxcar Spectrums** (blue button) runs `_calculate_rate_windows()`. It clears the plot and the peak table, computes the DLTS signal S(T) for every set, finds each peak, fills the table and redraws the plot. Each set is drawn as points `RW <n>` (with error bars when errors exist), the fitted curve as a dashed line `Fit <n>`, and the peak as a black `x` with a T_peak error bar. A peak with no T_peak error (on the edge of the search range) is a gray `x`. It logs a summary line to the app log.
+**Compute Boxcar Spectrums** (blue button) runs `_calculate_rate_windows()`. It clears the plot and the peak table, computes the DLTS signal S(T) for every set, finds each peak, fills the table and redraws the plot. Each set is drawn as points `RW <n>` (with error bars when errors exist), the fitted curve as a dashed line `Fit <n>` in the same colour (colour `C<n-1>`, fixed per set), and the peak as a black `x` with a T_peak error bar. A peak with no T_peak error (on the edge of the search range) is a gray `x`. It logs a summary line to the app log.
 
 **Extracted Peaks** table (`ttk.Treeview`, 4 rows visible, scrolls): columns `Window` (`Set n`), `Emission e_n (s⁻¹)` (2 decimals), `T_peak (K)` (2 decimals, `± err` when available), `Max Extrema ΔC/C∞` (5 decimals, the largest |S| in the search range, with its sign), and `Arrhenius fit`. The last column reads `skipped (no peak)` for a skipped window and `no Tp error (edge)` for an edge peak. After the solver runs it reads `used` or `excluded (edge peak)`.
+
+Selecting rows in the table (Ctrl/Shift-click for several) redraws the plot with only those sets (`_redraw_rate_window_plot()`, bound to `<<TreeviewSelect>>`). With no row selected every set is drawn. **Show All** (below the table) clears the selection. The Arrhenius solver fits the same selection (`_selected_rate_windows()`): only the selected sets that have a peak, or every extracted peak when nothing is selected. It needs at least 2 such sets. After the solver runs, an extracted peak left out by the selection reads `not selected` in the `Arrhenius fit` column. The solver does not rerun by itself when the selection changes, so that column and the Arrhenius results describe the last solver run.
 
 ### Pane, right frame: "Arrhenius Defect Mapping"
 
@@ -151,8 +153,9 @@ Shared state in `dltsConfig` (`dltsc`) that this module reads or writes:
 | `rateWindow_statusLabel` | `ttk.Label` | Data Source status text. |
 | `rateWindow_peakTable` | `ttk.Treeview` | Extracted Peaks table. Row ids are `w<i>` (i = set index from 0). |
 | `rateWindow_figure`, `rateWindow_ax`, `rateWindow_canvas` | matplotlib `Figure`, `Axes`, `FigureCanvasTkAgg` | Left plot. |
-| `rateWindow_signals` | dict `i -> {'T_k', 'Signal', 'Signal_err'}` | Per-set S(T) curves from the last run (T in K). `Signal_err` is `None` when not every point has a usable error. |
+| `rateWindow_signals` | dict `i -> {'T_k', 'Signal', 'Signal_err', 'xFit', 'yFit'}` | Per-set S(T) curves from the last run (T in K). `Signal_err` is `None` when not every point has a usable error. `xFit`/`yFit` (the dashed fit curve) are `None` for a skipped set or when the peak method draws no curve. |
 | `rateWindow_extractedPeaks` | dict `i -> {'T_peak', 'S_peak', 'e_n', 'T_peak_err', 't1', 't2'}` | Per-set peaks, input to the Arrhenius solver. Skipped sets are left out. `T_peak_err` is `None` for an edge peak. |
+| `rateWindow_plotContext` | dict `{'tpLo', 'tpHi', 'peakMethod'}` or `None` | Search range and peak method of the last finished run, used to redraw the plot when the table selection changes. `None` until a run finishes. |
 | `rateWindow_transients` | `(records, temps, rb_ms)` or `None` | The averaged transients of the last run as Detailed Analysis records. N_T is computed from them. |
 | `rateWindow_denoisedEmissions` | dict `T -> dict` | Copy of `impd.dataEmissions` after the last `impdData`-backed window (raw and denoised emissions). |
 | `arrhenius_ndVar`, `arrhenius_gammaVar` | `tk.StringVar` | Nd and γ entries. |
@@ -433,7 +436,7 @@ Command of **Execute Arrhenius Signature Solver**. Implements Steps 6 and 7.
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
-| (none) | | | Reads `dltsc.rateWindow_extractedPeaks`, `dltsc.rateWindow_transients`, `dltsc.arrhenius_ndVar`, `dltsc.arrhenius_gammaVar`. |
+| (none) | | | Reads `dltsc.rateWindow_extractedPeaks` (limited to the rows selected in `dltsc.rateWindow_peakTable`, all when none), `dltsc.rateWindow_transients`, `dltsc.arrhenius_ndVar`, `dltsc.arrhenius_gammaVar`. |
 
 **Returns** `None`.
 

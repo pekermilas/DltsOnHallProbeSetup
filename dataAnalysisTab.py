@@ -441,6 +441,7 @@ def _calculate_rate_windows():
     dltsc.rateWindow_ax.clear()
     dltsc.rateWindow_signals = dict()
     dltsc.rateWindow_extractedPeaks = dict()
+    dltsc.rateWindow_plotContext = None
     for row in dltsc.rateWindow_peakTable.get_children():
         dltsc.rateWindow_peakTable.delete(row)
 
@@ -515,12 +516,9 @@ def _calculate_rate_windows():
                                                                      _peak_method_for(peakMethod))
         eN = dA._emission_rate(t1, t2)
         yErrPlot = dA._valid_errors(yErr)
-        dltsc.rateWindow_signals[i] = {'T_k': x, 'Signal': y, 'Signal_err': yErrPlot}
-
-        if yErrPlot is not None:
-            dltsc.rateWindow_ax.errorbar(x, y, yerr=yErrPlot, fmt='o', capsize=3, label=f'RW {i + 1}')
-        else:
-            dltsc.rateWindow_ax.plot(x, y, 'o', label=f'RW {i + 1}')
+        dltsc.rateWindow_signals[i] = {'T_k': x, 'Signal': y, 'Signal_err': yErrPlot,
+                                       'xFit': None if pk['skipped'] else pk['xFit'],
+                                       'yFit': None if pk['skipped'] else pk['yFit']}
 
         if pk['skipped']:
             dltsc.rateWindow_peakTable.insert('', 'end', iid=f'w{i}', values=(
@@ -530,8 +528,6 @@ def _calculate_rate_windows():
             continue
 
         tPeak, tPeakErr, sPeak = pk['Tp'], pk['Tp_err'], pk['S_peak']
-        if pk['xFit'] is not None:
-            dltsc.rateWindow_ax.plot(pk['xFit'], pk['yFit'], '--', alpha=0.5, label=f'Fit {i + 1}')
         dltsc.rateWindow_extractedPeaks[i] = {
             'T_peak': tPeak, 'S_peak': sPeak, 'e_n': eN, 'T_peak_err': tPeakErr, 't1': t1, 't2': t2,
         }
@@ -541,10 +537,58 @@ def _calculate_rate_windows():
             f'Set {i + 1}', f'{eN:.2f}', tPeakText, f'{sPeak:.5f}',
             '—' if tPeakErr is not None else 'no Tp error (edge)'))
 
-        if tPeakErr is not None:
-            dltsc.rateWindow_ax.errorbar(tPeak, sPeak, xerr=tPeakErr, fmt='kx', markersize=10, capsize=4)
+    dltsc.rateWindow_plotContext = {'tpLo': tpLo, 'tpHi': tpHi, 'peakMethod': peakMethod}
+    _redraw_rate_window_plot()
+
+    statusText = f"Using: {resolvedLabel} / {signalMethod} ({nTemps} temperature(s))."
+    if dltsc.rateWindow_statusLabel is not None:
+        dltsc.rateWindow_statusLabel.config(text=statusText)
+    dltsc.log_to_textbox(
+        f"Rate window analysis: computed {len(dltsc.rateWindow_extractedPeaks)} window set(s) "
+        f"from {resolvedLabel} using {signalMethod} ({nTemps} temperature(s)).")
+
+def _selected_rate_windows():
+    # Set indices (row ids 'w<i>') selected in the Extracted Peaks table; empty = none selected.
+    if dltsc.rateWindow_peakTable is None:
+        return set()
+    return {int(iid[1:]) for iid in dltsc.rateWindow_peakTable.selection()}
+
+def _redraw_rate_window_plot():
+    # Draws the last Compute's spectra from dltsc.rateWindow_signals /
+    # rateWindow_extractedPeaks, limited to the windows selected in the
+    # Extracted Peaks table (no selection = every window). Each window keeps a
+    # fixed colour (data and its fit share it) so hiding some windows doesn't
+    # recolour the rest. The Arrhenius solver fits the same selection.
+    if dltsc.rateWindow_plotContext is None:
+        return
+    tpLo = dltsc.rateWindow_plotContext['tpLo']
+    tpHi = dltsc.rateWindow_plotContext['tpHi']
+    peakMethod = dltsc.rateWindow_plotContext['peakMethod']
+
+    selected = _selected_rate_windows()
+    visible = [i for i in sorted(dltsc.rateWindow_signals.keys()) if not selected or i in selected]
+
+    dltsc.rateWindow_ax.clear()
+    for i in visible:
+        sig = dltsc.rateWindow_signals[i]
+        color = f'C{i % 10}'
+        if sig['Signal_err'] is not None:
+            dltsc.rateWindow_ax.errorbar(sig['T_k'], sig['Signal'], yerr=sig['Signal_err'], fmt='o',
+                                         color=color, capsize=3, label=f'RW {i + 1}')
         else:
-            dltsc.rateWindow_ax.plot(tPeak, sPeak, 'x', color='gray', markersize=10)
+            dltsc.rateWindow_ax.plot(sig['T_k'], sig['Signal'], 'o', color=color, label=f'RW {i + 1}')
+        if sig['xFit'] is not None:
+            dltsc.rateWindow_ax.plot(sig['xFit'], sig['yFit'], '--', color=color, alpha=0.5,
+                                     label=f'Fit {i + 1}')
+
+        peak = dltsc.rateWindow_extractedPeaks.get(i)
+        if peak is None:
+            continue
+        if peak['T_peak_err'] is not None:
+            dltsc.rateWindow_ax.errorbar(peak['T_peak'], peak['S_peak'], xerr=peak['T_peak_err'], fmt='kx',
+                                         markersize=10, capsize=4)
+        else:
+            dltsc.rateWindow_ax.plot(peak['T_peak'], peak['S_peak'], 'x', color='gray', markersize=10)
 
     for bound in (tpLo, tpHi):
         if np.isfinite(bound):
@@ -559,12 +603,9 @@ def _calculate_rate_windows():
     dltsc.rateWindow_figure.tight_layout(pad=2.0)
     dltsc.rateWindow_canvas.draw()
 
-    statusText = f"Using: {resolvedLabel} / {signalMethod} ({nTemps} temperature(s))."
-    if dltsc.rateWindow_statusLabel is not None:
-        dltsc.rateWindow_statusLabel.config(text=statusText)
-    dltsc.log_to_textbox(
-        f"Rate window analysis: computed {len(dltsc.rateWindow_extractedPeaks)} window set(s) "
-        f"from {resolvedLabel} using {signalMethod} ({nTemps} temperature(s)).")
+def _show_all_rate_windows():
+    # Clearing the selection fires <<TreeviewSelect>>, which redraws every window.
+    dltsc.rateWindow_peakTable.selection_set(())
 
 def _build_rateWindowFrame(parent):
     # dltsConfig.init() (which would normally seed these as dicts) is not called by
@@ -722,6 +763,15 @@ def _build_rateWindowFrame(parent):
     for col, width in zip(columns, (55, 110, 90, 110, 110)):
         dltsc.rateWindow_peakTable.column(col, width=width, anchor='center')
     dltsc.rateWindow_peakTable.pack(fill='both', expand=True, padx=4, pady=4)
+    # Selecting rows (Ctrl/Shift-click for several) limits the spectrum plot and
+    # the Arrhenius solver to those windows; no selection uses them all.
+    dltsc.rateWindow_peakTable.bind('<<TreeviewSelect>>', lambda e: _redraw_rate_window_plot())
+    tableHint = tk.Frame(tableGroup)
+    tableHint.pack(fill='x', padx=4, pady=(0, 4))
+    ttk.Label(tableHint, text='Select rows (Ctrl/Shift-click for several) to use only those windows '
+                              'in the plot and the Arrhenius fit.',
+              wraplength=360, justify='left').pack(side='left')
+    ttk.Button(tableHint, text='Show All', command=_show_all_rate_windows).pack(side='right')
 
 
 #---------------------ARRHENIUS DEFECT MAPPING (BOTTOM FRAME)-------------------------#
@@ -731,6 +781,16 @@ def _run_arrhenius_solver():
     if len(dltsc.rateWindow_extractedPeaks or {}) < 2:
         dltsc.log_to_textbox(
             "Arrhenius solver: need at least 2 complete rate window sets from Rate Window Analysis first.")
+        return
+
+    # Only the windows selected in the Extracted Peaks table (no selection =
+    # every window), the same ones the spectrum plot shows.
+    selected = _selected_rate_windows()
+    peakKeys = sorted(i for i in dltsc.rateWindow_extractedPeaks.keys() if not selected or i in selected)
+    if len(peakKeys) < 2:
+        dltsc.log_to_textbox(
+            "Arrhenius solver: need at least 2 selected windows with a peak in the Extracted Peaks table "
+            "(or clear the selection to use all of them).")
         return
 
     try:
@@ -755,8 +815,7 @@ def _run_arrhenius_solver():
     # with no T_peak error -- a peak on the edge of the search range -- are left
     # out of it, unless fewer than 3 windows have errors, in which case every
     # window is fitted unweighted.
-    peakKeys = sorted(dltsc.rateWindow_extractedPeaks.keys())
-    peaks = [dltsc.rateWindow_extractedPeaks[i] for i in peakKeys]
+    peaks =[dltsc.rateWindow_extractedPeaks[i] for i in peakKeys]
     try:
         res = _quick_arrhenius(peaks, gamma, nBackgroundDoping, dltsc.rateWindow_transients)
     except Exception as exc:
@@ -775,9 +834,12 @@ def _run_arrhenius_solver():
     dltsc.arrhenius_captureLabel.config(text=captureText)
     dltsc.arrhenius_densityLabel.config(text=densityText)
 
+    fitStatus = {i: 'not selected' for i in dltsc.rateWindow_extractedPeaks.keys()}
     for i, used in zip(peakKeys, fitMask):
+        fitStatus[i] = 'used' if used else 'excluded (edge peak)'
+    for i, status in fitStatus.items():
         if dltsc.rateWindow_peakTable is not None and dltsc.rateWindow_peakTable.exists(f'w{i}'):
-            dltsc.rateWindow_peakTable.set(f'w{i}', 'fit', 'used' if used else 'excluded (edge peak)')
+            dltsc.rateWindow_peakTable.set(f'w{i}', 'fit', status)
 
     # T_peak error on this plot's axes: x = 1000/T so dx = 1000*dT/T^2;
     # y = ln(e_n/T^2) = ln(e_n) - 2*ln(T) so dy = 2*dT/T.

@@ -175,9 +175,12 @@ rateWindow_peakMethodVar = None   # tk.StringVar: 'Smoothing Spline' (default) o
 rateWindow_windowVars = None      # list of 5 (t1Var, t2Var) tk.StringVar pairs, one per rate window set
 rateWindow_tpLoVar = None         # tk.StringVar: peak-search lower temperature bound (K), blank = no bound
 rateWindow_tpHiVar = None         # tk.StringVar: peak-search upper temperature bound (K), blank = no bound
-rateWindow_signals = None        # rw_index -> {'T_k': array, 'Signal': array}
+rateWindow_signals = None        # rw_index -> {'T_k': array, 'Signal': array, 'Signal_err':,
+                                   # 'xFit':, 'yFit':} (fit curve None when the peak method has none)
 rateWindow_extractedPeaks = None  # rw_index -> {'T_peak':, 'S_peak':, 'e_n':, 'T_peak_err':, 't1':, 't2':}
                                    # (skipped windows are left out)
+rateWindow_plotContext = None     # {'tpLo':, 'tpHi':, 'peakMethod':} of the last Compute, so the
+                                   # spectrum can be redrawn when the Extracted Peaks selection changes
 rateWindow_transients = None      # (records, temps, rb_ms) of the averaged transients the last Compute
                                    # used, in Detailed Analysis' record shape -- Nt is computed from
                                    # these; None when the signal came from impdData directly
@@ -404,6 +407,7 @@ def init():
     global rateWindow_tpHiVar
     global rateWindow_signals
     global rateWindow_extractedPeaks
+    global rateWindow_plotContext
     global rateWindow_transients
     global rateWindow_peakTable
     global rateWindow_figure
@@ -512,6 +516,7 @@ def init():
     quickData_processingBusy = False
     rateWindow_signals = dict()
     rateWindow_extractedPeaks = dict()
+    rateWindow_plotContext = None
     detailed_data = dict()
     detailed_temps = list()
     detailed_loadingBusy = False
