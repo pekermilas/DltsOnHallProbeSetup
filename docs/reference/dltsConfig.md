@@ -219,25 +219,28 @@ State and results:
 |---|---|---|---|---|
 | `detailed_data` | `None` / `{}` | `deT._detailed_load_data` (callback) | `deT._detailed_run_analysis`, `deT._set_detailed_buttons_state` | Temperature (°C) → `(t_ms array, capacitance array in pF, C_infinity)`. |
 | `detailed_temps` | `None` / `[]` | `deT._detailed_load_data` (callback) | `deT._detailed_run_analysis` | Sorted temperatures, °C. |
-| `detailed_figure` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor`, `deT._detailed_plot_rate_window_map`, `deT._detailed_plot_transient_map`, `deT._detailed_save_figure` | Current figure, rebuilt each run. |
-| `detailed_canvas` | `None` | `deT._detailed_plot` | `deT._detailed_plot`, `deT._detailed_open_label_editor` | Canvas embedding it. |
-| `detailed_figFrame` | `None` | `deT.construct_detailedAnalysisTab` | `deT._detailed_plot` | Frame the canvas and toolbar go in. |
-| `detailed_ax1` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor` | Arrhenius panel. |
-| `detailed_ax2` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor` | DLTS spectra panel (optional). |
-| `detailed_ax3` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor` | 2-D transient map (optional). |
-| `detailed_ax4` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor` | Rate-window analysis map (optional). |
-| `detailed_leg1` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor` | Legend. |
-| `detailed_leg2` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor` | Legend. |
-| `detailed_legM` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor` | Legend. |
-| `detailed_legRW` | `None` | `deT._detailed_plot` | `deT._detailed_open_label_editor` | Legend of the rate-window map. |
-| `detailed_annBox` | `None` | `deT._detailed_plot` | nothing through `dltsc` | Draggable Arrhenius results annotation. |
-| `detailed_lastResMw` | `None` | `deT._detailed_run_analysis` (callback) | nothing | Last multi-window `compute_arrhenius()` result. |
-| `detailed_lastResStd` | `None` | `deT._detailed_run_analysis` (callback) | nothing | Last standard-window result. |
-| `detailed_lastNt` | `None` | `deT._detailed_run_analysis` (callback) | nothing | Last trap density. |
+| `detailed_figFrame` | `None` | `deT.construct_detailedAnalysisTab` | `deT._detailed_layout_panels` | Frame the panels (figure + toolbar each) are gridded into. |
+| `detailed_figures` | `None` / `{}` | `deT._detailed_layout_panels`, `deT._detailed_forget_panel` | `deT._detailed_layout_panels`, `deT._detailed_draw_panel`, `deT._detailed_redraw`, `deT._detailed_open_label_editor` | Panel key (`'arr'`, `'spec'`, `'tmap'`, `'rwm'`) → `Figure` of each shown panel. |
+| `detailed_canvases` | `None` / `{}` | `deT._detailed_layout_panels`, `deT._detailed_forget_panel` | `deT._detailed_draw_panel`, `deT._detailed_link_panel`, `deT._detailed_follow_xlim`, `deT._detailed_open_label_editor` | Panel key → its `FigureCanvasTkAgg`. |
+| `detailed_panelAxes` | `None` / `{}` | `deT._detailed_draw_panel`, `deT._detailed_forget_panel` | `deT._detailed_link_panel`, `deT._detailed_follow_xlim`, `deT._detailed_open_label_editor` | Panel key → its main `Axes` (2D or 3D). |
+| `detailed_panelLegends` | `None` / `{}` | `deT._detailed_draw_panel`, `deT._detailed_forget_panel` | `deT._detailed_open_label_editor` | Panel key → its legend beside the plot, or `None` (per its Labels choice). |
+| `detailed_linkCids` | `None` / `{}` | `deT._detailed_link_panel`, `deT._detailed_forget_panel` | `deT._detailed_link_panel` | Panel key → pending `draw_event` connection that links its x axis to its row partner's after the first draw. |
+| `detailed_linkBusy` | `None` / `False` | `deT._detailed_follow_xlim` | `deT._detailed_follow_xlim` | `True` while one linked panel sets its partner's x limits. |
+| `detailed_lastOut` | `None` | `deT._detailed_plot` | `deT._detailed_layout_panels`, `deT._detailed_draw_panel`, `deT._detailed_on_display_change`, `deT._detailed_save_figure` | Last run's `_compute_detailed_analysis` result; the panels are drawn (and redrawn on Display changes) from it. |
+| `detailed_lastParams` | `None` | `deT._detailed_plot` | `deT._detailed_draw_panel`, `deT._detailed_save_figure` | The parameter snapshot that run used. |
+| `detailed_lastResMw` | `None` | `deT._detailed_run_analysis` (callback) | nothing | Last run's first trap, multi-window `_arrhenius_fit` result dict. |
+| `detailed_lastResStd` | `None` | `deT._detailed_run_analysis` (callback) | nothing | Last run's first trap, standard-window result (or `None`). |
+| `detailed_lastNt` | `None` | `deT._detailed_run_analysis` (callback) | nothing | Last run's total trap density (all traps, transient amplitude). |
+| `detailed_lastTraps` | `None` | `deT._detailed_run_analysis` (callback) | nothing | Last run's multi-window results, one per trap (peak id `R<r>P<k>`). |
+| `detailed_lastTrapsStd` | `None` | `deT._detailed_run_analysis` (callback) | nothing | Last run's standard-window results, one per trap. |
+| `detailed_regions` | `None` / `[]` | `deT.construct_detailedAnalysisTab` (default region when empty), the Peak Regions controls (`_detailed_add_region`, `_detailed_update_region`, `_detailed_remove_region`, `_detailed_apply_method`) | `deT._detailed_run_analysis`, `deT._detailed_refresh_regions` | Peak regions: list of `{'tLo', 'tHi'` (K)`, 'primitives'` (`[]` = default single-peak finder)`, 'prominence', 'source'` (`'Quick R<n>'` or `None`)`}`. |
+| `detailed_regionListbox` | `None` | `deT.construct_detailedAnalysisTab` | Peak Regions controls | Region list. |
+| `detailed_regionMethodVar` | `None` | construct (`'Default (Peak method below)'`), `deT._detailed_refresh_regions` | `deT._detailed_apply_method` | Method of the selected region. |
+| `detailed_regionMethodCombo` | `None` | `deT.construct_detailedAnalysisTab` | `deT._detailed_refresh_method_options` | Its combobox (choices rebuilt on open). |
+| `detailed_spanSelector` | `None` | `deT._detailed_draw_panel`, `deT._detailed_forget_panel` | nothing (keeps the selector alive) | `SpanSelector` on the DLTS Spectra panel that picks a region's T range; `None` without that panel. |
 | `detailed_loadingBusy` | `None` / `False` | `deT._detailed_load_data` (and callback) | `deT._detailed_load_data`, `deT._detailed_run_analysis` | `True` while the load worker runs. |
 | `detailedProcessingBusy` | `None` / `False` | `deT._detailed_run_analysis` (and callback) | `deT._detailed_load_data`, `deT._detailed_run_analysis` | `True` while the analysis worker runs. The name has no underscore after `detailed`. |
 | `detailed_executor` | `None` / `None` | `deT._get_detailed_executor`, `deT._run_in_detailed_process` | `deT._get_detailed_executor`, `main._finish_close` (shutdown) | Single-worker `ProcessPoolExecutor` of this tab. |
-| `detailed_hitTestStale` | `None` / `True` | `deT._detailed_plot` (and its inner `_mark_fresh`, `_mark_stale`) | `deT._detailed_install_drag` (inner `_on_press`) | `True` between a canvas resize and its redraw; the drag handler redraws only then. |
 
 Control variables, all created in `deT.construct_detailedAnalysisTab` and read by `deT._detailed_run_analysis` unless stated:
 
@@ -252,22 +255,34 @@ Control variables, all created in `deT.construct_detailedAnalysisTab` and read b
 | `detailed_cinfHiVar` | `None` | construct (`DoubleVar(0.90)`) | `deT._detailed_load_data` | C₀ window end, fraction of RB. |
 | `detailed_gammaVar` | `None` | construct (`DoubleVar(1.66e21)`) | `deT._detailed_run_analysis` | γ, cm⁻² s⁻¹ K⁻² (4H-SiC). |
 | `detailed_ndVar` | `None` | construct (`DoubleVar(3.2e14)`) | `deT._detailed_run_analysis` | Nd, cm⁻³. |
-| `detailed_tpeakLoVar` | `None` | construct (`DoubleVar(250.0)`) | `deT._detailed_run_analysis` | Peak search T min, K. |
-| `detailed_tpeakHiVar` | `None` | construct (`DoubleVar(400.0)`) | `deT._detailed_run_analysis` | Peak search T max, K. |
-| `detailed_peakMethodVar` | `None` | construct (`'Smoothing Spline (bootstrap)'`) | `deT._detailed_run_analysis` | Per-window peak finder: lmfit parabola or smoothing spline. |
+| `detailed_tpeakLoVar` | `None` | construct (`DoubleVar(250.0)`), `deT._detailed_on_region_select`, `deT._detailed_on_span_select` | `deT._detailed_region_bounds`, `deT._detailed_run_analysis` (as `tpLo`) | Peak Regions T min, K, for Add / Update. |
+| `detailed_tpeakHiVar` | `None` | construct (`DoubleVar(400.0)`), `deT._detailed_on_region_select`, `deT._detailed_on_span_select` | `deT._detailed_region_bounds`, `deT._detailed_run_analysis` (as `tpHi`) | Peak Regions T max, K, for Add / Update. |
+| `detailed_peakMethodVar` | `None` | construct (`'Smoothing Spline (bootstrap)'`) | `deT._detailed_run_analysis`, region list text | Default per-window peak finder for regions without primitives: lmfit parabola or smoothing spline. |
 | `detailed_signalMethodVar` | `None` | construct (`'Measured C (nearest sample)'`) | `deT._detailed_run_analysis` | C(t) read-off: nearest sample or spline-interpolated. |
 | `detailed_denoiseVar` | `None` | construct (`'None (raw)'`) | `deT._detailed_run_analysis` | Per-transient denoise method. |
 | `detailed_nWinVar` | `None` | construct (`IntVar(16)`) | `deT._detailed_run_analysis` | Number of multi-windows. |
 | `detailed_t1MinVar` | `None` | construct (`DoubleVar(5.0)`) | `deT._detailed_run_analysis` | t₁ min, ms. |
 | `detailed_t1MaxVar` | `None` | construct (`DoubleVar(90.0)`) | `deT._detailed_run_analysis` | t₁ max, ms. |
 | `detailed_ratioVar` | `None` | construct (`DoubleVar(5.0)`) | `deT._detailed_run_analysis` | Ratio t₂/t₁. |
-| `detailed_stdWinsVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_run_analysis` | Show the 5-window comparison. |
+| `detailed_stdWinsVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_display` (redraws the Arrhenius panel on change) | Show the standard-window comparison. |
 | `detailed_stdEntries` | `None` | construct (list) | `deT._detailed_run_analysis` | 5 `(t1Var, t2Var)` `DoubleVar` pairs, defaults (5, 25), (10, 50), (20, 100), (50, 250), (100, 490) ms. |
-| `detailed_showSpectraVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_run_analysis` | Show the DLTS spectra panel. |
-| `detailed_nSpectraVar` | `None` | construct (`IntVar(5)`) | `deT._detailed_run_analysis` | Number of spectra drawn. |
-| `detailed_showTmapVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_run_analysis` | Show the 2-D transient map. |
-| `detailed_showTauVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_run_analysis` | Overlay τ(T) on the map. |
-| `detailed_showRwmVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_run_analysis` | Show the rate-window analysis map. |
+
+The Display variables are read by `deT._detailed_display`, not by the run; a change redraws the affected panel (or, for the Show checkboxes, rebuilds the panel grid) from the last result through `deT._detailed_on_display_change`:
+
+| Name | Initial / `init()` | Set by | Read by | Meaning |
+|---|---|---|---|---|
+| `detailed_showSpectraVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_display` | Show the DLTS spectra panel. |
+| `detailed_nSpectraVar` | `None` | construct (`IntVar(5)`) | `deT._detailed_display` | Number of spectra drawn (spinbox 2 to 60). |
+| `detailed_showTmapVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_display` | Show the transient map. |
+| `detailed_showTauVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_display` | Overlay τ(T) on the map. |
+| `detailed_showRwmVar` | `None` | construct (`BooleanVar(True)`) | `deT._detailed_display` | Show the rate-window analysis map. |
+| `detailed_arrViewVar` | `None` | construct (`'2D'`) | `deT._detailed_display` | Arrhenius view: `'2D'` / `'3D (peak height up)'`. |
+| `detailed_tmapViewVar` | `None` | construct (`'2D colour map'`) | `deT._detailed_display` | Transient map view: `'2D colour map'` / `'3D isohypse surface'`. |
+| `detailed_rwmViewVar` | `None` | construct (`'2D colour map'`) | `deT._detailed_display` | Rate-window map view, same choices. |
+| `detailed_arrLabelsVar` | `None` | construct (`'Trap ids'`) | `deT._detailed_display` | Arrhenius labels: `Trap ids` / `Legend` / `Results (Et, σ, Nt)` / `None`. |
+| `detailed_specLabelsVar` | `None` | construct (`'Trap ids'`) | `deT._detailed_display` | Spectra labels: `Trap ids` / `Legend` / `Region names` / `None`. |
+| `detailed_tmapLabelsVar` | `None` | construct (`'Trap ids'`) | `deT._detailed_display` | Transient map labels: `Trap ids` / `Legend` / `None`. |
+| `detailed_rwmLabelsVar` | `None` | construct (`'Trap ids'`) | `deT._detailed_display` | Rate-window map labels, same choices. |
 
 Widgets referenced outside their constructor:
 
@@ -309,7 +324,8 @@ Declares all globals except `d_params_for_push` as `global` and resets a subset 
 | `detailed_temps` | `[]` |
 | `detailed_loadingBusy`, `detailedProcessingBusy` | `False` |
 | `detailed_executor` | `None` |
-| `detailed_hitTestStale` | `True` |
+| `detailed_figures`, `detailed_canvases`, `detailed_panelAxes`, `detailed_panelLegends`, `detailed_linkCids` | `{}` |
+| `detailed_linkBusy` | `False` |
 
 Every other global keeps its current value.
 
@@ -438,7 +454,7 @@ The module has no `_name` functions.
 
 - The GUI never calls `init()`. Flags such as `run_busy`, `run_abortRequested` and `app_closing` start as `None` and work only because `None` is falsy; `livePlot_liveRunToken` and similar are guarded with `or 0` in `liveDataTab`.
 - `init()` does not declare `d_params_for_push` as `global` and does not reset it (it is unused anyway).
-- Unused globals: `sourcePrefixSelection`, `d_params_for_push`, `root_data_folder`, `run_stepStatus`. Written but never read: `run_outputFileType`, `run_paused`, `rateWindow_denoisedEmissions`, `detailed_lastResMw`, `detailed_lastResStd`, `detailed_lastNt`, `postprocessingTab`.
+- Unused globals: `sourcePrefixSelection`, `d_params_for_push`, `root_data_folder`, `run_stepStatus`. Written but never read: `run_outputFileType`, `run_paused`, `rateWindow_denoisedEmissions`, `detailed_lastResMw`, `detailed_lastResStd`, `detailed_lastNt`, `detailed_lastTraps`, `detailed_lastTrapsStd`, `detailed_spanSelector`, `postprocessingTab`.
 - `manual_samplingRate` is read but never set, so `liveDataTab` uses its fallback of 1.8666666666666665e-05 s whenever a step file has no usable `timeStampImps`.
 - `detailedProcessingBusy` breaks the `detailed_` naming pattern.
 - `log_to_textbox()` updates Tk widgets from worker threads, which Tkinter does not guarantee to be safe.

@@ -58,31 +58,36 @@ log gives the reason for each.
 
 **4. Quick Analysis.** Keep **Data Source** `Auto (first available)`, or choose
 `Loaded Folder (Offline Data)`. Set the five rate windows to t1/t2 = `0.5/2.5`, `1/5`, `2/10`,
-`5/25`, `10/50` ms and the **Tp search range** to `300` – `400` K. Press
+`5/25`, `10/50` ms. In **Peak Deconvolution**, select region R1, set it to `300` – `400` K
+and click **Update Region** (keep its Smoothing Spline primitive). Press
 **Compute Boxcar Spectrums**, then **Execute Arrhenius Signature Solver** (defaults
 Nd = 3.2e14 cm⁻³, γ = 1.66e21).
 
 ![Quick Analysis on the 23 Sep run](images/gui_quick_analysis.png)
 
-Result: **Et = 0.677 ± 0.007 eV**, σ = 3.0e-14 ± 7.7e-15 cm², Nt = 1.3e13 cm⁻³, all
-5 windows used.
+Result (recorded with the earlier single-peak Smoothing Spline finder, before Peak
+Deconvolution replaced it; a clean single peak should give about the same): **Et = 0.677 ±
+0.007 eV**, σ = 3.0e-14 ± 7.7e-15 cm², Nt = 1.3e13 cm⁻³, all 5 windows used. Nt is now
+computed per trap from the peak heights, so expect it to differ from this value.
 
 With the default windows (5/25 up to 100/490 ms) the two slowest windows peak at the very
-first setpoint (298 K), on the edge of the search range. Those peaks get no T_peak error,
-the **Arrhenius fit** column marks them `excluded (edge peak)`, and the fit uses the other
-three: Et = 0.708 ± 0.009 eV. Faster windows move the peaks to 305–338 K, inside the scan,
-so all of them count. When the peaks crowd one end of the scan, change the windows first.
+first setpoint (298 K), at the low end of the scan. A spline peak needs a drop on both
+sides, so those windows find no peak there (`no peak` rows) and the trap is fitted from the
+other three. Faster windows move the peaks to 305–338 K, inside the scan, so all of them
+count. When the peaks crowd one end of the scan, change the windows first.
 
 **5. Detailed Analysis.** **Browse** to the folder, keep **RB duration** 500 ms,
 **Load Data**. Set **N windows** 8, **t₁ min** 0.5, **t₁ max** 5, ratio 5,
-**T min/max** 300/400 K, standard windows 0.5/2.5, 1/5, 2/10, 5/25, 10/50. **Run Analysis**.
+standard windows 0.5/2.5, 1/5, 2/10, 5/25, 10/50. In **Peak Regions**, select R1, set
+**T min/max** 300/400 K and click **Update** (keep its `default` method). **Run Analysis**.
 
 ![Detailed Analysis on the 23 Sep run](images/gui_detailed_analysis.png)
 
-Result: **Et = 0.685 ± 0.015 eV** (8 windows, weighted by the peak-temperature errors),
-σ = 4.0e-14 cm², Nt = 1.3e13 cm⁻³. The **Standard** block (the same 5 windows as step 4)
-gives 0.6766 ± 0.0073 eV, σ = 3.02e-14 ± 7.69e-15 cm² and Nt = 1.34e13 cm⁻³: the same
-numbers as Quick Analysis, because both tabs run the same functions on the same
+Result (trap R1P1): **Et = 0.685 ± 0.015 eV** (8 windows, weighted by the peak-temperature errors),
+σ = 4.0e-14 cm², total Nt = 1.34e13 cm⁻³ (the last Results line; the R1P1 block's own Nt
+comes from the peak heights and differs). The **Standard** part of R1P1 (the same 5 windows
+as step 4) gives 0.6766 ± 0.0073 eV and σ = 3.02e-14 ± 7.69e-15 cm²: the same numbers as
+the single-peak Quick Analysis result above, because both tabs ran the same functions on the same
 transients (see [Matching Detailed Analysis](reference/dataAnalysisTab.md#matching-detailed-analysis)).
 
 **The same analysis as a script** (no GUI):

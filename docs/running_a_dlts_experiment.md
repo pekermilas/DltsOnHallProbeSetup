@@ -174,16 +174,26 @@ reverse bias is longer than the recorded data).
    Analysis' standard windows. The emission rate of each window is
    `e_n = ln(t2/t1) / (t2 - t1)` in s⁻¹, with t1 and t2 converted from ms to s. Choose windows so the peaks fall inside the scanned
    temperatures; faster windows (shorter t1) move the peak to higher temperature.
-3. **Tp search range**: the temperature range (K) searched for each peak.
-4. **Compute Boxcar Spectrums**, then check **Extracted Peaks**. A window with no peak in
-   the range is `skipped`; a peak on the edge of the range has no T_peak error.
-5. Enter **Background Doping Nd** and **Pre-factor γ** (4H-SiC 1.66e21, Si 3.256e21) and
-   press **Execute Arrhenius Signature Solver** for Et, σ and Nt. Edge peaks are left out
-   of the fit (gray x) and marked `excluded` in the table.
+3. **Compute Boxcar Spectrums**. It computes the spectra and deconvolves them with the
+   regions of the **Peak Deconvolution** frame (middle). The default region, 250–400 K
+   with a Smoothing Spline, finds every peak in that range.
+4. In **Peak Deconvolution**, adjust the regions if needed: type a range or drag on the
+   plot, **Add Region** or **Update Region**, and give each region its primitives
+   (peak shapes listed from low to high T, optional baselines, or a Smoothing Spline
+   alone). Check the fit and residuals of each set with **Show**, then press
+   **Deconvolve All Sets**.
+5. Check **Extracted Peaks**: one row per peak per set. The peak id `R<region>P<k>`
+   (k-th peak of the region from low T) ties the same trap across the sets. A peak on
+   the edge of its region has no T_peak error. Select rows to use only those peaks.
+6. Enter **Background Doping Nd** and **Pre-factor γ** (4H-SiC 1.66e21, Si 3.256e21) and
+   press **Execute Arrhenius Signature Solver**. Each trap seen in at least 2 sets gets
+   its own Arrhenius line, and its Et, σ and Nt appear in
+   **Extracted Microscopic Trap Signatures**. Peaks without a T_peak error are left out
+   of the fit (gray x) and marked `excluded (no Tp error)` in the table.
 
-Quick Analysis runs the same functions as Detailed Analysis. With the same transients,
-windows, search range, reverse bias and the smoothing spline, its result equals the
-**Standard** block of Detailed Analysis
+Quick Analysis computes the spectra and the Arrhenius fit with the same functions as
+Detailed Analysis, but finds the peaks by deconvolution, so its results are close to,
+not identical with, the **Standard** block of Detailed Analysis
 ([details](reference/dataAnalysisTab.md#matching-detailed-analysis)).
 
 ## 6. Many windows and error bars (Detailed Analysis tab)
@@ -191,12 +201,20 @@ windows, search range, reverse bias and the smoothing spline, its result equals 
 ![Detailed Analysis tab](images/gui_detailed_analysis.png)
 
 1. **Browse** to the run folder and set **RB duration (ms)**, then **Load Data**.
-2. Set **N windows**, **t₁ min/max (ms)** and **Ratio t₂/t₁** (log-spaced windows), the
-   **Peak Search Range** in K and the peak method.
-3. **Run Analysis**. Results: Arrhenius plot (multi-window and the standard windows; a `0 / 0`
-   standard row is unused),
-   DLTS spectra, ΔC/C transient map, rate-window map, and a Results text panel.
-   **Save Figure...** and **Export Results to TXT** save them.
+2. Set **N windows**, **t₁ min/max (ms)** and **Ratio t₂/t₁** (log-spaced windows).
+3. Set the **Peak Regions** (default: one region, 250–400 K, with the default peak method).
+   Type **T min / T max** (K), or drag across the DLTS Spectra panel after a run, then
+   **Add Region** (or select a region and **Update**). A new region takes the primitives of
+   the Quick Analysis region overlapping it most, otherwise the default single-peak finder;
+   **Method of the selected region** changes it. Edits apply at the next run.
+4. **Run Analysis**. Each peak of each region (`R<region>P<k>`) is one trap with its own
+   Arrhenius line. Results: Arrhenius plot (multi-window and the standard windows per trap;
+   a `0 / 0` standard row is unused), DLTS spectra with the regions and found peaks marked,
+   ΔC/C transient map, rate-window map, and a Results text panel with one block per trap.
+   Each plot has its own toolbar; zooming one also zooms its row partner to the same
+   temperatures. The **Display** options (panels shown, 2D/3D view, which labels) apply at
+   once without re-running. **Save Figure...** (all shown panels in one figure) and
+   **Export Results to TXT** save them.
 
 The formulas and every option are in [detailedAnalysisTab](reference/detailedAnalysisTab.md)
 and [dataAnalysisTab](reference/dataAnalysisTab.md). The [Quick run examples](quick_run.md)

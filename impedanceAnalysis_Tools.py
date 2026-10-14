@@ -32,12 +32,13 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA, FastICA
 from scipy.stats import weibull_min, mode
 from scipy.integrate import quad
-from scipy.signal import savgol_filter
+from scipy.signal import savgol_filter, find_peaks
 from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import CubicSpline
 from scipy.interpolate import BSpline, interp2d
 from scipy.optimize import differential_evolution
-from lmfit.models import LognormalModel, GaussianModel, PseudoVoigtModel, VoigtModel, LorentzianModel
+from lmfit.models import (LognormalModel, GaussianModel, PseudoVoigtModel, VoigtModel, LorentzianModel,
+                          ConstantModel, LinearModel)
 from fastlowess import Lowess
 
 import warnings
@@ -56,6 +57,39 @@ GAP_FACTOR = 100
 _STEP_STEM_PATTERN = re.compile(r'^([npNP]?)(\d+)(?:[pP](\d+))?[cC]?(?:_\d+)?$')
 # ZI export history name -> (sign, integer, decimals): 25C_000, p25C_001, n10C_000, p25p5C_000.
 _CSV_NAME_PATTERN = re.compile(r'^([npNP]?)(\d+)(?:[pP.](\d+))?C_')
+
+def mirroredLognormal(x, height=1.0, center=0.0, width=1.0, shape=0.5):
+    """Lognormal peak mirrored so its heavy tail is on the LEFT (low-x) side.
+
+    In u = D - x it is a lognormal with median `width` and log-width `shape`,
+    reflected at D = center + width*exp(-shape**2) so the peak (mode) sits at
+    x = center with value `height`; zero for x >= D. Mirroring a lognormal
+    about its mean (or any other point) gives this same family, only shifted,
+    so the peak itself is the parameter -- center is then directly the peak
+    position and its lmfit stderr the peak-position error. The mean, left of
+    the peak, is center + width*(exp(-shape**2) - exp(shape**2 / 2)).
+    Larger `shape` = heavier left tail; small `shape` tends to a Gaussian of
+    sigma ~ width*shape.
+    """
+    x = np.asarray(x, dtype=float)
+    s = max(float(shape), 1e-12)
+    w = max(float(width), 1e-300)
+    uMode = w * np.exp(-s * s)
+    u = (center + uMode) - x
+    out = np.zeros_like(x)
+    pos = u > 0
+    logRatio = np.log(u[pos] / w)
+    out[pos] = height * (uMode / u[pos]) * np.exp(-(logRatio * logRatio) / (2 * s * s) + s * s / 2)
+    return out
+
+# Primitives impdData._deconvolve_peaks() can sum. Peak-shaped ones give a
+# peak (center/height); baselines only absorb a background under the peaks.
+DECONV_PEAK_PRIMITIVES = ('mirroredLognormal', 'gaussian', 'lorentzian', 'voigt', 'pseudoVoigt')
+DECONV_BASELINE_PRIMITIVES = ('constant', 'linear')
+DECONV_PRIMITIVES = DECONV_PEAK_PRIMITIVES + DECONV_BASELINE_PRIMITIVES
+# A deconvolved peak within this fraction of the smallest grid step of either
+# end of its region is on the edge (its center hit the region's bound).
+DECONV_EDGE_FRAC = 0.01
 
 def read_h5_record(file_path, keys=None):
     """Read one temperature step written by ziDevice.writeDataH5().
@@ -1565,6 +1599,46 @@ class impdData:
         return x, yDenoised, yRaw
 
     @staticmethod
+    def _smoothing_spline_fit(xs, ys, yErrs=None, smoothingFactor=None):
+        """
+        The weighted smoothing spline _smoothingSpline_peakFinder() and
+        _smoothingSpline_multiPeakFinder() share (see the former's docstring
+        for why the smoothing factor is chosen this way). xs must be
+        increasing. yErrs is used (as weights, with s ~= m) only if every
+        entry is finite and > 0; otherwise the noise is estimated from the
+        signal's second-difference roughness and s scaled to it.
+
+        Returns (spline, yErrs, weights, noiseStd, smoothingFactor): yErrs is
+        None if unusable, noiseStd None when yErrs is used -- the bootstrap
+        resamples with whichever of the two is set.
+        """
+        if yErrs is not None:
+            yErrs = np.asarray(yErrs, dtype=float)
+            if not (np.all(np.isfinite(yErrs)) and np.all(yErrs > 0)):
+                yErrs = None  # fall back to auto-estimated noise below
+
+        weights = None
+        noiseStd = None
+        if yErrs is not None:
+            weights = 1.0 / yErrs
+            if smoothingFactor is None:
+                # Weights normalize residuals to unit variance, so scipy's
+                # own s ~= m starting recommendation applies directly here.
+                smoothingFactor = max(float(len(xs)), 1e-300)
+        else:
+            if len(ys) >= 5:
+                secondDiff = ys[:-2] - 2 * ys[1:-1] + ys[2:]
+                noiseVar = np.sum(secondDiff ** 2) / (6.0 * len(secondDiff))
+            else:
+                noiseVar = np.var(ys)
+            noiseStd = np.sqrt(noiseVar)
+            if smoothingFactor is None:
+                smoothingFactor = max(noiseVar * len(xs), 1e-300)
+
+        spline = UnivariateSpline(xs, ys, w=weights, k=3, s=smoothingFactor)
+        return spline, yErrs, weights, noiseStd, smoothingFactor
+
+    @staticmethod
     def _smoothingSpline_peakFinder(signalX = None, signalY = None, smoothingFactor = None,
                                     nBootstrap = 200, randomState = 0, signalYErr = None):
         """
@@ -1623,32 +1697,10 @@ class impdData:
             signalY = np.asarray(signalY, dtype=float)
             order = np.argsort(signalX)  # UnivariateSpline requires increasing x
             xs, ys = signalX[order], signalY[order]
+            yErrs = None if signalYErr is None else np.asarray(signalYErr, dtype=float)[order]
 
-            yErrs = None
-            if signalYErr is not None:
-                yErrs = np.asarray(signalYErr, dtype=float)[order]
-                if not (np.all(np.isfinite(yErrs)) and np.all(yErrs > 0)):
-                    yErrs = None  # fall back to auto-estimated noise below
-
-            weights = None
-            noiseStd = None
-            if yErrs is not None:
-                weights = 1.0 / yErrs
-                if smoothingFactor is None:
-                    # Weights normalize residuals to unit variance, so scipy's
-                    # own s ~= m starting recommendation applies directly here.
-                    smoothingFactor = max(float(len(xs)), 1e-300)
-            else:
-                if len(ys) >= 5:
-                    secondDiff = ys[:-2] - 2 * ys[1:-1] + ys[2:]
-                    noiseVar = np.sum(secondDiff ** 2) / (6.0 * len(secondDiff))
-                else:
-                    noiseVar = np.var(ys)
-                noiseStd = np.sqrt(noiseVar)
-                if smoothingFactor is None:
-                    smoothingFactor = max(noiseVar * len(xs), 1e-300)
-
-            spline = UnivariateSpline(xs, ys, w=weights, k=3, s=smoothingFactor)
+            spline, yErrs, weights, noiseStd, smoothingFactor = impdData._smoothing_spline_fit(
+                xs, ys, yErrs, smoothingFactor)
             xf = np.linspace(xs.min(), xs.max(), 100000)
             yf = spline(xf)
 
@@ -1750,6 +1802,274 @@ class impdData:
             maxY, maxYErr = float(result.eval(x=maxX)), None
 
         return maxX, maxY, xf, yf, maxXErr, maxYErr
+
+    @staticmethod
+    def _smoothingSpline_multiPeakFinder(signalX = None, signalY = None, minProminence = 0.05,
+                                         smoothingFactor = None, nBootstrap = 200, randomState = 0,
+                                         signalYErr = None):
+        """
+        Fit a 1D signal to a smoothing cubic spline (the same weighted spline
+        as _smoothingSpline_peakFinder(), see _smoothing_spline_fit()) and
+        return EVERY peak whose prominence is at least `minProminence` times
+        the spline's largest |value| -- the spline counterpart of
+        _deconvolve_peaks() for overlapping peaks.
+
+        The signal is flipped first if its dominant extremum is negative
+        (minority-carrier DLTS peaks), so peaks are found in that direction;
+        heights come back in the signal's own sign. A peak needs a drop on
+        both sides, so a signal still rising at either end of the range gives
+        no peak there.
+
+        Errors are a parametric bootstrap, as in _smoothingSpline_peakFinder():
+        each resample is refit and re-peak-found with the same absolute
+        prominence threshold, and each original peak takes the resample peak
+        nearest to it within its own catchment (halfway to the neighbouring
+        peaks, or the range ends). centerErr/heightErr are the standard
+        deviations over resamples, or None if fewer than max(10, nBootstrap/4)
+        resamples found that peak.
+
+        Returns a dict: peaks (list of {center, centerErr, height, heightErr,
+        prominence}, increasing center), xf, yf (spline in the signal's own
+        sign), sign (+1 / -1).
+        """
+        if signalX is None or signalY is None:
+            raise ValueError("No data found.")
+        signalX = np.asarray(signalX, dtype=float)
+        signalY = np.asarray(signalY, dtype=float)
+        order = np.argsort(signalX)
+        xs, ys = signalX[order], signalY[order]
+        yErrs = None if signalYErr is None else np.asarray(signalYErr, dtype=float)[order]
+        sign = -1.0 if np.max(ys) < abs(np.min(ys)) else 1.0
+        ys = sign * ys
+
+        spline, yErrs, weights, noiseStd, smoothingFactor = impdData._smoothing_spline_fit(
+            xs, ys, yErrs, smoothingFactor)
+        xf = np.linspace(xs.min(), xs.max(), 20000)
+        yf = spline(xf)
+        absProminence = float(minProminence) * float(np.max(np.abs(yf)))
+        peakIdx, props = find_peaks(yf, prominence=max(absProminence, 1e-300))
+        centers = xf[peakIdx]
+        heights = yf[peakIdx]
+
+        # Catchment of each peak: halfway to its neighbours (or the range ends).
+        edges = np.concatenate(([xs.min()], (centers[:-1] + centers[1:]) / 2.0, [xs.max()]))
+        bootX = [[] for _ in centers]
+        bootY = [[] for _ in centers]
+        canBootstrap = (len(centers) > 0 and nBootstrap and nBootstrap > 0 and len(xs) > 3
+                        and (yErrs is not None or (noiseStd is not None and noiseStd > 0)))
+        if canBootstrap:
+            rng = np.random.default_rng(randomState)
+            xfBoot = np.linspace(xs.min(), xs.max(), 2000)
+            for _ in range(nBootstrap):
+                noiseSample = rng.normal(scale=yErrs) if yErrs is not None else rng.normal(scale=noiseStd, size=ys.shape)
+                try:
+                    splineBoot = UnivariateSpline(xs, ys + noiseSample, w=weights, k=3, s=smoothingFactor)
+                except Exception:
+                    continue
+                yfBoot = splineBoot(xfBoot)
+                idxBoot = find_peaks(yfBoot, prominence=max(absProminence, 1e-300))[0]
+                for j, center in enumerate(centers):
+                    inside = idxBoot[(xfBoot[idxBoot] >= edges[j]) & (xfBoot[idxBoot] <= edges[j + 1])]
+                    if inside.size == 0:
+                        continue
+                    nearest = inside[np.argmin(np.abs(xfBoot[inside] - center))]
+                    bootX[j].append(xfBoot[nearest])
+                    bootY[j].append(yfBoot[nearest])
+
+        minSamples = max(10, (nBootstrap or 0) // 4)
+        peaks = []
+        for j in range(len(centers)):
+            haveErr = len(bootX[j]) >= minSamples
+            peaks.append(dict(center=float(centers[j]),
+                              centerErr=float(np.std(bootX[j], ddof=1)) if haveErr else None,
+                              height=float(sign * heights[j]),
+                              heightErr=float(np.std(bootY[j], ddof=1)) if haveErr else None,
+                              prominence=float(props['prominences'][j])))
+        return dict(peaks=peaks, xf=xf, yf=sign * yf, sign=sign)
+
+    @staticmethod
+    def _deconvolution_center_guesses(xs, ys, n):
+        """Starting centers for n overlapping peaks in (xs, ys >= 0-ish): the
+        n most prominent local maxima, then shoulders (local minima of the
+        second derivative) for peaks hidden under a bigger one, then the middle
+        of the widest remaining gap. Returned in increasing order."""
+        if n <= 0:
+            return []
+        ySm = ys.copy()
+        if len(ys) >= 7:   # light 3-point smoothing so noise isn't taken for peaks
+            ySm[1:-1] = (ys[:-2] + ys[1:-1] + ys[2:]) / 3.0
+        dxMin = float(np.min(np.diff(xs))) if len(xs) > 1 else 1.0
+        chosen = []
+
+        def far_enough(x):
+            return all(abs(x - c) >= 2.0 * dxMin for c in chosen)
+
+        peakIdx, props = find_peaks(ySm, prominence=0.02 * max(float(np.max(ySm)), 1e-300))
+        for k in peakIdx[np.argsort(props['prominences'])[::-1]]:
+            if len(chosen) < n and far_enough(xs[k]):
+                chosen.append(float(xs[k]))
+        if len(chosen) < n and len(xs) >= 5:
+            d2 = np.gradient(np.gradient(ySm, xs), xs)
+            shoulderIdx = find_peaks(-d2)[0]
+            for k in shoulderIdx[np.argsort(d2[shoulderIdx])]:   # most negative curvature first
+                if len(chosen) < n and far_enough(xs[k]):
+                    chosen.append(float(xs[k]))
+        while len(chosen) < n:
+            bounds = sorted([float(xs[0]), float(xs[-1])] + chosen)
+            gaps = np.diff(bounds)
+            g = int(np.argmax(gaps))
+            chosen.append(bounds[g] + gaps[g] / 2.0)
+        return sorted(chosen)
+
+    @staticmethod
+    def _deconvolve_peaks(signalX = None, signalY = None, primitives = None, signalYErr = None):
+        """
+        Deconvolve a 1D signal (e.g. one rate window's DLTS S(T) inside a
+        user-chosen temperature region) into a sum of `primitives` with one
+        lmfit composite-model fit.
+
+        primitives: list of DECONV_PRIMITIVES keys -- peak shapes
+        'mirroredLognormal' (heavy tail on the left, see mirroredLognormal()),
+        'gaussian', 'lorentzian', 'voigt', 'pseudoVoigt', and baselines
+        'constant', 'linear'. The peak shapes are matched to starting centers
+        (_deconvolution_center_guesses) in increasing x, in the order they are
+        listed, so list them from low to high x; the fit keeps them in that
+        order. The first peak's center is bounded to the data's x range; a
+        peak that ends up on (or past) either end is flagged onEdge (it wants
+        to sit outside the region).
+
+        The signal is flipped first if its dominant extremum is negative, and
+        peaks are fitted with non-negative amplitude in that direction;
+        heights and curves come back in the signal's own sign. `signalYErr`,
+        if every entry is finite and > 0, weights the fit (1/err) and the
+        parameter errors are lmfit's covariance estimates (scaled by the
+        reduced chi-square, lmfit's default).
+
+        Returns a dict: success, message, sign, weighted, redchi, rsquared,
+        x (sorted input x), residual (data - fit at x), xf, yf (total fit),
+        componentCurves (one array per primitive, on xf), and components (one
+        dict per primitive: primitive, isPeak, center, centerErr, height,
+        heightErr, fwhm, onEdge -- center/height/fwhm None for baselines).
+        """
+        if signalX is None or signalY is None or not primitives:
+            raise ValueError("Signal and at least one primitive are required.")
+        unknown = [p for p in primitives if p not in DECONV_PRIMITIVES]
+        if unknown:
+            raise ValueError(f"Unknown primitive(s) {unknown}. Valid options: {', '.join(DECONV_PRIMITIVES)}.")
+        signalX = np.asarray(signalX, dtype=float)
+        signalY = np.asarray(signalY, dtype=float)
+        order = np.argsort(signalX)
+        xs, ysRaw = signalX[order], signalY[order]
+        yErrs = None
+        if signalYErr is not None:
+            yErrs = np.asarray(signalYErr, dtype=float)[order]
+            if not (np.all(np.isfinite(yErrs)) and np.all(yErrs > 0)):
+                yErrs = None
+        sign = -1.0 if np.max(ysRaw) < abs(np.min(ysRaw)) else 1.0
+        ys = sign * ysRaw
+
+        x0, x1 = float(xs[0]), float(xs[-1])
+        span = max(x1 - x0, 1e-12)
+        dxMin = float(np.min(np.diff(xs))) if len(xs) > 1 else span
+        dxMed = float(np.median(np.diff(xs))) if len(xs) > 1 else span
+        yMax = max(float(np.max(ys)), 1e-300)
+
+        peakSlots = [k for k, p in enumerate(primitives) if p in DECONV_PEAK_PRIMITIVES]
+        centers0 = impdData._deconvolution_center_guesses(xs, ys, len(peakSlots))
+        centerOf = dict(zip(peakSlots, centers0))
+
+        model = None
+        params = lmfit.Parameters()
+        for k, prim in enumerate(primitives):
+            prefix = f'p{k}_'
+            if prim == 'constant':
+                comp = ConstantModel(prefix=prefix)
+                compParams = comp.make_params(c=float(np.min(ys)))
+            elif prim == 'linear':
+                comp = LinearModel(prefix=prefix)
+                compParams = comp.make_params(slope=0.0, intercept=float(np.min(ys)))
+            else:
+                c0 = centerOf[k]
+                others = [centerOf[j] for j in peakSlots if j != k]
+                nearest = min((abs(c0 - c) for c in others), default=span / 1.5)
+                sigma0 = float(np.clip(nearest / 2.5, 1.5 * dxMed, span / 2.0))
+                h0 = max(float(np.interp(c0, xs, ys)), 0.05 * yMax)
+                if prim == 'mirroredLognormal':
+                    comp = lmfit.Model(mirroredLognormal, prefix=prefix)
+                    shape0 = 0.3
+                    compParams = comp.make_params(height=h0, center=c0, shape=shape0,
+                                                  width=sigma0 * np.exp(shape0 ** 2) / shape0)
+                    compParams[prefix + 'height'].set(min=0.0)
+                    compParams[prefix + 'shape'].set(min=0.02, max=2.0)
+                    compParams[prefix + 'width'].set(min=0.25 * dxMed, max=50.0 * span)
+                else:
+                    comp = {'gaussian': GaussianModel, 'lorentzian': LorentzianModel, 'voigt': VoigtModel,
+                            'pseudoVoigt': PseudoVoigtModel}[prim](prefix=prefix)
+                    areaPerHeight = {'gaussian': np.sqrt(2 * np.pi), 'lorentzian': np.pi,
+                                     'voigt': np.sqrt(2 * np.pi), 'pseudoVoigt': 2.2}[prim]
+                    compParams = comp.make_params(amplitude=h0 * sigma0 * areaPerHeight, center=c0, sigma=sigma0)
+                    compParams[prefix + 'amplitude'].set(min=0.0)
+                    compParams[prefix + 'sigma'].set(min=0.5 * dxMed, max=2.0 * span)
+                compParams[prefix + 'center'].set(min=x0, max=x1)
+            params.update(compParams)
+            model = comp if model is None else model + comp
+
+        # Keep the peaks in their listed order (center_k >= previous center)
+        # so the same component means the same peak in every rate window --
+        # otherwise two like-shaped peaks can swap places between windows.
+        # The first peak's center is bounded to the region; each later one is
+        # previous + a non-negative step, and its lmfit stderr is propagated
+        # through that constraint.
+        for prevSlot, slot in zip(peakSlots[:-1], peakSlots[1:]):
+            stepName = f'p{slot}_step'
+            params.add(stepName, value=max(centerOf[slot] - centerOf[prevSlot], 0.0), min=0.0, max=span)
+            params[f'p{slot}_center'].set(expr=f'p{prevSlot}_center + {stepName}')
+
+        fitKwargs = {} if yErrs is None else {'weights': 1.0 / yErrs}
+        out = dict(success=False, message='', sign=sign, weighted=yErrs is not None, redchi=None, rsquared=None,
+                   x=xs, residual=None, xf=None, yf=None, componentCurves=[], components=[])
+        nFree = sum(1 for p in params.values() if p.vary and p.expr is None)
+        if len(xs) <= nFree:
+            out['message'] = f"{len(xs)} point(s) for {nFree} free parameters; widen the region or use fewer primitives."
+            return out
+        try:
+            result = model.fit(ys, params, x=xs, **fitKwargs)
+        except Exception as exc:
+            out['message'] = f"fit failed: {exc}"
+            return out
+
+        xf = np.linspace(x0, x1, 2000)
+        curves = result.eval_components(x=xf)
+        tol = DECONV_EDGE_FRAC * dxMin
+        components = []
+        componentCurves = []
+        for k, prim in enumerate(primitives):
+            prefix = f'p{k}_'
+            componentCurves.append(sign * np.broadcast_to(curves[prefix], xf.shape).astype(float))
+            if prim in DECONV_BASELINE_PRIMITIVES:
+                components.append(dict(primitive=prim, isPeak=False, center=None, centerErr=None,
+                                       height=None, heightErr=None, fwhm=None, onEdge=False))
+                continue
+            centerP = result.params[prefix + 'center']
+            heightP = result.params[prefix + 'height']
+            fwhmP = result.params.get(prefix + 'fwhm')
+            if fwhmP is not None:
+                fwhm = float(fwhmP.value)
+            else:   # mirrored lognormal: measure it on the fitted curve
+                above = xf[curves[prefix] >= 0.5 * heightP.value]
+                fwhm = float(above[-1] - above[0]) if above.size > 1 else None
+            components.append(dict(
+                primitive=prim, isPeak=True,
+                center=float(centerP.value), centerErr=None if centerP.stderr is None else float(centerP.stderr),
+                height=float(sign * heightP.value),
+                heightErr=None if heightP.stderr is None else float(heightP.stderr),
+                fwhm=fwhm, onEdge=bool(centerP.value <= x0 + tol or centerP.value >= x1 - tol)))
+
+        out.update(success=bool(result.success), message=str(result.message),
+                   redchi=float(result.redchi), rsquared=float(getattr(result, 'rsquared', np.nan)),
+                   residual=sign * (ys - result.best_fit), xf=xf, yf=sign * result.eval(x=xf),
+                   componentCurves=componentCurves, components=components)
+        return out
 
     def filter_emissions(self, method='pca', emissionIndex=-1, recalculate=False,
                         trimHead=10, trimTail=10, interactivePlot=True):

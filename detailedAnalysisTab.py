@@ -12,13 +12,14 @@ import pandas as pd
 from scipy.interpolate import griddata, CubicSpline
 from lmfit.models import LinearModel, QuadraticModel
 
-import matplotlib.pyplot as plt   # only for the plt.cm.* colormaps below -- never used to create a Figure (see _detailed_plot)
+import matplotlib
 import matplotlib.ticker as mticker
-import matplotlib.gridspec as mgridspec
+import matplotlib.patches as mpatches
+import matplotlib.patheffects as mpatheffects
 from matplotlib.figure import Figure
 from matplotlib.colors import Normalize, LogNorm
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.transforms import BboxTransformFrom
+from matplotlib.widgets import SpanSelector
 
 import dltsConfig as dltsc
 import liveDataTab as ldT   # reuses its data-folder format detection/extraction -- see _load_detailed_data
@@ -47,6 +48,9 @@ TEXT_MUT = '#898781'
 GRIDLINE = '#e1e0d9'
 BASELINE = '#c3c2b7'
 CTRL_BG  = '#f0f0f0'
+# One colour per trap (peak id) on the Arrhenius / spectra panels; the first is
+# C0, the single-trap colour this tab always used.
+TRAP_COLORS = (C0, '#1b9e77', '#9b59b6', C1, '#d4a017', '#e7298a', '#3f4f75')
 
 # ── ZI grid defaults ─────────────────────────────────────────────────────────
 DEFAULT_GRID_OFF   = -0.001
@@ -432,7 +436,7 @@ def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_m
         Tp, Tp_err, peak_val = pk['Tp'], pk['Tp_err'], abs(pk['S_peak'])
         en_list.append(en); Tp_list.append(Tp); Sp_list.append(peak_val)
         Tp_err_list.append(np.nan if Tp_err is None else Tp_err)
-        rows_detail.append((t1, t2, en, Tp - 273.15, Tp_err, peak_val))
+        rows_detail.append((t1, t2, en, Tp, Tp_err, peak_val))
 
     res = _arrhenius_fit(en_list, Tp_list, Tp_err_list, gamma)
     if res is None:
@@ -489,6 +493,219 @@ def _trap_density(data, temps, rb_ms, nd):
     * Nd (cm^-3), from _prepare_signal_data records -- shared by both analysis tabs."""
     S_ref = np.array([(_cap_at(data[tc], rb_ms) - _cap_at(data[tc], 2.0)) / data[tc][2] for tc in temps])
     return 2.0 * float(np.nanmax(np.abs(S_ref))) * nd
+
+#---------------------PEAK REGIONS (SHARED WITH QUICK ANALYSIS)-------------------------#
+# Quick Analysis' Peak Deconvolution and this tab's Peak Regions split a rate
+# window's S(T) into the same primitives, with impedanceAnalysis_Tools' shared
+# finders, through the helpers below -- defined here (the module both tabs
+# import) so this tab's worker process can run them too. A region is a dict
+# {'tLo', 'tHi' (K), 'primitives': [PRIMITIVE_OPTIONS labels], 'prominence'}.
+
+# Peak primitives: UI label -> impedanceAnalysis_Tools key
+# (iaT.DECONV_PRIMITIVES), and the short name both tabs show.
+# A Smoothing Spline region is not a sum of shapes: the spline is fitted alone
+# and its peaks are those above the region's minimum prominence.
+PRIMITIVE_SPLINE = 'Smoothing Spline (prominence peaks)'
+PRIMITIVE_KEYS = {
+    'Mirrored Lognormal (left tail)': 'mirroredLognormal',
+    'Gaussian': 'gaussian',
+    'Lorentzian': 'lorentzian',
+    'Voigt': 'voigt',
+    'Pseudo-Voigt': 'pseudoVoigt',
+    'Constant Baseline': 'constant',
+    'Linear Baseline': 'linear',
+}
+PRIMITIVE_OPTIONS = list(PRIMITIVE_KEYS) + [PRIMITIVE_SPLINE]
+PRIMITIVE_SHORT = {
+    'Mirrored Lognormal (left tail)': 'MirLogN', 'Gaussian': 'Gauss', 'Lorentzian': 'Lorentz',
+    'Voigt': 'Voigt', 'Pseudo-Voigt': 'pVoigt', 'Constant Baseline': 'Const', 'Linear Baseline': 'Linear',
+    PRIMITIVE_SPLINE: 'Spline',
+}
+# Smoothing Spline regions: a peak's prominence must be at least this fraction
+# of the region's largest |S|. 0.02 still finds the R11C4 run's ~4 % shoulder
+# next to its main 300 K peak.
+DEFAULT_PROMINENCE = '0.02'
+
+def _region_problem(region):
+    """Why a region can't be deconvolved, or None if it can."""
+    prims = region['primitives']
+    if region['tHi'] <= region['tLo']:
+        return 'its upper bound must exceed the lower bound'
+    if not prims:
+        return 'it has no primitives; add some'
+    if PRIMITIVE_SPLINE in prims and len(prims) > 1:
+        return 'Smoothing Spline must be its only primitive'
+    if PRIMITIVE_SPLINE not in prims and not any(PRIMITIVE_KEYS[p] in iaT.DECONV_PEAK_PRIMITIVES for p in prims):
+        return 'it needs at least one peak-shaped primitive (baselines alone give no peak)'
+    return None
+
+def _usable_tp_err(tpErr, onEdge):
+    """A peak's T_peak error, or None -- leaving it out of the weighted
+    Arrhenius fit, like _guard_peak_error -- when the peak is on its region's
+    edge or has no usable error (below MIN_TP_ERR_K included)."""
+    if onEdge or tpErr is None or not np.isfinite(tpErr) or tpErr < MIN_TP_ERR_K:
+        return None
+    return float(tpErr)
+
+def _deconvolve_region(sig, region):
+    """One rate window's S(T) -- sig = {'T_k', 'Signal', 'Signal_err'}, like a
+    dltsc.rateWindow_signals entry -- deconvolved inside one region with
+    non-empty primitives. Returns a dict: ok, message, x (the region's temperatures),
+    residual (data - fit, divided by the point errors when residualNorm),
+    residualNorm, xf/yf (total fit), componentCurves [(primitive label,
+    curve on xf)], peaks [{T_peak, T_peak_err, S_peak, S_peak_err, primitive,
+    onEdge}], redchi, rsquared."""
+    T, S, S_err = sig['T_k'], sig['Signal'], sig['Signal_err']
+    mask = (T >= region['tLo']) & (T <= region['tHi'])
+    out = dict(ok=False, message='', x=T[mask], residual=None, residualNorm=False, xf=None, yf=None,
+               componentCurves=[], peaks=[], redchi=None, rsquared=None)
+    if mask.sum() < 5:
+        out['message'] = f"only {int(mask.sum())} temperature(s) in {region['tLo']:g}–{region['tHi']:g} K"
+        return out
+    x, y = T[mask], S[mask]
+    e = None if S_err is None else _valid_errors(S_err[mask])
+    try:
+        if region['primitives'] == [PRIMITIVE_SPLINE]:
+            res = iaT.impdData._smoothingSpline_multiPeakFinder(x, y, minProminence=region['prominence'],
+                                                                signalYErr=e)
+            out.update(ok=True, xf=res['xf'], yf=res['yf'])
+            residual = y - np.interp(x, res['xf'], res['yf'])
+            for p in res['peaks']:
+                out['peaks'].append(dict(T_peak=p['center'], T_peak_err=_usable_tp_err(p['centerErr'], False),
+                                         S_peak=p['height'], S_peak_err=p['heightErr'],
+                                         primitive=PRIMITIVE_SPLINE, onEdge=False))
+        else:
+            res = iaT.impdData._deconvolve_peaks(x, y, [PRIMITIVE_KEYS[p] for p in region['primitives']],
+                                                 signalYErr=e)
+            if res['xf'] is None:
+                out['message'] = res['message']
+                return out
+            out.update(ok=True, xf=res['xf'], yf=res['yf'], redchi=res['redchi'], rsquared=res['rsquared'],
+                       componentCurves=list(zip(region['primitives'], res['componentCurves'])),
+                       message='' if res['success'] else f"fit did not converge ({res['message']})")
+            residual = res['residual']
+            for label, comp in zip(region['primitives'], res['components']):
+                if comp['isPeak']:
+                    out['peaks'].append(dict(T_peak=comp['center'],
+                                             T_peak_err=_usable_tp_err(comp['centerErr'], comp['onEdge']),
+                                             S_peak=comp['height'], S_peak_err=comp['heightErr'],
+                                             primitive=label, onEdge=comp['onEdge']))
+    except Exception as exc:
+        out.update(ok=False, message=f'failed: {exc}', xf=None, yf=None, componentCurves=[], peaks=[])
+        return out
+    out['residualNorm'] = e is not None
+    out['residual'] = residual / e if e is not None else residual
+    return out
+
+def _boxcar_peak_factor(t1, t2):
+    """S_peak / (ΔC/C∞) of an ideal exponential transient for a double boxcar
+    (t1, t2): exp(-e t1) - exp(-e t2) at the rate-window emission rate e,
+    = r^(-1/(r-1)) - r^(-r/(r-1)) with r = t2/t1."""
+    r = t2 / t1
+    return r ** (-1.0 / (r - 1.0)) - r ** (-r / (r - 1.0))
+
+def _trap_density_from_peaks(peaks, nd):
+    """Trap density Nt = 2 Nd ΔC/C∞ (small-signal), with ΔC/C∞ = |S_peak| /
+    _boxcar_peak_factor for each peak (one per set), combined into an
+    error-weighted mean when every peak has a height error (its error is the
+    weighted-mean error, scaled up by sqrt(reduced chi-square) when the sets
+    scatter more than their errors), else the plain mean and its standard
+    error. Returns (Nt, Nt_err); Nt_err is None for a single peak without one."""
+    values = np.array([2.0 * nd * abs(p['S_peak']) / _boxcar_peak_factor(p['t1'], p['t2']) for p in peaks])
+    errs = np.array([np.nan if p['S_peak_err'] is None
+                     else 2.0 * nd * p['S_peak_err'] / _boxcar_peak_factor(p['t1'], p['t2']) for p in peaks])
+    if np.all(np.isfinite(errs)) and np.all(errs > 0):
+        w = 1.0 / errs ** 2
+        mean = float(np.sum(w * values) / np.sum(w))
+        err = float(np.sqrt(1.0 / np.sum(w)))
+        if len(values) > 1:
+            redchi = float(np.sum(w * (values - mean) ** 2) / (len(values) - 1))
+            err *= np.sqrt(max(redchi, 1.0))
+        return mean, err
+    mean = float(np.mean(values))
+    return mean, (float(np.std(values, ddof=1) / np.sqrt(len(values))) if len(values) > 1 else None)
+
+def _region_method_text(region, peak_method):
+    """How a region's peaks are found: its primitives, or the single-peak
+    peak_method when it has none."""
+    if region['primitives']:
+        text = ' + '.join(PRIMITIVE_SHORT[p] for p in region['primitives'])
+        if region['primitives'] == [PRIMITIVE_SPLINE]:
+            text += f" (prom. ≥ {region['prominence']:g})"
+        return text
+    return f'single peak, {peak_method}'
+
+def _peak_id_order(peakId):
+    """Sort key of a peak id 'R<r>P<k>': (r, k) as numbers, so R10 follows R9."""
+    r, k = peakId[1:].split('P')
+    return int(r), int(k)
+
+def _window_region_peaks(T_K, S, S_err, region, peak_method, peak_min_frac=PEAK_MIN_FRAC):
+    """Peaks of one window's S(T) inside one region, low to high T: with the
+    region's primitives (_deconvolve_region -- Quick Analysis' method) when it
+    has any, else this tab's single-peak finder over the region
+    (_peak_from_signal with peak_method, i.e. the region acts as the old Peak
+    Search Range). Returns (peaks, message): peaks as [{T_peak, T_peak_err,
+    S_peak, S_peak_err, primitive, onEdge}], message '' unless something failed."""
+    if region['primitives']:
+        res = _deconvolve_region(dict(T_k=T_K, Signal=S, Signal_err=_valid_errors(S_err)), region)
+        return res['peaks'], res['message']
+    pk = _peak_from_signal(T_K, S, S_err, region['tLo'], region['tHi'], peak_method, peak_min_frac)
+    if pk['skipped']:
+        return [], ''
+    return [dict(T_peak=pk['Tp'], T_peak_err=pk['Tp_err'], S_peak=pk['S_peak'], S_peak_err=None,
+                 primitive=peak_method, onEdge=pk['Tp_err'] is None)], ''
+
+def _compute_trap_arrhenius(windows, temps, data, gamma, regions, peak_method=PEAK_METHOD_SPLINE, nd=DEFAULT_ND,
+                            peak_min_frac=PEAK_MIN_FRAC):
+    """Every region's peaks in every window, grouped into traps by peak id
+    R<r>P<k> (the k-th peak of region r from low T), each trap with its own
+    _arrhenius_fit -- the multi-trap counterpart of _compute_arrhenius, which a
+    single region without primitives reproduces exactly.
+
+    Returns (traps, windowPeaks, messages). traps: one _arrhenius_fit result
+    per trap with at least 2 fittable windows, in peak-id order, plus peakId,
+    region (index), method (text), win_idx (window index of each point),
+    Sp_arr (|S_peak|), detail (t1, t2, en, Tp (K), Tp_err, |S_peak| rows, as
+    _compute_arrhenius), peak_method, and Nt / Nt_err (_trap_density_from_peaks
+    over the fitted windows). windowPeaks[w]: [(peakId, peak)] of window w.
+    messages: fit problems worth logging."""
+    T_K = np.array([tc + 273.15 for tc in temps])
+    byTrap, windowPeaks, messages = dict(), [], []
+    for w, (t1, t2) in enumerate(windows):
+        S, S_err = _rate_window_signal(temps, data, t1, t2)
+        en = _emission_rate(t1, t2)
+        found = []
+        for r, region in enumerate(regions):
+            peaks, message = _window_region_peaks(T_K, S, S_err, region, peak_method, peak_min_frac)
+            if message:
+                messages.append(f'{t1:g}/{t2:g} ms, R{r + 1}: {message}')
+            for k, pk in enumerate(peaks):
+                peakId = f'R{r + 1}P{k + 1}'
+                found.append((peakId, pk))
+                byTrap.setdefault(peakId, []).append((w, t1, t2, en, pk))
+        windowPeaks.append(found)
+
+    traps = []
+    for peakId in sorted(byTrap, key=_peak_id_order):
+        entries = byTrap[peakId]
+        res = _arrhenius_fit([e[3] for e in entries], [e[4]['T_peak'] for e in entries],
+                             [e[4]['T_peak_err'] for e in entries], gamma)
+        if res is None:
+            messages.append(f'{peakId}: fewer than 2 windows can be fitted; no Arrhenius line.')
+            continue
+        used = [dict(S_peak=pk['S_peak'], S_peak_err=pk['S_peak_err'], t1=t1, t2=t2)
+                for (_, t1, t2, _, pk), fitted in zip(entries, res['fit_mask']) if fitted]
+        nt, ntErr = _trap_density_from_peaks(used, nd)
+        r = _peak_id_order(peakId)[0] - 1
+        res.update(peakId=peakId, region=r, method=_region_method_text(regions[r], peak_method),
+                   win_idx=np.array([e[0] for e in entries]),
+                   Sp_arr=np.array([abs(e[4]['S_peak']) for e in entries]),
+                   detail=[(t1, t2, en, pk['T_peak'], pk['T_peak_err'], abs(pk['S_peak']))
+                           for _, t1, t2, en, pk in entries],
+                   peak_method=_region_method_text(regions[r], peak_method), Nt=nt, Nt_err=ntErr)
+        traps.append(res)
+    return traps, windowPeaks, messages
 
 def _prepare_spectra(mw, temps, data, n_spectra):
     """DLTS spectra for n_spectra of the multi-windows: list of (k, t1, t2, en, S*1e3)."""
@@ -586,33 +803,48 @@ def _prepare_rate_window_map(temps, data, t1_min, t1_max, ratio):
 
 def _compute_detailed_analysis(data, temps, p):
     """Everything Run Analysis needs short of creating matplotlib artists:
-    both Arrhenius fits, Nt, and the (optional) spectra / transient-map /
-    rate-window-map arrays. p is the parameter snapshot taken by
-    _detailed_run_analysis. Runs in this tab's worker process (see
-    _get_detailed_executor), so it must stay a pure, picklable top-level
-    function with no Tk/dltsc access. Raises ValueError on unusable input.
+    one Arrhenius fit per trap for both window sets, Nt, and the (optional)
+    spectra / transient-map / rate-window-map arrays. p is the parameter
+    snapshot taken by _detailed_run_analysis; p['regions'] (see the PEAK
+    REGIONS section) are where peaks are found -- without it, one region
+    [tpLo, tpHi] with this tab's single-peak finder, the old behaviour. Runs in
+    this tab's worker process (see _get_detailed_executor), so it must stay a
+    pure, picklable top-level function with no Tk/dltsc access. Raises
+    ValueError on unusable input.
+
+    resMw / resStd are the first trap's multi-window / standard results (the
+    single trap of the old behaviour), kept for callers that read one trap.
     """
     # Denoise / read-off method applied once, up front, so every downstream
     # quantity (peaks, spectra, both maps, Nt) sees the same C(t).
     data = _prepare_signal_data(data, temps, p['signalMethod'], p['denoise'])
 
+    regions = p.get('regions') or [dict(tLo=p['tpLo'], tHi=p['tpHi'], primitives=[],
+                                        prominence=float(DEFAULT_PROMINENCE))]
     t1Arr = np.logspace(np.log10(p['t1Min']), np.log10(p['t1Max']), p['nWin'])
     mw = [(float(t1), float(p['ratio'] * t1)) for t1 in t1Arr]
 
-    resMw = _compute_arrhenius(mw, temps, data, p['gamma'], p['tpLo'], p['tpHi'], p['peakMethod'])
+    trapsMw, windowPeaks, messages = _compute_trap_arrhenius(mw, temps, data, p['gamma'], regions,
+                                                             p['peakMethod'], p['nd'])
     # A standard window set to 0 / 0 (or any t2 <= t1) is unused, so the table can
     # also hold fewer than 5 windows -- e.g. Quick Analysis' four, for comparison.
     stdWins = [(float(a), float(b)) for a, b in p['stdWins'] if a > 0 and b > a]
-    resStd = (_compute_arrhenius(stdWins, temps, data, p['gamma'], p['tpLo'], p['tpHi'], p['peakMethod'])
-              if stdWins else None)
-    if resMw is None:
-        raise ValueError('Multi-window: no peaks found. Check t1 range and temperature bounds.')
+    trapsStd = []
+    if stdWins:
+        trapsStd, _, stdMessages = _compute_trap_arrhenius(stdWins, temps, data, p['gamma'], regions,
+                                                           p['peakMethod'], p['nd'])
+        messages += [f'standard {m}' for m in stdMessages]
+    if not trapsMw:
+        raise ValueError('Multi-window: no peaks found. Check the t1 range and the peak regions.')
+    resMw = trapsMw[0]
+    resStd = next((t for t in trapsStd if t['peakId'] == resMw['peakId']), None)
 
     T_K = np.array([tc + 273.15 for tc in temps])
     Nt = _trap_density(data, temps, p['rbMs'], p['nd'])
 
     return dict(
-        resMw=resMw, resStd=resStd, mw=mw, T_K=T_K, Nt=Nt,
+        resMw=resMw, resStd=resStd, traps=trapsMw, trapsStd=trapsStd, windowPeaks=windowPeaks,
+        regions=regions, messages=messages, mw=mw, T_K=T_K, Nt=Nt,
         spectra=_prepare_spectra(mw, temps, data, p['nSpectra']) if p['showSpectra'] else None,
         tmap=_prepare_transient_map(temps, data, p['rbMs']) if p['showTmap'] else None,
         rwm=(_prepare_rate_window_map(temps, data, p['t1Min'], p['t1Max'], p['ratio'])
@@ -715,7 +947,7 @@ def _detailed_load_data():
             dltsc.detailed_temps = temps
             _set_detailed_buttons_state('normal')
             n = len(temps)
-            msg = f'{n} temperatures loaded: {temps[0]:.0f} °C to {temps[-1]:.0f} °C'
+            msg = f'{n} temperatures loaded: {temps[0] + 273.15:.0f} K to {temps[-1] + 273.15:.0f} K'
             if dltsc.detailed_loadInfoLabel is not None:
                 dltsc.detailed_loadInfoLabel.config(text=msg, foreground=C0)
             if dltsc.detailed_statusLabel is not None:
@@ -735,6 +967,18 @@ def _detailed_run_analysis():
         dltsc.log_to_textbox("Detailed analysis: load data first.")
         return
     if dltsc.detailed_loadingBusy or dltsc.detailedProcessingBusy:
+        return
+    regions = dltsc.detailed_regions or []
+    problems = [f'R{r + 1}: {problem}' for r, region in enumerate(regions)
+                if (problem := ('its upper bound must exceed the lower bound' if region['tHi'] <= region['tLo']
+                                else region['primitives'] and _region_problem(region)))]
+    if not regions:
+        problems = ['add at least one peak region']
+    if problems:
+        message = 'Peak regions: ' + '; '.join(problems) + '.'
+        dltsc.log_to_textbox(f"Detailed analysis: {message}")
+        if dltsc.detailed_statusLabel is not None:
+            dltsc.detailed_statusLabel.config(text=message)
         return
 
     dltsc.detailedProcessingBusy = True
@@ -757,16 +1001,20 @@ def _detailed_run_analysis():
         nd=dltsc.detailed_ndVar.get(),
         tpLo=dltsc.detailed_tpeakLoVar.get(),
         tpHi=dltsc.detailed_tpeakHiVar.get(),
+        # Copies, so later edits to the regions can't change a running analysis.
+        regions=[dict(region, primitives=list(region['primitives'])) for region in dltsc.detailed_regions],
         peakMethod=dltsc.detailed_peakMethodVar.get(),
         signalMethod=dltsc.detailed_signalMethodVar.get(),
         denoise=dltsc.detailed_denoiseVar.get(),
         rbMs=dltsc.detailed_rbMsVar.get(),
-        showStd=dltsc.detailed_stdWinsVar.get(),
-        showSpectra=dltsc.detailed_showSpectraVar.get(),
-        nSpectra=dltsc.detailed_nSpectraVar.get(),
-        showTmap=dltsc.detailed_showTmapVar.get(),
-        showTau=dltsc.detailed_showTauVar.get(),
-        showRwm=dltsc.detailed_showRwmVar.get(),
+        # Every panel's data and every window's spectrum, whatever is shown
+        # now: the Display options then change the plots without a re-run.
+        showStd=True,
+        showSpectra=True,
+        nSpectra=dltsc.detailed_nWinVar.get(),
+        showTmap=True,
+        showTau=True,
+        showRwm=True,
     )
 
     def worker():
@@ -789,16 +1037,22 @@ def _detailed_run_analysis():
             # Only artist creation + one draw happen here on the main thread
             # (matplotlib/Tk aren't thread-safe); every array the plot needs
             # was already computed in the worker process.
-            resMw, resStd, Nt = out['resMw'], out['resStd'], out['Nt']
             _detailed_plot(out, params)
-            _detailed_write_results(resMw, resStd, Nt, params)
+            _detailed_write_results(out, params)
 
-            dltsc.detailed_lastResMw = resMw
-            dltsc.detailed_lastResStd = resStd
-            dltsc.detailed_lastNt = Nt
+            dltsc.detailed_lastResMw = out['resMw']
+            dltsc.detailed_lastResStd = out['resStd']
+            dltsc.detailed_lastNt = out['Nt']
+            dltsc.detailed_lastTraps = out['traps']
+            dltsc.detailed_lastTrapsStd = out['trapsStd']
 
-            statusMsg = (f'Done.  Et = {_fmt_pm(resMw["Et"], resMw["Et_se"], ".3f")} eV  '
-                        f'Nt = {Nt:.2e} cm⁻³')
+            messages = out['messages']
+            for message in messages[:10]:
+                dltsc.log_to_textbox(f"Detailed analysis: {message}")
+            if len(messages) > 10:
+                dltsc.log_to_textbox(f"Detailed analysis: ... and {len(messages) - 10} more fit message(s).")
+            statusMsg = 'Done.  ' + '   '.join(
+                f'{t["peakId"]}: Et = {_fmt_pm(t["Et"], t["Et_se"], ".3f")} eV' for t in out['traps'])
             if dltsc.detailed_statusLabel is not None:
                 dltsc.detailed_statusLabel.config(text=statusMsg)
             dltsc.log_to_textbox(f"Detailed analysis: {statusMsg}")
@@ -808,255 +1062,363 @@ def _detailed_run_analysis():
     threading.Thread(target=worker, daemon=True).start()
 
 
+#---------------------PEAK REGIONS (CONTROLS)-------------------------#
+# The user picks where peaks are found: regions typed in, or dragged across the
+# DLTS Spectra panel. A new region takes the primitives of the Quick Analysis
+# Peak Deconvolution region overlapping it most (dltsc.deconv_regions) -- the
+# method found to describe that part of the spectrum there -- or, with no
+# overlapping Quick Analysis region, this tab's default single-peak finder
+# (Peak method, Smoothing Spline by default). The Method box changes it.
+METHOD_DEFAULT = 'Default (Peak method below)'
+
+def _detailed_trap_color(trapIndex):
+    return TRAP_COLORS[trapIndex % len(TRAP_COLORS)]
+
+def _detailed_quick_methods():
+    """[(label, quick region)] for every usable Quick Analysis region."""
+    return [(f'Quick R{r + 1} ({region["tLo"]:g}–{region["tHi"]:g} K): {_region_method_text(region, "")}', region)
+            for r, region in enumerate(dltsc.deconv_regions or []) if _region_problem(region) is None]
+
+def _detailed_best_quick_method(tLo, tHi):
+    """(label, quick region) of the Quick Analysis region overlapping
+    [tLo, tHi] most, or None if none overlaps it."""
+    best, bestOverlap = None, 0.0
+    for label, region in _detailed_quick_methods():
+        overlap = min(tHi, region['tHi']) - max(tLo, region['tLo'])
+        if overlap > bestOverlap:
+            best, bestOverlap = (label, region), overlap
+    return best
+
+def _detailed_set_region_method(region, method):
+    """Give region the primitives of method ((label, quick region)), or the
+    default single-peak finder when method is None."""
+    if method is None:
+        region.update(primitives=[], prominence=float(DEFAULT_PROMINENCE), source=None)
+    else:
+        label, quick = method
+        region.update(primitives=list(quick['primitives']), prominence=quick['prominence'],
+                      source=label.split(' (')[0])   # 'Quick R<n>'
+
+def _detailed_region_text(r, region):
+    method = _region_method_text(region, dltsc.detailed_peakMethodVar.get()) if region['primitives'] else 'default'
+    source = f' [{region["source"]}]' if region.get('source') else ''
+    return f'R{r + 1}: {region["tLo"]:g}–{region["tHi"]:g} K | {method}{source}'
+
+def _detailed_selected_region():
+    selection = dltsc.detailed_regionListbox.curselection() if dltsc.detailed_regionListbox is not None else ()
+    return selection[0] if selection else None
+
+def _detailed_refresh_regions(selectIndex=None):
+    dltsc.detailed_regionListbox.delete(0, tk.END)
+    for r, region in enumerate(dltsc.detailed_regions):
+        dltsc.detailed_regionListbox.insert(tk.END, _detailed_region_text(r, region))
+    if selectIndex is not None and dltsc.detailed_regions:
+        selectIndex = min(selectIndex, len(dltsc.detailed_regions) - 1)
+        dltsc.detailed_regionListbox.selection_set(selectIndex)
+        # The region's own copy of its method (Quick Analysis may have changed since).
+        region = dltsc.detailed_regions[selectIndex]
+        dltsc.detailed_regionMethodVar.set(
+            f'{region.get("source") or "Quick"}: {_region_method_text(region, "")}' if region['primitives']
+            else METHOD_DEFAULT)
+
+def _detailed_on_region_select():
+    r = _detailed_selected_region()
+    if r is None:
+        return
+    region = dltsc.detailed_regions[r]
+    dltsc.detailed_tpeakLoVar.set(region['tLo'])
+    dltsc.detailed_tpeakHiVar.set(region['tHi'])
+    _detailed_refresh_regions(r)
+
+def _detailed_region_bounds():
+    """(tLo, tHi) from the T min / T max boxes, or None (reported) if invalid."""
+    try:
+        tLo, tHi = float(dltsc.detailed_tpeakLoVar.get()), float(dltsc.detailed_tpeakHiVar.get())
+    except (tk.TclError, ValueError):
+        dltsc.detailed_statusLabel.config(text='Peak regions: T min / T max must be numbers.')
+        return None
+    if tHi <= tLo:
+        dltsc.detailed_statusLabel.config(text='Peak regions: T max must exceed T min.')
+        return None
+    return tLo, tHi
+
+def _detailed_regions_changed(message):
+    dltsc.detailed_statusLabel.config(text=f'{message}  Run Analysis to refit.')
+    dltsc.log_to_textbox(f"Detailed analysis: {message}")
+
+def _detailed_add_region():
+    bounds = _detailed_region_bounds()
+    if bounds is None:
+        return
+    region = dict(tLo=bounds[0], tHi=bounds[1])
+    method = _detailed_best_quick_method(*bounds)
+    _detailed_set_region_method(region, method)
+    dltsc.detailed_regions.append(region)
+    r = len(dltsc.detailed_regions) - 1
+    _detailed_refresh_regions(r)
+    if method is None:
+        _detailed_regions_changed(f'R{r + 1} added ({bounds[0]:g}–{bounds[1]:g} K): no Quick Analysis region covers '
+                                  f'it, so it uses the default {dltsc.detailed_peakMethodVar.get()}.')
+    else:
+        _detailed_regions_changed(f'R{r + 1} added ({bounds[0]:g}–{bounds[1]:g} K) with the method of {method[0]}.')
+
+def _detailed_update_region():
+    r = _detailed_selected_region()
+    bounds = _detailed_region_bounds()
+    if r is None or bounds is None:
+        if r is None:
+            dltsc.detailed_statusLabel.config(text='Peak regions: select a region to update.')
+        return
+    dltsc.detailed_regions[r].update(tLo=bounds[0], tHi=bounds[1])
+    _detailed_refresh_regions(r)
+    _detailed_regions_changed(f'R{r + 1} moved to {bounds[0]:g}–{bounds[1]:g} K.')
+
+def _detailed_remove_region():
+    r = _detailed_selected_region()
+    if r is None:
+        dltsc.detailed_statusLabel.config(text='Peak regions: select a region to remove.')
+        return
+    del dltsc.detailed_regions[r]
+    _detailed_refresh_regions(r if dltsc.detailed_regions else None)
+    _detailed_regions_changed(f'R{r + 1} removed (later regions renumbered).')
+
+def _detailed_refresh_method_options():
+    """Method box choices, rebuilt each time it opens so they follow Quick
+    Analysis' current regions."""
+    dltsc.detailed_regionMethodCombo.config(
+        values=[METHOD_DEFAULT] + [label for label, _ in _detailed_quick_methods()])
+
+def _detailed_apply_method():
+    r = _detailed_selected_region()
+    if r is None:
+        dltsc.detailed_statusLabel.config(text='Peak regions: select a region, then choose its method.')
+        return
+    choice = dltsc.detailed_regionMethodVar.get()
+    method = next(((label, quick) for label, quick in _detailed_quick_methods() if label == choice), None)
+    _detailed_set_region_method(dltsc.detailed_regions[r], method)
+    _detailed_refresh_regions(r)
+    _detailed_regions_changed(f'R{r + 1} now uses ' + (method[0] if method else
+                              f'the default {dltsc.detailed_peakMethodVar.get()}') + '.')
+
+def _detailed_on_span_select(tLo, tHi):
+    # The DLTS Spectra panel's x axis is temperature in K, like the regions.
+    dltsc.detailed_tpeakLoVar.set(round(tLo, 1))
+    dltsc.detailed_tpeakHiVar.set(round(tHi, 1))
+    dltsc.detailed_statusLabel.config(text=f'Picked {tLo:.1f}–{tHi:.1f} K: click Add Region (or Update Region).')
+
+
 #---------------------PLOTTING-------------------------#
+# Four panels, each its own Figure, canvas and toolbar (pan / zoom / save):
+# Arrhenius and DLTS Spectra on the top row, Transient Map and Rate-Window map
+# on the bottom row. The two panels of a row share temperature: zooming or
+# panning one sets the other to the same temperatures (1000/T <-> T on top,
+# T <-> 1/kT below). Panels are drawn from the last run's result
+# (dltsc.detailed_lastOut), so the Display options -- panels shown, 2D / 3D,
+# which labels -- apply at once, without re-running the analysis. Labels: one
+# set per panel at a time (its Labels choice), and legends sit outside the
+# plot area, on the panel's right. Styling is matplotlib's default, as in
+# Quick Analysis: black axes, labels and ticks at the default sizes.
+PANEL_ARRHENIUS, PANEL_SPECTRA, PANEL_TMAP, PANEL_RWM = 'arr', 'spec', 'tmap', 'rwm'
+PANEL_ROWS = ((PANEL_ARRHENIUS, PANEL_SPECTRA), (PANEL_TMAP, PANEL_RWM))
+
+ARR_VIEW_2D = '2D'
+ARR_VIEW_3D = '3D (peak height up)'
+ARR_VIEW_OPTIONS = [ARR_VIEW_2D, ARR_VIEW_3D]
+MAP_VIEW_2D = '2D colour map'
+MAP_VIEW_3D = '3D isohypse surface'
+MAP_VIEW_OPTIONS = [MAP_VIEW_2D, MAP_VIEW_3D]
+
+LABELS_NONE = 'None'
+LABELS_TRAP_IDS = 'Trap ids'
+LABELS_LEGEND = 'Legend'
+ARR_LABELS_RESULTS = 'Results (Et, σ, Nt)'
+SPEC_LABELS_REGIONS = 'Region names'
+ARR_LABEL_OPTIONS = [LABELS_TRAP_IDS, LABELS_LEGEND, ARR_LABELS_RESULTS, LABELS_NONE]
+SPEC_LABEL_OPTIONS = [LABELS_TRAP_IDS, LABELS_LEGEND, SPEC_LABELS_REGIONS, LABELS_NONE]
+MAP_LABEL_OPTIONS = [LABELS_TRAP_IDS, LABELS_LEGEND, LABELS_NONE]
+
+# Trap curves on the jet maps get a white outline so every trap colour shows.
+MAP_STROKE = [mpatheffects.withStroke(linewidth=3.5, foreground='white')]
+
+def _reciprocal_1000(v):
+    """1000/T <-> T (K): the Arrhenius x axis to temperature and back."""
+    v = np.asarray(v, dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return 1000.0 / v
+
+def _reciprocal_kT(v):
+    """T (K) <-> 1/kT (eV⁻¹): the Rate-Window map's x axis to temperature and back."""
+    v = np.asarray(v, dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return 1.0 / (KB_EV * v)
+
+# Each panel's row partner and the map from its x axis to the partner's.
+PANEL_LINKS = {PANEL_ARRHENIUS: (PANEL_SPECTRA, _reciprocal_1000), PANEL_SPECTRA: (PANEL_ARRHENIUS, _reciprocal_1000),
+               PANEL_TMAP: (PANEL_RWM, _reciprocal_kT), PANEL_RWM: (PANEL_TMAP, _reciprocal_kT)}
+
+def _detailed_display():
+    """The Display options as they are now."""
+    try:
+        nSpectra = int(dltsc.detailed_nSpectraVar.get())
+    except (tk.TclError, ValueError):
+        nSpectra = 5
+    return dict(showSpectra=dltsc.detailed_showSpectraVar.get(), showTmap=dltsc.detailed_showTmapVar.get(),
+                showRwm=dltsc.detailed_showRwmVar.get(), showTau=dltsc.detailed_showTauVar.get(),
+                showStd=dltsc.detailed_stdWinsVar.get(), nSpectra=max(1, nSpectra),
+                arrView=dltsc.detailed_arrViewVar.get(), tmapView=dltsc.detailed_tmapViewVar.get(),
+                rwmView=dltsc.detailed_rwmViewVar.get(), arrLabels=dltsc.detailed_arrLabelsVar.get(),
+                specLabels=dltsc.detailed_specLabelsVar.get(), tmapLabels=dltsc.detailed_tmapLabelsVar.get(),
+                rwmLabels=dltsc.detailed_rwmLabelsVar.get())
+
+def _detailed_shown_panels(disp):
+    """Rows of the panels to show, Arrhenius always."""
+    shown = {PANEL_ARRHENIUS: True, PANEL_SPECTRA: disp['showSpectra'],
+             PANEL_TMAP: disp['showTmap'], PANEL_RWM: disp['showRwm']}
+    return [row for row in ([k for k in r if shown[k]] for r in PANEL_ROWS) if row]
+
+def _detailed_side_legend(fig, handles, labels, **kw):
+    """A legend outside the plot area, on the figure's right (None without entries)."""
+    if not handles:
+        return None
+    return fig.legend(handles, labels, loc='outside right upper', fontsize=8, **kw)
+
+def _detailed_draw_panel_on(fig, key, out, params, disp):
+    """Draw panel `key` on a fresh Figure / SubFigure. Returns (ax, legend)."""
+    if key == PANEL_ARRHENIUS:
+        return _detailed_draw_arrhenius(fig, out, disp)
+    if key == PANEL_SPECTRA:
+        return _detailed_draw_spectra(fig, out, disp)
+    if key == PANEL_TMAP:
+        return _detailed_draw_transient_map(fig, out, params, disp)
+    return _detailed_draw_rate_window_map(fig, out, params, disp)
+
 def _detailed_plot(out, params):
-    """Build the figure from _compute_detailed_analysis' result `out` using the
-    Run-time parameter snapshot `params`. Artist creation only -- no heavy
-    math -- so the main thread is busy for as little time as possible."""
-    res_mw, res_std, mw, T_K, Nt = out['resMw'], out['resStd'], out['mw'], out['T_K'], out['Nt']
-    show_spectra = params['showSpectra']
-    show_tmap    = params['showTmap']
-    show_rwm     = params['showRwm']
+    """Show the result `out` of _compute_detailed_analysis, run with the
+    parameter snapshot `params`: kept as dltsc.detailed_lastOut / lastParams,
+    then every shown panel built. Artist creation only -- no heavy math."""
+    dltsc.detailed_lastOut, dltsc.detailed_lastParams = out, params
+    _detailed_layout_panels()
 
-    # Clear previous canvas
-    for w in dltsc.detailed_figFrame.winfo_children():
+def _detailed_layout_panels():
+    """(Re)build the panel grid for the panels now shown: one row per panel
+    row, a panel alone in its row spans it. Each panel gets its own Figure,
+    canvas and toolbar."""
+    if dltsc.detailed_lastOut is None or dltsc.detailed_figFrame is None:
+        return
+    frame = dltsc.detailed_figFrame
+    for w in frame.winfo_children():
         w.destroy()
-    dltsc.detailed_figure = None
+    for key in list(dltsc.detailed_figures):
+        _detailed_forget_panel(key)
+    for i in range(2):
+        frame.grid_rowconfigure(i, weight=0, uniform='')
+        frame.grid_columnconfigure(i, weight=1, uniform='col')
 
-    dltsc.detailed_ax1 = dltsc.detailed_ax2 = dltsc.detailed_ax3 = dltsc.detailed_ax4 = None
-    dltsc.detailed_leg1 = dltsc.detailed_leg2 = dltsc.detailed_legM = dltsc.detailed_legRW = None
-    dltsc.detailed_annBox = None
-    _pending_drags = []   # list of ('legend'|'annot', obj), applied AFTER canvas connects
+    rows = _detailed_shown_panels(_detailed_display())
+    for r, row in enumerate(rows):
+        frame.grid_rowconfigure(r, weight=1, uniform='row')
+        for c, key in enumerate(row):
+            holder = tk.Frame(frame, bg=CTRL_BG)
+            holder.grid(row=r, column=c, columnspan=2 if len(row) == 1 else 1, sticky='nsew', padx=2, pady=2)
+            # Figure() directly, never pyplot: pyplot would also open its own
+            # window for it (see dataAnalysisTab.py, liveDataTab.py).
+            fig = Figure(figsize=(6.0, 4.5), layout='constrained')
+            canvas = FigureCanvasTkAgg(fig, master=holder)
+            toolbar = NavigationToolbar2Tk(canvas, holder, pack_toolbar=False)
+            toolbar.update()
+            toolbar.pack(side='top', fill='x')
+            # Tiny requested size: the canvas otherwise asks for the full
+            # figsize in pixels, forcing an extra geometry pass and redraw.
+            canvas.get_tk_widget().config(width=1, height=1)
+            canvas.get_tk_widget().pack(fill='both', expand=True)
+            dltsc.detailed_figures[key] = fig
+            dltsc.detailed_canvases[key] = canvas
+            _detailed_draw_panel(key, draw=False)
+    # No explicit draw: packing resizes each (1x1-requested) canvas to its
+    # cell, and that resize's draw_idle is the one real render.
 
-    ax2 = ax3 = ax4 = None
-    CL = dict(constrained_layout=True)
+def _detailed_forget_panel(key):
+    """Drop a panel's figure, canvas and the references to its artists."""
+    for store in (dltsc.detailed_figures, dltsc.detailed_canvases, dltsc.detailed_panelAxes,
+                  dltsc.detailed_panelLegends, dltsc.detailed_linkCids):
+        store.pop(key, None)
+    if key == PANEL_SPECTRA:
+        dltsc.detailed_spanSelector = None
 
-    # Figure() directly, never plt.figure()/plt.subplots(): those register the
-    # figure with pyplot's global state, which (under the TkAgg backend this
-    # app uses) gives it its own separate FigureManager/Tk window in addition
-    # to the one explicitly embedded below via FigureCanvasTkAgg -- a second,
-    # redundant popup showing the exact same plot. Figure() has no pyplot
-    # registration, so only the embedded canvas exists, matching how every
-    # other tab in this app builds its figures (see dataAnalysisTab.py,
-    # liveDataTab.py).
-    if show_spectra and show_tmap and show_rwm:
-        fig = Figure(figsize=(14, 11.0), facecolor=SURFACE, **CL)
-        gs  = mgridspec.GridSpec(2, 2, figure=fig, height_ratios=[1.0, 0.9], width_ratios=[1.0, 1.0])
-        ax1 = fig.add_subplot(gs[0, 0])
-        ax2 = fig.add_subplot(gs[0, 1])
-        ax3 = fig.add_subplot(gs[1, 0])
-        ax4 = fig.add_subplot(gs[1, 1])
-    elif show_spectra and show_tmap and not show_rwm:
-        fig = Figure(figsize=(13, 10.5), facecolor=SURFACE, **CL)
-        gs  = mgridspec.GridSpec(2, 2, figure=fig, height_ratios=[1.0, 0.85], width_ratios=[1.5, 1.0])
-        ax1 = fig.add_subplot(gs[0, 0])
-        ax2 = fig.add_subplot(gs[0, 1])
-        ax3 = fig.add_subplot(gs[1, :])
-    elif show_spectra and not show_tmap and show_rwm:
-        fig = Figure(figsize=(13, 10.5), facecolor=SURFACE, **CL)
-        gs  = mgridspec.GridSpec(2, 2, figure=fig, height_ratios=[1.0, 0.85], width_ratios=[1.5, 1.0])
-        ax1 = fig.add_subplot(gs[0, 0])
-        ax2 = fig.add_subplot(gs[0, 1])
-        ax4 = fig.add_subplot(gs[1, :])
-    elif not show_spectra and show_tmap and show_rwm:
-        fig = Figure(figsize=(14, 10.5), facecolor=SURFACE, **CL)
-        gs  = mgridspec.GridSpec(2, 2, figure=fig, height_ratios=[1.0, 0.9])
-        ax1 = fig.add_subplot(gs[0, :])
-        ax3 = fig.add_subplot(gs[1, 0])
-        ax4 = fig.add_subplot(gs[1, 1])
-    elif show_spectra and not show_tmap and not show_rwm:
-        fig = Figure(figsize=(13, 5.4), facecolor=SURFACE, **CL)
-        ax1, ax2 = fig.subplots(1, 2, gridspec_kw={'width_ratios': [1.5, 1]})
-    elif not show_spectra and show_tmap and not show_rwm:
-        fig = Figure(figsize=(10, 10.5), facecolor=SURFACE, **CL)
-        gs  = mgridspec.GridSpec(2, 1, figure=fig, height_ratios=[1.0, 0.85])
-        ax1 = fig.add_subplot(gs[0])
-        ax3 = fig.add_subplot(gs[1])
-    elif not show_spectra and not show_tmap and show_rwm:
-        fig = Figure(figsize=(10, 10.5), facecolor=SURFACE, **CL)
-        gs  = mgridspec.GridSpec(2, 1, figure=fig, height_ratios=[1.0, 0.85])
-        ax1 = fig.add_subplot(gs[0])
-        ax4 = fig.add_subplot(gs[1])
-    else:   # Arrhenius only
-        fig = Figure(figsize=(8, 5.4), facecolor=SURFACE, **CL)
-        ax1 = fig.subplots()
+def _detailed_draw_panel(key, draw=True):
+    """(Re)draw one shown panel from the last result, with the Display
+    options as they are now."""
+    fig, canvas = dltsc.detailed_figures.get(key), dltsc.detailed_canvases.get(key)
+    if fig is None or dltsc.detailed_lastOut is None:
+        return
+    fig.clear()
+    ax, legend = _detailed_draw_panel_on(fig, key, dltsc.detailed_lastOut, dltsc.detailed_lastParams,
+                                         _detailed_display())
+    dltsc.detailed_panelAxes[key] = ax
+    dltsc.detailed_panelLegends[key] = legend
+    canvas.toolbar.update()   # a fresh view history: Home is this drawing's view
 
-    dltsc.detailed_figure = fig
-    dltsc.detailed_ax1 = ax1; dltsc.detailed_ax2 = ax2
-    dltsc.detailed_ax3 = ax3; dltsc.detailed_ax4 = ax4
-    for ax in filter(None, [ax1, ax2, ax3]):
-        ax.set_facecolor(SURFACE)
-    # Square-ish panels regardless of the canvas' aspect (constrained layout
-    # centers each box in its cell); twin axes such as ax1's °C axis follow.
-    for ax in filter(None, [ax1, ax2, ax3, ax4]):
-        ax.set_box_aspect(0.9)
+    if key == PANEL_SPECTRA:
+        # Dragging across the spectra picks a peak region (see the Peak
+        # Regions controls); legends are outside the axes, so never in the way.
+        # The selector's hidden rectangle sits at x = 0, which would stretch
+        # the autoscaled temperature axis down to 0 K: keep the data's range.
+        xlim = ax.get_xlim()
+        dltsc.detailed_spanSelector = SpanSelector(ax, _detailed_on_span_select, 'horizontal', useblit=True,
+                                                   minspan=1.0, props=dict(facecolor=C0, alpha=0.2))
+        ax.set_xlim(xlim)
+    _detailed_link_panel(key)
+    if draw:
+        canvas.draw_idle()
 
-    # ── Arrhenius panel ───────────────────────────────────────────────────
-    x_all = np.concatenate([res_mw['x'], res_std['x'] if res_std else res_mw['x']])
-    x_lo  = x_all.min() * 0.97
-    x_hi  = x_all.max() * 1.03
-    x_line = np.linspace(x_lo, x_hi, 400)
+def _detailed_redraw(*keys):
+    """Redraw the given panels (those shown)."""
+    for key in keys:
+        if key in dltsc.detailed_figures:
+            _detailed_draw_panel(key)
 
-    # 2-sigma confidence band of the (weighted) fit line, straight from its
-    # slope/intercept covariance: var(y) = var_m·x² + var_b + 2·x·cov_mb.
-    y_lm = res_mw['slope'] * x_line + res_mw['intercept']
-    cv = res_mw['covar']
-    if cv is not None:
-        half = 2.0 * np.sqrt(np.maximum(cv[0, 0] * x_line**2 + cv[1, 1] + 2.0 * cv[0, 1] * x_line, 0.0))
-        ax1.fill_between(x_line, y_lm - half, y_lm + half, color=C0, alpha=0.13, zorder=1)
-    ax1.plot(x_line, y_lm, color=C0, lw=2.0, zorder=3,
-             label=(f'Multi ({res_mw["N"]} win)  Et={_fmt_pm(res_mw["Et"], res_mw["Et_se"], ".3f")} eV  '
-                    f'R²={res_mw["R2"]:.4f}'))
-    _detailed_arrhenius_errorbars(ax1, res_mw, C0)
 
-    if res_std and params['showStd']:
-        y_ls = res_std['slope'] * x_line + res_std['intercept']
-        ax1.plot(x_line, y_ls, color=C1, lw=1.5, ls='--', zorder=3,
-                 label=(f'Standard ({res_std["N"]} win)  Et={_fmt_pm(res_std["Et"], res_std["Et_se"], ".3f")} eV  '
-                        f'R²={res_std["R2"]:.4f}'))
-        _detailed_arrhenius_errorbars(ax1, res_std, C1)
-        ax1.scatter(res_std['x'], res_std['y'], color=C1, s=100, zorder=5, marker='D',
-                    edgecolors=TEXT_PRI, lw=0.7, label='Standard windows')
+#---------------------LINKED TEMPERATURE AXES-------------------------#
+def _detailed_link_panel(key):
+    """Follow the panel's x-limit changes (zoom, pan, Home, Back) on its row
+    partner -- connected after its first draw, once autoscaling has set its
+    own limits, so only the user's changes are passed on."""
+    canvas = dltsc.detailed_canvases[key]
+    oldCid = dltsc.detailed_linkCids.pop(key, None)
+    if oldCid is not None:
+        canvas.mpl_disconnect(oldCid)
 
-    cmap_arr = plt.cm.plasma
-    norm_arr = Normalize(np.log10(res_mw['en_arr'].min()), np.log10(res_mw['en_arr'].max()))
-    fm = res_mw['fit_mask']
-    sc = ax1.scatter(res_mw['x'][fm], res_mw['y'][fm], c=np.log10(res_mw['en_arr'][fm]),
-                     cmap=cmap_arr, norm=norm_arr, s=55, zorder=4, edgecolors=C0, lw=0.5)
-    if (~fm).any():
-        ax1.scatter(res_mw['x'][~fm], res_mw['y'][~fm], marker='x', s=45, color=TEXT_MUT, lw=1.2, zorder=4,
-                    label='Excluded (peak at range edge, no Tp error)')
-    cb = fig.colorbar(sc, ax=ax1, pad=0.01, fraction=0.025, aspect=28)
-    cb.set_label('log₁₀ eₙ  (s⁻¹)', fontsize=8, color=TEXT_SEC)
-    cb.ax.tick_params(labelsize=7.5, colors=TEXT_MUT)
-    cb.outline.set_edgecolor(BASELINE)
+    def connect(evt):
+        canvas.mpl_disconnect(dltsc.detailed_linkCids.pop(key, None))
+        ax = dltsc.detailed_panelAxes.get(key)
+        if ax is not None and ax.name != '3d':
+            ax.callbacks.connect('xlim_changed', lambda a: _detailed_follow_xlim(key, a))
 
-    res_txt = (
-        f'Multi-window  ({res_mw["N"]} pts, {"Tp-error weighted" if res_mw["weighted"] else "unweighted"})\n'
-        f'Et = {_fmt_pm(res_mw["Et"], res_mw["Et_se"], ".3f")} eV\n'
-        f'σⁿ = {_fmt_pm(res_mw["sigma"], res_mw["sigma_se"], ".2e")} cm²\n'
-        f'Nt = {Nt:.2e} cm⁻³\n'
-        f'R² = {res_mw["R2"]:.4f}'
-        + (f'   χ²ᵣ = {res_mw["redchi"]:.2f}' if res_mw['weighted'] else '')
-    )
-    # Lower-left: the Arrhenius line runs top-left to bottom-right, so this
-    # corner stays clear of both the data and the upper-right legend.
-    ann_box = ax1.annotate(
-        res_txt, xy=(0.02, 0.02), xycoords='axes fraction', xytext=(0.02, 0.02), textcoords='axes fraction',
-        fontsize=8, va='bottom', ha='left', color=TEXT_PRI, fontfamily='monospace', annotation_clip=False,
-        bbox=dict(boxstyle='round,pad=0.45', facecolor='#fffbe6', edgecolor=GRIDLINE, alpha=0.96))
-    dltsc.detailed_annBox = ann_box
-    _pending_drags.append(('annot', ann_box))
+    dltsc.detailed_linkCids[key] = canvas.mpl_connect('draw_event', connect)
 
-    ax1b = ax1.twiny()
-    ax1b.set_xlim(ax1.get_xlim())
-    K_ticks = np.arange(240, 370, 10)
-    K_ok = K_ticks[(1000 / K_ticks >= x_lo) & (1000 / K_ticks <= x_hi)]
-    if len(K_ok):
-        ax1b.set_xticks(1000 / K_ok)
-        ax1b.set_xticklabels([f'{k - 273:.0f}°C' for k in K_ok], fontsize=7.5)
-    ax1b.tick_params(colors=TEXT_MUT, labelsize=7.5)
-    ax1b.spines[['top', 'left', 'right']].set_color(BASELINE)
+def _detailed_follow_xlim(key, ax):
+    """Set the row partner of panel `key` to the temperatures `ax` now shows."""
+    if dltsc.detailed_linkBusy:
+        return
+    partner, toPartner = PANEL_LINKS[key]
+    other = dltsc.detailed_panelAxes.get(partner)
+    if other is None or other.name == '3d' or partner not in dltsc.detailed_canvases:
+        return
+    lims = np.array(ax.get_xlim(), dtype=float)
+    if not np.all(lims > 0):
+        return
+    lo, hi = np.sort(toPartner(lims))
+    if not (np.isfinite(lo) and np.isfinite(hi) and hi > lo):
+        return
+    dltsc.detailed_linkBusy = True
+    try:
+        other.set_xlim(lo, hi)
+    finally:
+        dltsc.detailed_linkBusy = False
+    dltsc.detailed_canvases[partner].draw_idle()
 
-    ax1.set_xlabel('1000 / T  (K⁻¹)', fontsize=10, color=TEXT_PRI, labelpad=5)
-    ax1.set_ylabel('ln(eₙ / T²)  (s⁻¹ K⁻²)', fontsize=10, color=TEXT_PRI, labelpad=5)
-    ax1.set_title('Arrhenius Plot', fontsize=11, color=TEXT_PRI, fontweight='bold', pad=8)
-    ax1.grid(which='major', color=GRIDLINE, lw=0.55)
-    ax1.minorticks_off()
-    ax1.spines[['top', 'right']].set_visible(False)
-    ax1.spines[['left', 'bottom']].set_color(BASELINE)
-    ax1.tick_params(colors=TEXT_MUT, labelsize=9)
 
-    leg1 = ax1.legend(loc='upper right', fontsize=7.5, frameon=True, framealpha=0.92,
-                      edgecolor=GRIDLINE, facecolor=SURFACE, labelcolor=TEXT_PRI, handlelength=2.0)
-    dltsc.detailed_leg1 = leg1
-    _pending_drags.append(('legend', leg1))
-
-    # ── DLTS spectra panel ────────────────────────────────────────────────
-    if ax2 is not None:
-        cmap_w = plt.cm.cool
-        norm_w = Normalize(0, len(mw) - 1)
-        ax2.axhline(0, color=BASELINE, lw=0.7)
-
-        for k, t1, t2, en, S in out['spectra']:
-            col = cmap_w(norm_w(k))
-            ax2.plot(T_K - 273.15, S, color=col, lw=1.4,
-                     label=f't={t1:.0f}/{t2:.0f} ms  eₙ={en:.1f} s⁻¹')
-
-        for Tp_v in res_mw['Tp_arr']:
-            ax2.axvline(Tp_v - 273.15, color=TEXT_MUT, lw=0.4, ls=':', alpha=0.5)
-
-        ax2.set_xlabel('Temperature  (°C)', fontsize=10, color=TEXT_PRI)
-        ax2.set_ylabel('ΔC/C₀  (×10⁻³)', fontsize=10, color=TEXT_PRI)
-        ax2.set_title('DLTS Spectra', fontsize=11, color=TEXT_PRI, fontweight='bold', pad=8)
-        ax2.grid(which='major', color=GRIDLINE, lw=0.55)
-        ax2.minorticks_off()
-        ax2.spines[['top', 'right']].set_visible(False)
-        ax2.spines[['left', 'bottom']].set_color(BASELINE)
-        ax2.tick_params(colors=TEXT_MUT, labelsize=9)
-
-        leg2 = ax2.legend(loc='upper left', fontsize=7, frameon=True, framealpha=0.90,
-                          edgecolor=GRIDLINE, facecolor=SURFACE, labelcolor=TEXT_PRI)
-        dltsc.detailed_leg2 = leg2
-        _pending_drags.append(('legend', leg2))
-
-    # ── 2D transient map ──────────────────────────────────────────────────
-    if ax3 is not None:
-        leg_m = _detailed_plot_transient_map(ax3, res_mw, T_K, out['tmap'], params)
-        if leg_m is not None:
-            dltsc.detailed_legM = leg_m
-            _pending_drags.append(('legend', leg_m))
-
-    # ── Rate-Window Analysis map ───────────────────────────────────────────
-    if ax4 is not None:
-        leg_rw = _detailed_plot_rate_window_map(ax4, res_mw, out['rwm'], params)
-        if leg_rw is not None:
-            dltsc.detailed_legRW = leg_rw
-            _pending_drags.append(('legend', leg_rw))
-
-    # Embed in tkinter FIRST -- this connects fig.canvas, which draggable needs.
-    # A full draw of this figure costs ~0.25 s of main-thread time, so it is
-    # drawn exactly once: packing the canvas fires a resize, whose draw_idle
-    # does the only render. (Previously an explicit draw() before packing,
-    # the resize redraw, and a delayed re-draw for the drag setup rendered it
-    # 3-4 times per run.)
-    dltsc.detailed_canvas = FigureCanvasTkAgg(fig, master=dltsc.detailed_figFrame)
-    toolbar = NavigationToolbar2Tk(dltsc.detailed_canvas, dltsc.detailed_figFrame, pack_toolbar=False)
-    toolbar.update()
-    # Above the plot, like Quick Analysis' plots: at the bottom of this tall
-    # figure it could end up below the visible window, leaving no pan/zoom.
-    toolbar.pack(side='top', fill='x')
-    # Tiny requested size: the Tk canvas otherwise asks for the full figsize
-    # in pixels (e.g. 1400x1100), forcing an extra geometry pass -- and an
-    # extra full redraw -- before settling at the frame's fill size.
-    dltsc.detailed_canvas.get_tk_widget().config(width=1, height=1)
-    dltsc.detailed_canvas.get_tk_widget().pack(fill='both', expand=True)
-
-    # ── Drag installation ─────────────────────────────────────────────────
-    # matplotlib 3.10 changed DraggableBase to use pick_event, which requires
-    # legendPatch.contains() to use an up-to-date renderer transform. After
-    # pack(fill='both'), tkinter resizes the canvas and the transform is
-    # stale. Bypass the built-in draggable system entirely: wire
-    # button_press/motion/release events directly and hit-test at click time
-    # (see _detailed_install_drag()). Transforms are only stale between a
-    # resize and the redraw it schedules, so track that with
-    # dltsc.detailed_hitTestStale instead of redrawing on every click.
-    dltsc.detailed_hitTestStale = True
-
-    def _mark_stale(evt):
-        dltsc.detailed_hitTestStale = True
-
-    def _mark_fresh(evt):
-        dltsc.detailed_hitTestStale = False
-
-    dltsc.detailed_canvas.mpl_connect('resize_event', _mark_stale)
-    dltsc.detailed_canvas.mpl_connect('draw_event', _mark_fresh)
-    for kind, obj in _pending_drags:
-        _detailed_install_drag(dltsc.detailed_canvas, fig, obj, kind)
-    # No explicit draw here: it would render at the pre-layout figsize and be
-    # thrown away. The pack() above always resizes the (1x1-requested) canvas
-    # to its fill size, and that resize's draw_idle is the one real render.
-
+#---------------------ARRHENIUS PANEL-------------------------#
 def _detailed_arrhenius_errorbars(ax, res, color):
     """Error bars on the Arrhenius points from each window's peak-fit Tp
     error: x = 1000/T so dx = 1000·dT/T²; y = ln(en/T²) so dy = 2·dT/T.
@@ -1068,233 +1430,392 @@ def _detailed_arrhenius_errorbars(ax, res, color):
     ax.errorbar(res['x'][ok], res['y'][ok], xerr=1000.0 * dT / Tp**2, yerr=2.0 * dT / Tp,
                 fmt='none', ecolor=color, elinewidth=0.8, capsize=2, alpha=0.6, zorder=3.5)
 
+def _detailed_fit_label(res, kind):
+    return f'{res["peakId"]} {kind} ({res["N"]}): {_fmt_pm(res["Et"], res["Et_se"], ".3f")} eV'
 
-#---------------------DRAGGABLE LEGENDS / ANNOTATIONS-------------------------#
-def _detailed_install_drag(canvas, fig, artist, kind):
-    """Wire button_press/motion/release drag to a Legend or Annotation.
+def _detailed_results_legend(fig, out):
+    """The fit results (Et, σ, Nt per trap, then the total Nt) as a text-only
+    legend beside the plot."""
+    entries = []
+    for res in out['traps']:
+        entries.append(f'{res["peakId"]}  ({res["N"]} pts, {"weighted" if res["weighted"] else "unweighted"})\n'
+                       f'  Et = {_fmt_pm(res["Et"], res["Et_se"], ".3f")} eV\n'
+                       f'  σₙ = {_fmt_pm(res["sigma"], res["sigma_se"], ".2e")} cm²\n'
+                       f'  Nt = {_fmt_pm(res["Nt"], res["Nt_err"], ".2e")} cm⁻³\n'
+                       f'  R² = {res["R2"]:.4f}' + (f'  χ²ᵣ = {res["redchi"]:.2f}' if res['weighted'] else ''))
+    entries.append(f'Nt (all traps, transient)\n  = {out["Nt"]:.2e} cm⁻³')
+    return _detailed_side_legend(fig, [mpatches.Patch(visible=False)] * len(entries), entries,
+                                 handlelength=0, handletextpad=0, prop=dict(family='monospace', size=8))
 
-    Bypasses matplotlib's pick_event-based DraggableBase so that dragging
-    works even when the canvas has been resized after the initial draw().
-    The legend's _loc tuple and the annotation's xyann are updated in the
-    correct coordinate spaces so the artists persist at their new positions.
+def _detailed_draw_arrhenius(fig, out, disp):
+    """Arrhenius panel: per trap, the multi-window line with its 2σ band and
+    points (coloured by eₙ, edged in the trap's colour), and the standard-window
+    line and diamonds when shown. No frame: left and bottom axes only, with
+    the temperature (K) along the top."""
+    traps = out['traps']
+    stdById = {t['peakId']: t for t in out['trapsStd']} if disp['showStd'] else dict()
+    if disp['arrView'] == ARR_VIEW_3D:
+        return _detailed_draw_arrhenius_3d(fig, out, traps, stdById, disp)
 
-    kind : 'legend' | 'annot'
-    """
-    s = {'on': False, 'mx0': 0.0, 'my0': 0.0, 'ax': 0.0, 'ay': 0.0}   # saved anchor in display px
+    ax = fig.add_subplot()
+    x_all = np.concatenate([t['x'] for t in traps] + [t['x'] for t in stdById.values()])
+    x_line = np.linspace(x_all.min() * 0.97, x_all.max() * 1.03, 400)
+    en_all = np.log10(np.concatenate([t['en_arr'] for t in traps]))
+    norm_en = Normalize(en_all.min(), en_all.max())
+    sc = None
+    excludedLabel = 'Excluded (no Tp error)'
+    stdLabel = 'Standard windows'
+    for i, res in enumerate(traps):
+        col = _detailed_trap_color(i)
+        # 2-sigma confidence band of the (weighted) fit line, straight from its
+        # slope/intercept covariance: var(y) = var_m·x² + var_b + 2·x·cov_mb.
+        y_lm = res['slope'] * x_line + res['intercept']
+        cv = res['covar']
+        if cv is not None:
+            half = 2.0 * np.sqrt(np.maximum(cv[0, 0] * x_line**2 + cv[1, 1] + 2.0 * cv[0, 1] * x_line, 0.0))
+            ax.fill_between(x_line, y_lm - half, y_lm + half, color=col, alpha=0.13, zorder=1)
+        ax.plot(x_line, y_lm, color=col, lw=2.0, zorder=3, label=_detailed_fit_label(res, 'multi'))
+        _detailed_arrhenius_errorbars(ax, res, col)
+        fm = res['fit_mask']
+        sc = ax.scatter(res['x'][fm], res['y'][fm], c=np.log10(res['en_arr'][fm]), cmap='plasma', norm=norm_en,
+                        s=55, zorder=4, edgecolors=col, lw=1.0)
+        if (~fm).any():
+            ax.scatter(res['x'][~fm], res['y'][~fm], marker='x', s=45, color='k', lw=1.2, zorder=4,
+                       label=excludedLabel)
+            excludedLabel = '_nolegend_'
 
-    def _on_press(evt):
-        if evt.button != 1:
-            return
-        # Toolbar pan/zoom active: that click belongs to it, not to a drag.
-        if canvas.toolbar is not None and canvas.toolbar.mode:
-            return
-        # Refresh transforms before hit-testing, but only if a resize has
-        # made them stale: every legend/annotation has its own press handler,
-        # so an unconditional draw() here re-rendered the whole figure once
-        # per draggable artist (5x, ~1 s frozen GUI) on every single click.
-        if dltsc.detailed_hitTestStale:
-            canvas.draw()
-        try:
-            hit, _ = artist.contains(evt)
-        except Exception:
-            return
-        if not hit:
-            return
-        s['on']  = True
-        s['mx0'] = evt.x
-        s['my0'] = evt.y
-        if kind == 'annot':
-            s['ax'], s['ay'] = artist.get_transform().transform(artist.xyann)
-        else:                                   # legend
-            try:
-                rend = fig._get_renderer()
-                bb   = artist.get_window_extent(rend)
-                s['ax'], s['ay'] = bb.x0, bb.y0
-            except Exception:
-                s['on'] = False
+        res_std = stdById.get(res['peakId'])
+        if res_std is not None:
+            ax.plot(x_line, res_std['slope'] * x_line + res_std['intercept'], color=col, lw=1.5, ls='--',
+                    zorder=3, label=_detailed_fit_label(res_std, 'standard'))
+            _detailed_arrhenius_errorbars(ax, res_std, col)
+            ax.scatter(res_std['x'], res_std['y'], color=col, s=100, zorder=5, marker='D', edgecolors='k',
+                       lw=0.7, label=stdLabel)
+            stdLabel = '_nolegend_'
 
-    def _on_motion(evt):
-        if not s['on'] or evt.x is None or evt.y is None:
-            return
-        dx = evt.x - s['mx0']
-        dy = evt.y - s['my0']
-        try:
-            if kind == 'annot':
-                t = artist.get_transform()
-                artist.xyann = t.inverted().transform((s['ax'] + dx, s['ay'] + dy))
-            else:                               # legend
-                new_x = s['ax'] + dx
-                new_y = s['ay'] + dy
-                bbox = artist.get_bbox_to_anchor()
-                x_loc, y_loc = BboxTransformFrom(bbox).transform((new_x, new_y))
-                artist._loc = (float(x_loc), float(y_loc))
-        except Exception:
-            return
-        canvas.draw_idle()
+        if disp['arrLabels'] == LABELS_TRAP_IDS:
+            # At the line's high-temperature (left) end.
+            x0 = res['x'].min()
+            ax.annotate(res['peakId'], (x0, res['slope'] * x0 + res['intercept']), textcoords='offset points',
+                        xytext=(-6, 6), ha='right', fontweight='bold', color=col, zorder=6)
 
-    def _on_release(evt):
-        s['on'] = False
+    cb = fig.colorbar(sc, ax=ax, pad=0.01, fraction=0.04)
+    cb.set_label('log₁₀ eₙ (s⁻¹)')
 
-    canvas.mpl_connect('button_press_event',   _on_press)
-    canvas.mpl_connect('motion_notify_event',  _on_motion)
-    canvas.mpl_connect('button_release_event', _on_release)
+    # Temperature along the top, from 1000/T: tick labels only, so no frame.
+    top = ax.secondary_xaxis('top', functions=(_reciprocal_1000, _reciprocal_1000))
+    top.xaxis.set_major_locator(mticker.MaxNLocator(5))
+    top.tick_params(length=0)
+    for spine in top.spines.values():
+        spine.set_visible(False)
+    top.set_xlabel('T (K)')
+    ax.spines[['top', 'right']].set_visible(False)
+    ax.set_xlabel('1000 / T (K⁻¹)')
+    ax.set_ylabel('ln(eₙ / T²) (s⁻¹ K⁻²)')
+    ax.set_title('Arrhenius Plot')
+    ax.grid(True, linestyle=':')
+
+    legend = None
+    if disp['arrLabels'] == LABELS_LEGEND:
+        legend = _detailed_side_legend(fig, *ax.get_legend_handles_labels())
+    elif disp['arrLabels'] == ARR_LABELS_RESULTS:
+        legend = _detailed_results_legend(fig, out)
+    return ax, legend
+
+def _detailed_draw_arrhenius_3d(fig, out, traps, stdById, disp):
+    """3D Arrhenius: the 2D plot on the floor (each trap's fit line), every
+    window's point raised to its peak height |ΔC/C₀| on a stem, so a trap's
+    points should sit at about one height (one trap density)."""
+    ax = fig.add_subplot(projection='3d')
+    stdLabel = 'Standard windows'
+    for i, res in enumerate(traps):
+        col = _detailed_trap_color(i)
+        sets = [(res, 'o', 30, 'multi', '-')]
+        if res['peakId'] in stdById:
+            sets.append((stdById[res['peakId']], 'D', 45, 'standard', '--'))
+        for r, marker, size, kind, ls in sets:
+            x, y, z = r['x'], r['y'], r['Sp_arr'] * 1e3
+            x_line = np.linspace(x.min() * 0.99, x.max() * 1.01, 100)
+            ax.plot(x_line, r['slope'] * x_line + r['intercept'], zs=0, zdir='z', color=col, lw=2.0 if
+                    kind == 'multi' else 1.5, ls=ls, label=_detailed_fit_label(r, kind))
+            for xi, yi, zi in zip(x, y, z):
+                ax.plot([xi, xi], [yi, yi], [0, zi], color=col, lw=0.7, alpha=0.6)
+            fm = r['fit_mask']
+            ax.scatter(x[fm], y[fm], z[fm], marker=marker, s=size, color=col, edgecolors='k', lw=0.5,
+                       depthshade=False, label=stdLabel if kind == 'standard' else '_nolegend_')
+            if kind == 'standard':
+                stdLabel = '_nolegend_'
+            if (~fm).any():
+                ax.scatter(x[~fm], y[~fm], z[~fm], marker='x', s=size, color='k', depthshade=False)
+        if disp['arrLabels'] == LABELS_TRAP_IDS:
+            k = int(np.argmax(res['Sp_arr']))
+            ax.text(res['x'][k], res['y'][k], res['Sp_arr'][k] * 1e3, f'  {res["peakId"]}', color=col,
+                    fontweight='bold')
+    ax.set_zlim(bottom=0)
+    ax.set_xlabel('1000 / T (K⁻¹)')
+    ax.set_ylabel('ln(eₙ / T²)')
+    ax.set_zlabel('Peak |ΔC/C₀| (×10⁻³)')
+    ax.set_title('Arrhenius Plot')
+
+    legend = None
+    if disp['arrLabels'] == LABELS_LEGEND:
+        legend = _detailed_side_legend(fig, *ax.get_legend_handles_labels())
+    elif disp['arrLabels'] == ARR_LABELS_RESULTS:
+        legend = _detailed_results_legend(fig, out)
+    return ax, legend
 
 
-#---------------------2D TRANSIENT MAP-------------------------#
-def _detailed_plot_transient_map(ax, res_mw, T_K, tmap, params):
-    """Filled contour plot: ΔC/C0(t, T) on log-time y-axis, from the grid
-    _prepare_transient_map computed in the worker process.
-    Returns the legend object (or None) so the caller can make it draggable."""
+#---------------------DLTS SPECTRA PANEL-------------------------#
+def _detailed_shown_spectra(spectra, nSpectra):
+    """nSpectra of the computed spectra, spread evenly over the windows."""
+    if not spectra:
+        return []
+    picks = np.unique(np.round(np.linspace(0, len(spectra) - 1, min(nSpectra, len(spectra)))).astype(int))
+    return [spectra[j] for j in picks]
+
+def _detailed_draw_spectra(fig, out, disp):
+    """DLTS Spectra panel: the peak regions shaded, the shown windows' S(T),
+    each trap's multi-window Tp as dotted lines and the shown spectra's peaks
+    as ▼ in the trap's colour."""
+    ax = fig.add_subplot()
+    T_K, traps = out['T_K'], out['traps']
+    spectra = out['spectra'] or []
+    shown = _detailed_shown_spectra(spectra, disp['nSpectra'])
+    labels = disp['specLabels']
+    ax.axhline(0, color='k', lw=0.6)
+
+    for r, region in enumerate(out['regions']):
+        ax.axvspan(region['tLo'], region['tHi'], color='0.85', alpha=0.5, lw=0, zorder=0)
+        if labels == SPEC_LABELS_REGIONS:
+            ax.text(region['tLo'], 0.99, f' R{r + 1}', transform=ax.get_xaxis_transform(), va='top', ha='left')
+
+    cmap_w = matplotlib.colormaps['cool']
+    norm_w = Normalize(0, max(len(out['mw']) - 1, 1))
+    for k, t1, t2, en, S in shown:
+        ax.plot(T_K, S, color=cmap_w(norm_w(k)), lw=1.4, label=f'{t1:.3g}/{t2:.3g} ms (eₙ = {en:.3g} s⁻¹)')
+
+    trapIndex = {t['peakId']: i for i, t in enumerate(traps)}
+    for i, res in enumerate(traps):
+        for Tp_v in res['Tp_arr']:
+            ax.axvline(Tp_v, color=_detailed_trap_color(i), lw=0.5, ls=':', alpha=0.6)
+    tallest = dict()
+    for k, t1, t2, en, S in shown:
+        for pid, pk in out['windowPeaks'][k]:
+            i = trapIndex.get(pid)
+            col = _detailed_trap_color(i) if i is not None else '0.5'
+            xy = (pk['T_peak'], pk['S_peak'] * 1e3)
+            ax.plot(*xy, marker='v', ls='none', color=col, mec='k', mew=0.6, ms=7, zorder=5)
+            if pid not in tallest or abs(xy[1]) > abs(tallest[pid][1]):
+                tallest[pid] = xy
+    if labels == LABELS_TRAP_IDS:
+        for pid, xy in tallest.items():
+            ax.annotate(pid, xy, textcoords='offset points', xytext=(0, 9), ha='center', fontweight='bold',
+                        zorder=6)
+    if tallest:
+        ax.plot([], [], marker='v', ls='none', color='0.5', mec='k', ms=7, label='Peaks (trap colour)')
+
+    ax.set_xlabel('Temperature (K)')
+    ax.set_ylabel('ΔC/C₀ (×10⁻³)')
+    ax.set_title('DLTS Spectra')
+    ax.grid(True, linestyle=':')
+    legend = None
+    if labels == LABELS_LEGEND:
+        legend = _detailed_side_legend(fig, *ax.get_legend_handles_labels())
+    return ax, legend
+
+
+#---------------------TRANSIENT MAP PANEL-------------------------#
+def _detailed_tau_curves(traps, T_K, t_s, gamma):
+    """Per trap: (index, res, T, τ(T) on the map's time range, Tp, 1/eₙ of
+    its rate-window peaks on the map's time range); traps whose τ(T) misses
+    the map are left out."""
+    T_line = np.linspace(T_K.min() - 20, T_K.max() + 20, 600)
+    curves = []
+    for i, res in enumerate(traps):
+        tau_T = 1.0 / (gamma * res['sigma'] * T_line ** 2 * np.exp(-res['Et'] / (KB_EV * T_line)))
+        vis = (tau_T >= t_s.min() * 0.5) & (tau_T <= t_s.max() * 2.0)
+        if not vis.any():
+            continue
+        tau_all = 1.0 / res['en_arr']
+        vis_c = (tau_all >= t_s.min() * 0.5) & (tau_all <= t_s.max() * 2.0)
+        curves.append((i, res, T_line[vis], np.clip(tau_T[vis], t_s.min(), t_s.max()),
+                       res['Tp_arr'][vis_c], np.clip(tau_all[vis_c], t_s.min(), t_s.max())))
+    return curves
+
+def _detailed_draw_transient_map(fig, out, params, disp):
+    """ΔC/C₀(t, T) from _prepare_transient_map: a filled contour map on a log
+    time axis (2D), or a surface with its isohypses (3D, same colours), with
+    each trap's τ(T) and rate-window peaks overlaid in its colour."""
+    tmap, T_K, traps = out['tmap'], out['T_K'], out['traps']
+    is3d = disp['tmapView'] == MAP_VIEW_3D
+    ax = fig.add_subplot(projection='3d' if is3d else None)
+    ax.set_title('ΔC/C₀ Transient Map')
     if tmap is None:
-        ax.text(0.5, 0.5, 'Not enough time points', transform=ax.transAxes, ha='center', fontsize=11, color=TEXT_MUT)
-        return None
+        (ax.text2D if is3d else ax.text)(0.5, 0.5, 'Not enough time points', transform=ax.transAxes, ha='center')
+        return ax, None
 
     t_s, Z_disp, levels = tmap['t_s'], tmap['Z_disp'], tmap['levels']
-    Tm, tm = np.meshgrid(T_K, t_s)
+    norm = Normalize(levels[0], levels[-1])
+    curves = _detailed_tau_curves(traps, T_K, t_s, params['gamma']) if disp['showTau'] else []
+    labels = disp['tmapLabels']
 
-    cf = ax.contourf(Tm, tm, Z_disp, levels=levels, cmap='jet', extend='both')
-    ax.contour(Tm, tm, Z_disp, levels=levels[::6], colors='k', linewidths=0.25, alpha=0.35)
+    if is3d:
+        Tm, logT = np.meshgrid(T_K, np.log10(t_s))
+        Zc = np.clip(Z_disp, levels[0], levels[-1])
+        mappable = _detailed_isohypse_surface(ax, Tm, logT, Zc, norm, levels)
+        for i, res, T_line, tau, Tp, tauP in curves:
+            col = _detailed_trap_color(i)
+            ax.plot(T_line, np.log10(tau), zs=levels[0], zdir='z', color=col, lw=2.2,
+                    label=f'{res["peakId"]} τ(T), Et = {res["Et"]:.3f} eV')
+            ax.scatter(Tp, np.log10(tauP), levels[0], marker='o', s=40, facecolors='none', edgecolors=col, lw=1.5,
+                       depthshade=False)
+            if labels == LABELS_TRAP_IDS and len(Tp):
+                ax.text(Tp[len(Tp) // 2], np.log10(tauP[len(Tp) // 2]), levels[0], f'  {res["peakId"]}', color=col,
+                        fontweight='bold')
+        ax.set_ylabel('log₁₀ t (s)')
+        ax.set_zlabel('ΔC/C₀ (×10⁻⁵)', labelpad=12)
+    else:
+        Tm, tm = np.meshgrid(T_K, t_s)
+        mappable = ax.contourf(Tm, tm, Z_disp, levels=levels, cmap='jet', extend='both')
+        ax.contour(Tm, tm, Z_disp, levels=levels[::6], colors='k', linewidths=0.25, alpha=0.35)
+        ax.set_yscale('log')
+        for i, res, T_line, tau, Tp, tauP in curves:
+            col = _detailed_trap_color(i)
+            ax.plot(T_line, tau, color=col, lw=2.2, zorder=6, path_effects=MAP_STROKE,
+                    label=f'{res["peakId"]} τ(T), Et = {res["Et"]:.3f} eV')
+            if len(Tp):
+                ax.scatter(Tp, tauP, marker='o', s=70, facecolors='none', edgecolors=col, lw=1.8, zorder=8,
+                           path_effects=MAP_STROKE, label=f'{res["peakId"]} peaks (Tₚ, 1/eₙ)')
+                if labels == LABELS_TRAP_IDS:
+                    # Above the top of the trap's column of peaks, or below its
+                    # bottom for every other trap, so neighbouring traps' ids
+                    # don't collide.
+                    above = i % 2 == 0
+                    j = int(np.argmax(tauP) if above else np.argmin(tauP))
+                    ax.annotate(res['peakId'], (Tp[j], tauP[j]), textcoords='offset points',
+                                xytext=(0, 10 if above else -10), ha='center', va='bottom' if above else 'top',
+                                color=col, fontweight='bold', zorder=9, path_effects=MAP_STROKE)
+        ax.set_ylabel('Time (s)')
+    ax.set_xlabel('Temperature (K)')
 
-    ax.set_yscale('log')
-    ax.set_xlabel('Temperature  (K)', fontsize=10, color=TEXT_PRI, labelpad=5)
-    ax.set_ylabel('Time  (s)', fontsize=10, color=TEXT_PRI, labelpad=5)
-    ax.set_title('ΔC/C₀  Transient Map', fontsize=11, color=TEXT_PRI, fontweight='bold', pad=8)
-    ax.spines[['top', 'right']].set_visible(False)
-    ax.spines[['left', 'bottom']].set_color(BASELINE)
-    ax.tick_params(colors=TEXT_MUT, labelsize=9)
+    cbar = fig.colorbar(mappable, ax=ax, pad=0.02 if not is3d else 0.08, fraction=0.04, shrink=0.8 if is3d else 1.0)
+    cbar.locator = mticker.MaxNLocator(7)   # not one tick per contour level
+    cbar.update_ticks()
+    cbar.set_label('ΔC/C₀ (×10⁻⁵)')
+    legend = None
+    if labels == LABELS_LEGEND:
+        legend = _detailed_side_legend(fig, *ax.get_legend_handles_labels())
+    return ax, legend
 
-    cbar = dltsc.detailed_figure.colorbar(cf, ax=ax, pad=0.01, fraction=0.015, aspect=42)
-    cbar.set_label('ΔC/C₀  (×10⁻⁵)', fontsize=9, color=TEXT_SEC)
-    cbar.ax.tick_params(labelsize=8, colors=TEXT_MUT)
-    cbar.outline.set_edgecolor(BASELINE)
-
-    # ── τ(T) = 1/eₙ(T) overlay ───────────────────────────────────────────
-    if params['showTau'] and res_mw is not None:
-        kB    = KB_EV
-        gamma = params['gamma']
-        Et    = res_mw['Et']
-        sigma = res_mw['sigma']
-
-        T_line = np.linspace(T_K.min() - 20, T_K.max() + 20, 600)
-        en_T   = gamma * sigma * T_line ** 2 * np.exp(-Et / (kB * T_line))
-        tau_T  = 1.0 / en_T
-
-        vis = (tau_T >= t_s.min() * 0.5) & (tau_T <= t_s.max() * 2.0)
-        if vis.any():
-            T_vis   = T_line[vis]
-            tau_vis = np.clip(tau_T[vis], t_s.min(), t_s.max())
-            ax.plot(T_vis, tau_vis, color='white', lw=2.2, ls='-', zorder=6,
-                    label=f'Z₁₂  τ(T)  Et={Et:.3f} eV')
-
-            Tp_all  = res_mw['Tp_arr']
-            tau_all = 1.0 / res_mw['en_arr']
-
-            vis_c    = ((tau_all >= t_s.min() * 0.5) & (tau_all <= t_s.max() * 2.0))
-            Tp_plot  = Tp_all[vis_c]
-            tau_plot = np.clip(tau_all[vis_c], t_s.min(), t_s.max())
-
-            if len(Tp_plot):
-                ax.scatter(Tp_plot, tau_plot, marker='o', s=70, facecolors='none', edgecolors='cyan',
-                          lw=1.8, zorder=8, label='Rate-window peaks  (Tₚ, 1/eₙ)')
-
-                mid = len(Tp_plot) // 2
-                ax.annotate(
-                    '  Z₁₂\n  defect',
-                    xy=(Tp_plot[mid], tau_plot[mid]),
-                    xytext=(Tp_plot[mid] + (T_K.max() - T_K.min()) * 0.07, tau_plot[mid]),
-                    color='cyan', fontsize=9, fontweight='bold', va='center', zorder=9,
-                    arrowprops=dict(arrowstyle='->', color='cyan', lw=1.2)
-                )
-
-            leg_m = ax.legend(loc='upper right', fontsize=8.5, frameon=True, framealpha=0.85,
-                              edgecolor='#8fb4d8', facecolor='#1a3a5c', labelcolor='white')
-            return leg_m
-
-    return None
+def _detailed_isohypse_surface(ax, X, Y, Z, norm, levels, cmap='jet'):
+    """A 3D surface in the 2D map's colours, with isohypses (contour lines)
+    on it and projected onto the floor. Returns a mappable for the colorbar."""
+    step = max(1, int(np.ceil(max(Z.shape) / 90)))   # at most ~90 x 90 facets
+    ax.plot_surface(X, Y, Z, cmap=cmap, norm=norm, rstride=step, cstride=step, linewidth=0, antialiased=False,
+                    alpha=0.95)
+    lines = levels[::6]
+    ax.contour(X, Y, Z, levels=lines, colors='k', linewidths=0.4, alpha=0.6)
+    ax.contour(X, Y, Z, levels=lines, cmap=cmap, norm=norm, zdir='z', offset=levels[0], linewidths=0.8)
+    ax.set_zlim(levels[0], levels[-1])
+    return matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
 
 
-#---------------------RATE-WINDOW ANALYSIS MAP-------------------------#
-def _detailed_plot_rate_window_map(ax, res_mw, rwm, params):
-    """Plot Nt/Nd in (1/kT [eV^-1], T^2/en [K^2 s]) space, from the grid
-    _prepare_rate_window_map interpolated in the worker process. Color =
-    2|ΔC/C0| on a log scale. Black background. Overlays the Arrhenius line
-    and a Z1/2 marker.
-    """
-    gamma = params['gamma']
-
-    ax.set_facecolor('black')
-
+#---------------------RATE-WINDOW ANALYSIS MAP PANEL-------------------------#
+def _detailed_draw_rate_window_map(fig, out, params, disp):
+    """Nt/Nd = 2|ΔC/C₀| in (1/kT, T²/eₙ) space, from _prepare_rate_window_map,
+    in log colours on a black background (2D) or as a log surface with its
+    isohypses (3D, same colours), with each trap's Arrhenius line (and circles
+    along it) in its colour."""
+    rwm, traps, gamma = out['rwm'], out['traps'], params['gamma']
+    is3d = disp['rwmView'] == MAP_VIEW_3D
+    labels = disp['rwmLabels']
+    ax = fig.add_subplot(projection='3d' if is3d else None)
+    ax.set_title('Rate-Window Analysis Map')
+    ax.set_xlabel('1/kT (eV⁻¹)')
     if rwm is None:
-        ax.text(0.5, 0.5, 'Insufficient data for Rate-Window map', transform=ax.transAxes, ha='center',
-               color='white', fontsize=10)
-        _detailed_style_rwm_axes(ax)
-        return None
+        message = 'Insufficient data for Rate-Window map'
+        (ax.text2D if is3d else ax.text)(0.5, 0.5, message, transform=ax.transAxes, ha='center')
+        return ax, None
 
     Xi, Yi, Zi = rwm['Xi'], rwm['Yi'], rwm['Zi']
     z_lo, z_hi = rwm['z_lo'], rwm['z_hi']
     x_min, x_max = rwm['x_min'], rwm['x_max']
+    logNorm = LogNorm(vmin=z_lo, vmax=z_hi)
 
-    pm = ax.pcolormesh(Xi, Yi, Zi, cmap='jet', norm=LogNorm(vmin=z_lo, vmax=z_hi), shading='auto', zorder=2)
-    ax.set_yscale('log')
+    if is3d:
+        logLevels = np.linspace(np.log10(z_lo), np.log10(z_hi), 64)
+        logZ = np.log10(np.clip(Zi.filled(np.nan), z_lo, z_hi))
+        _detailed_isohypse_surface(ax, Xi, np.log10(Yi), logZ, Normalize(logLevels[0], logLevels[-1]), logLevels)
+        mappable = matplotlib.cm.ScalarMappable(norm=logNorm, cmap='jet')
+        ax.set_ylabel('log₁₀ T²/eₙ (K² s)')
+        ax.set_zlabel('log₁₀ Nₜ/N_D')
+    else:
+        ax.set_facecolor('black')
+        mappable = ax.pcolormesh(Xi, Yi, Zi, cmap='jet', norm=logNorm, shading='auto', zorder=2)
+        ax.set_yscale('log')
+        ax.yaxis.set_minor_locator(mticker.NullLocator())
+        ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext())
+        ax.set_ylabel('T²/eₙ (K² s)')
 
-    cbar = dltsc.detailed_figure.colorbar(pm, ax=ax, pad=0.02, fraction=0.026, aspect=30)
-    cbar.set_label('Nₜ / N_D', fontsize=10, labelpad=14)
-    cbar.ax.yaxis.label.set_color('white')
-    cbar.ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext())
-    cbar.ax.tick_params(labelsize=8, colors='white', which='both', length=4, width=0.8)
-    for lbl in cbar.ax.get_yticklabels():
-        lbl.set_color('white')
-    cbar.outline.set_edgecolor('#777777')
-    cbar.outline.set_linewidth(0.8)
-
-    if res_mw is not None:
-        Et    = res_mw['Et']
-        sigma = res_mw['sigma']
-
+    for i, res in enumerate(traps or []):
+        col = _detailed_trap_color(i)
         x_line = np.linspace(x_min * 0.97, x_max * 1.03, 400)
-        y_line = (1.0 / (gamma * sigma)) * np.exp(Et * x_line)
-        vis    = (y_line >= Yi.min() * 0.2) & (y_line <= Yi.max() * 5.0)
+        y_line = (1.0 / (gamma * res['sigma'])) * np.exp(res['Et'] * x_line)
+        vis = (y_line >= Yi.min() * 0.2) & (y_line <= Yi.max() * 5.0)
+        x_circ = np.linspace(x_min * 0.98, x_max * 1.02, 22)
+        y_circ = (1.0 / (gamma * res['sigma'])) * np.exp(res['Et'] * x_circ)
+        vis_c = (y_circ >= Yi.min() * 0.5) & (y_circ <= Yi.max() * 2.0)
+        lineLabel = f'{res["peakId"]} Arrhenius, Et = {res["Et"]:.3f} eV'
+        if is3d:
+            # On the floor, under the surface.
+            if vis.any():
+                ax.plot(x_line[vis], np.log10(y_line[vis]), zs=np.log10(z_lo), zdir='z', color=col, lw=1.8, ls='--',
+                        label=lineLabel)
+            if labels == LABELS_TRAP_IDS and vis_c.any():
+                j = np.flatnonzero(vis_c)[vis_c.sum() // 2]
+                ax.text(x_circ[j], np.log10(y_circ[j]), np.log10(z_lo), f'  {res["peakId"]}', color=col,
+                        fontweight='bold')
+            continue
         if vis.any():
-            ax.plot(x_line[vis], y_line[vis], color='white', lw=1.8, ls='--', zorder=5,
-                    label=f'Arrhenius  Eₜ={Et:.3f} eV')
-
-        n_circles = 22
-        x_circ = np.linspace(x_min * 0.98, x_max * 1.02, n_circles)
-        y_circ = (1.0 / (gamma * sigma)) * np.exp(Et * x_circ)
-        vis_c  = ((y_circ >= Yi.min() * 0.5) & (y_circ <= Yi.max() * 2.0))
+            ax.plot(x_line[vis], y_line[vis], color=col, lw=1.8, ls='--', zorder=5, path_effects=MAP_STROKE,
+                    label=lineLabel)
         if vis_c.any():
-            ax.scatter(x_circ[vis_c], y_circ[vis_c], s=55, facecolors='none', edgecolors='#00cfff',
-                       lw=1.6, zorder=8, label='Z₁/₂ (fitted)')
+            ax.scatter(x_circ[vis_c], y_circ[vis_c], s=55, facecolors='none', edgecolors=col, lw=1.6, zorder=8,
+                       path_effects=MAP_STROKE, label=f'{res["peakId"]} (fitted)')
+            if labels == LABELS_TRAP_IDS:
+                j = np.flatnonzero(vis_c)[vis_c.sum() // 2]
+                ax.annotate(f'{res["peakId"]}', (x_circ[j], y_circ[j]), textcoords='offset points', xytext=(8, -12),
+                            color=col, fontweight='bold', zorder=9, path_effects=MAP_STROKE)
 
-    leg_rw = ax.legend(loc='upper left', fontsize=8.5, frameon=True, framealpha=0.85,
-                       edgecolor='#8fb4d8', facecolor='#0d1b2a', labelcolor='white')
+    cbar = fig.colorbar(mappable, ax=ax, pad=0.02 if not is3d else 0.08, fraction=0.04, shrink=0.8 if is3d else 1.0)
+    cbar.set_label('Nₜ / N_D')
+    cbar.ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext())
+    legend = None
+    if labels == LABELS_LEGEND:
+        legend = _detailed_side_legend(fig, *ax.get_legend_handles_labels())
+    return ax, legend
 
-    _detailed_style_rwm_axes(ax)
-    return leg_rw
 
-def _detailed_style_rwm_axes(ax):
-    """Apply black-background axis styling for the Rate-Window map."""
-    ax.set_xlabel('1/kT  (eV⁻¹)', fontsize=10, labelpad=12)
-    ax.set_ylabel('T²/eₙ  (K²s)', fontsize=10, labelpad=14)
-    # Title sits outside the black axes, on the light figure background.
-    ax.set_title('Rate-Window Analysis Map', fontsize=11, color=TEXT_PRI, fontweight='bold', pad=8)
-    ax.xaxis.label.set_color('white')
-    ax.yaxis.label.set_color('white')
-    ax.tick_params(axis='both', which='both', colors='white', labelcolor='white',
-                   labelsize=9, length=4, width=0.8)
-    for spine in ax.spines.values():
-        spine.set_color('#555555')
-    ax.yaxis.set_minor_locator(mticker.NullLocator())
-    ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext())
+#---------------------DISPLAY OPTIONS-------------------------#
+# Every Display option redraws what it changes from the last result, at once.
+def _detailed_on_display_change(*keys):
+    """keys: the panels to redraw; none = which panels are shown changed."""
+    if dltsc.detailed_lastOut is None:
+        return
+    if keys:
+        _detailed_redraw(*keys)
+    else:
+        _detailed_layout_panels()
 
 
 #---------------------LABEL / LEGEND EDITOR-------------------------#
 def _detailed_open_label_editor():
     """Popup dialog to edit axis labels, titles, and legend text/font sizes.
     A Toplevel (not a modal messagebox) -- it is itself a genuine editing
-    tool, not a status/error notification, so it stays as a dialog.
+    tool, not a status/error notification, so it stays as a dialog. Edits
+    last until the panel is redrawn (a Display change or a new run).
     """
-    if dltsc.detailed_figure is None:
+    if not dltsc.detailed_figures:
         dltsc.log_to_textbox("Detailed analysis: run the analysis first before editing labels.")
         return
 
@@ -1336,12 +1857,9 @@ def _detailed_open_label_editor():
             side='right', padx=(0, 4))
         axis_updates.append((setter_fn, tv, sv))
 
-    panel_defs = [
-        ('Arrhenius Panel',       dltsc.detailed_ax1),
-        ('DLTS Spectra Panel',    dltsc.detailed_ax2),
-        ('Transient Map Panel',   dltsc.detailed_ax3),
-        ('Rate-Window Map Panel', dltsc.detailed_ax4),
-    ]
+    panelNames = [(PANEL_ARRHENIUS, 'Arrhenius'), (PANEL_SPECTRA, 'DLTS Spectra'),
+                  (PANEL_TMAP, 'Transient Map'), (PANEL_RWM, 'Rate-Window Map')]
+    panel_defs = [(f'{name} Panel', dltsc.detailed_panelAxes.get(key)) for key, name in panelNames]
     for pname, ax in panel_defs:
         if ax is None:
             continue
@@ -1350,12 +1868,8 @@ def _detailed_open_label_editor():
         axis_row(inner, 'X label', ax.xaxis.label.get_text(), ax.xaxis.label.get_fontsize() or 10, ax.set_xlabel)
         axis_row(inner, 'Y label', ax.yaxis.label.get_text(), ax.yaxis.label.get_fontsize() or 10, ax.set_ylabel)
 
-    legend_defs = [
-        ('Arrhenius Legend',     dltsc.detailed_ax1, dltsc.detailed_leg1),
-        ('Spectra Legend',       dltsc.detailed_ax2, dltsc.detailed_leg2),
-        ('Transient Map Legend', dltsc.detailed_ax3, dltsc.detailed_legM),
-        ('Rate-Window Legend',   dltsc.detailed_ax4, dltsc.detailed_legRW),
-    ]
+    legend_defs = [(f'{name} Legend', dltsc.detailed_panelAxes.get(key), dltsc.detailed_panelLegends.get(key))
+                   for key, name in panelNames]
     for lname, ax, leg in legend_defs:
         if ax is None or leg is None:
             continue
@@ -1391,8 +1905,8 @@ def _detailed_open_label_editor():
                 t.set_fontsize(fsv.get())
         for txt_obj, ltv in legend_texts:
             txt_obj.set_text(ltv.get())
-        if dltsc.detailed_canvas:
-            dltsc.detailed_canvas.draw_idle()
+        for canvas in dltsc.detailed_canvases.values():
+            canvas.draw_idle()
 
     btn_f = tk.Frame(dlg, bg=CTRL_BG)
     btn_f.pack(fill='x', padx=12, pady=8)
@@ -1402,7 +1916,11 @@ def _detailed_open_label_editor():
 
 
 #---------------------RESULTS TEXT-------------------------#
-def _detailed_write_results(res_mw, res_std, Nt, params):
+def _detailed_write_results(out, params):
+    """Results column: run settings, the peak regions, then one block per trap
+    (multi-window and standard fits, Nt, window detail), then the total Nt."""
+    traps, Nt = out['traps'], out['Nt']
+    stdById = {t['peakId']: t for t in out['trapsStd']}
     lines = []
     lines.append('=' * 55)
     lines.append('  DLTS Multiwindow Analysis  —  Results')
@@ -1427,25 +1945,38 @@ def _detailed_write_results(res_mw, res_std, Nt, params):
 
     lines.append(f'  Signal     : {params["signalMethod"]}')
     lines.append(f'  Denoise    : {params["denoise"]}')
-    lines.append(f'  Peak method: {res_mw["peak_method"]}')
-    lines.append('')
-    lines.append(f'  Multi-window  ({res_mw["N"]} windows)')
-    lines.extend(fit_block(res_mw))
-    lines.append(f'    Nt   ~ {Nt:.3e} cm-3')
-    if res_std:
+    lines.append('  Peak regions:')
+    for r, region in enumerate(out['regions']):
+        source = f'  (from {region["source"]})' if region.get('source') else ''
+        lines.append(f'    R{r + 1}: {region["tLo"]:g}-{region["tHi"]:g} K, '
+                     f'{_region_method_text(region, params["peakMethod"])}{source}')
+
+    for res_mw in traps:
+        res_std = stdById.get(res_mw['peakId'])
         lines.append('')
-        lines.append(f'  Standard  ({res_std["N"]} windows)')
-        lines.extend(fit_block(res_std))
-        if res_std['Et_se'] and res_mw['Et_se']:
-            impr = res_std['Et_se'] / res_mw['Et_se']
-            lines.append(f'    Et uncertainty improvement: {impr:.1f}x')
+        lines.append('-' * 55)
+        lines.append(f'  Trap {res_mw["peakId"]}  ({res_mw["method"]})')
+        lines.append(f'  Multi-window  ({res_mw["N"]} windows)')
+        lines.extend(fit_block(res_mw))
+        lines.append(f'    Nt   = {_fmt_pm(res_mw["Nt"], res_mw["Nt_err"], ".3e", " +/- ")} cm-3'
+                     '  (2 Nd dC/C, from peak heights)')
+        if res_std:
+            lines.append(f'  Standard  ({res_std["N"]} windows)')
+            lines.extend(fit_block(res_std))
+            if res_std['Et_se'] and res_mw['Et_se']:
+                impr = res_std['Et_se'] / res_mw['Et_se']
+                lines.append(f'    Et uncertainty improvement: {impr:.1f}x')
+        lines.append('')
+        lines.append('  Window detail  (multi):')
+        lines.append(f'  {"t1(ms)":>8}  {"t2(ms)":>8}  {"en(s-1)":>10}  {"Tpeak(K)":>10}  {"+/-(K)":>7}')
+        lines.append('  ' + '-' * 53)
+        for (t1, t2, en, tp, tp_err, sp), used in zip(res_mw['detail'], res_mw['fit_mask']):
+            err_txt = f'{tp_err:7.2f}' if tp_err is not None else f'{"n/a":>7}'
+            lines.append(f'  {t1:8.1f}  {t2:8.1f}  {en:10.2f}  {tp:10.2f}  {err_txt}' + ('' if used else '  excl.'))
+
     lines.append('')
-    lines.append('  Window detail  (multi):')
-    lines.append(f'  {"t1(ms)":>8}  {"t2(ms)":>8}  {"en(s-1)":>10}  {"Tpeak(C)":>10}  {"+/-(K)":>7}')
-    lines.append('  ' + '-' * 53)
-    for (t1, t2, en, tp, tp_err, sp), used in zip(res_mw['detail'], res_mw['fit_mask']):
-        err_txt = f'{tp_err:7.2f}' if tp_err is not None else f'{"n/a":>7}'
-        lines.append(f'  {t1:8.1f}  {t2:8.1f}  {en:10.2f}  {tp:10.2f}  {err_txt}' + ('' if used else '  excl.'))
+    lines.append('-' * 55)
+    lines.append(f'  Nt (all traps, transient amplitude) ~ {Nt:.3e} cm-3')
 
     text = '\n'.join(lines)
     if dltsc.detailed_resultsText is not None:
@@ -1470,8 +2001,20 @@ _FIGURE_SAVE_FILETYPES = [
     ('All files', '*.*'),
 ]
 
+def _detailed_combined_figure(out, params, disp):
+    """Every shown panel, laid out as on screen, in one Figure (for Save
+    Figure; each panel's own toolbar saves that panel alone)."""
+    rows = _detailed_shown_panels(disp)
+    fig = Figure(figsize=(14, 5.5 * len(rows)), layout='constrained')
+    grid = fig.add_gridspec(len(rows), 2)
+    for r, row in enumerate(rows):
+        for c, key in enumerate(row):
+            sub = fig.add_subfigure(grid[r, :] if len(row) == 1 else grid[r, c])
+            _detailed_draw_panel_on(sub, key, out, params, disp)
+    return fig
+
 def _detailed_save_figure():
-    if dltsc.detailed_figure is None:
+    if dltsc.detailed_lastOut is None:
         dltsc.log_to_textbox("Detailed analysis: run the analysis first before saving a figure.")
         return
     path = filedialog.asksaveasfilename(
@@ -1480,15 +2023,15 @@ def _detailed_save_figure():
     if not path:
         return
     try:
+        fig = _detailed_combined_figure(dltsc.detailed_lastOut, dltsc.detailed_lastParams, _detailed_display())
         # Vector formats (svg/eps/pdf) shouldn't be flattened to a fixed DPI
-        # raster and don't need a forced facecolor override; raster formats
-        # (png/jpg/tiff/bmp) get the figure's own SURFACE background baked in
-        # (mirrors the previous PNG-only behavior) so they don't save transparent.
+        # raster; raster formats (png/jpg/tiff/bmp) get a white background
+        # baked in so they don't save transparent.
         ext = os.path.splitext(path)[1].lower()
         if ext in ('.svg', '.eps', '.pdf'):
-            dltsc.detailed_figure.savefig(path, bbox_inches='tight')
+            fig.savefig(path, bbox_inches='tight')
         else:
-            dltsc.detailed_figure.savefig(path, dpi=180, bbox_inches='tight', facecolor=SURFACE)
+            fig.savefig(path, dpi=180, bbox_inches='tight', facecolor='white')
     except Exception as exc:
         dltsc.log_to_textbox(f"Detailed analysis: failed to save figure as {ext or '(no extension)'}: {exc}")
         return
@@ -1520,6 +2063,14 @@ def construct_detailedAnalysisTab():
 
     tabControl.add(dltsc.detailedAnalysisTab, text='Detailed Analysis')
     tabControl.pack(expand=1, fill="both")
+
+    # The app doesn't run dltsc.init(), so seed the panel stores here.
+    for name in ('detailed_figures', 'detailed_canvases', 'detailed_panelAxes', 'detailed_panelLegends',
+                 'detailed_linkCids'):
+        if getattr(dltsc, name) is None:
+            setattr(dltsc, name, dict())
+    if dltsc.detailed_linkBusy is None:
+        dltsc.detailed_linkBusy = False
 
     parent = dltsc.detailedAnalysisTab
     parent.grid_rowconfigure(0, weight=0)
@@ -1661,13 +2212,37 @@ def construct_detailedAnalysisTab():
     ttk.Combobox(ctrl, textvariable=dltsc.detailed_denoiseVar, values=DENOISE_OPTIONS,
                  state='readonly', font=('Segoe UI', 9)).pack(fill='x', pady=2)
 
-    # ── Peak search range ─────────────────────────────────────────────────
-    section('Peak Search Range')
+    # ── Peak regions (see the PEAK REGIONS (CONTROLS) section) ───────────
+    section('Peak Regions')
+    if not dltsc.detailed_regions:
+        # Default: the old Peak Search Range with the default single-peak finder.
+        dltsc.detailed_regions = [dict(tLo=DEFAULT_TPEAK_LO, tHi=DEFAULT_TPEAK_HI, primitives=[],
+                                       prominence=float(DEFAULT_PROMINENCE), source=None)]
+    tk.Label(ctrl, text='Drag across the DLTS Spectra panel (after a run) or type T min / max, then Add '
+                        'Region. A new region uses the primitives of the Quick Analysis region overlapping '
+                        'it most, else the default peak method below.',
+             bg=CTRL_BG, fg=TEXT_SEC, font=('Segoe UI', 8), wraplength=250, justify='left').pack(anchor='w')
+    dltsc.detailed_regionListbox = tk.Listbox(ctrl, height=4, exportselection=False, font=('Segoe UI', 8))
+    dltsc.detailed_regionListbox.pack(fill='x', pady=2)
+    dltsc.detailed_regionListbox.bind('<<ListboxSelect>>', lambda e: _detailed_on_region_select())
     dltsc.detailed_tpeakLoVar = tk.DoubleVar(value=DEFAULT_TPEAK_LO)
     dltsc.detailed_tpeakHiVar = tk.DoubleVar(value=DEFAULT_TPEAK_HI)
 
-    row('T min (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakLoVar, 100, 350, 5))
-    row('T max (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakHiVar, 200, 600, 5))
+    row('T min (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakLoVar, 50, 1000, 5))
+    row('T max (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakHiVar, 50, 1000, 5))
+    f_regionButtons = tk.Frame(ctrl, bg=CTRL_BG)
+    f_regionButtons.pack(fill='x', pady=2)
+    for text, command in (('Add Region', _detailed_add_region), ('Update', _detailed_update_region),
+                          ('Remove', _detailed_remove_region)):
+        ttk.Button(f_regionButtons, text=text, command=command).pack(side='left', fill='x', expand=True, padx=1)
+    tk.Label(ctrl, text='Method of the selected region:', bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9),
+             anchor='w').pack(fill='x')
+    dltsc.detailed_regionMethodVar = tk.StringVar(value=METHOD_DEFAULT)
+    dltsc.detailed_regionMethodCombo = ttk.Combobox(
+        ctrl, textvariable=dltsc.detailed_regionMethodVar, state='readonly', font=('Segoe UI', 8),
+        postcommand=_detailed_refresh_method_options)
+    dltsc.detailed_regionMethodCombo.pack(fill='x', pady=2)
+    dltsc.detailed_regionMethodCombo.bind('<<ComboboxSelected>>', lambda e: _detailed_apply_method())
 
     # Both methods give each window's Tpeak a 1-sigma error (parabola
     # covariance / spline bootstrap), which then weights the Arrhenius fit.
@@ -1675,10 +2250,16 @@ def construct_detailedAnalysisTab():
     # Et over repeated noise realizations, its Et errors matched the actual
     # scatter (pull RMS ~0.9), while the 5-point parabola's (only 2 residual
     # degrees of freedom per window) underestimated it ~2.5x (pull RMS ~2.8).
+    # It is the default for regions without Quick Analysis primitives: one peak
+    # per region and window.
     dltsc.detailed_peakMethodVar = tk.StringVar(value=PEAK_METHOD_SPLINE)
-    tk.Label(ctrl, text='Peak method:', bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9), anchor='w').pack(fill='x')
-    ttk.Combobox(ctrl, textvariable=dltsc.detailed_peakMethodVar, values=PEAK_METHOD_OPTIONS,
-                 state='readonly', font=('Segoe UI', 9)).pack(fill='x', pady=2)
+    tk.Label(ctrl, text='Default peak method (one peak per region):', bg=CTRL_BG, fg=TEXT_PRI,
+             font=('Segoe UI', 9), anchor='w').pack(fill='x')
+    peakMethodCombo = ttk.Combobox(ctrl, textvariable=dltsc.detailed_peakMethodVar, values=PEAK_METHOD_OPTIONS,
+                                   state='readonly', font=('Segoe UI', 9))
+    peakMethodCombo.pack(fill='x', pady=2)
+    peakMethodCombo.bind('<<ComboboxSelected>>', lambda e: _detailed_refresh_regions(_detailed_selected_region()))
+    _detailed_refresh_regions(0)
 
     # ── Multi-window parameters ───────────────────────────────────────────
     section('Multi-Window Parameters')
@@ -1712,22 +2293,61 @@ def construct_detailedAnalysisTab():
         dltsc.detailed_stdEntries.append((v1, v2))
 
     # ── Display options ───────────────────────────────────────────────────
+    # Applied at once to the last run's plots (see DISPLAY OPTIONS); each
+    # panel's Labels box picks the one set of labels it shows.
     section('Display')
 
+    def combo_row(label, var, options):
+        f = tk.Frame(ctrl, bg=CTRL_BG)
+        f.pack(fill='x', pady=1)
+        tk.Label(f, text=label, bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9), width=9, anchor='w').pack(side='left')
+        ttk.Combobox(f, textvariable=var, values=options, state='readonly', font=('Segoe UI', 9)).pack(
+            side='left', fill='x', expand=True)
+
+    def panel_heading(text, var=None):
+        if var is None:
+            tk.Label(ctrl, text=text, bg=CTRL_BG, fg=TEXT_PRI, font=('Segoe UI', 9, 'bold'), anchor='w').pack(
+                fill='x', pady=(6, 0))
+        else:
+            ttk.Checkbutton(ctrl, text=text, variable=var).pack(anchor='w', pady=(6, 0))
+
+    dltsc.detailed_arrViewVar = tk.StringVar(value=ARR_VIEW_2D)
+    dltsc.detailed_arrLabelsVar = tk.StringVar(value=LABELS_TRAP_IDS)
+    panel_heading('Arrhenius plot')
+    combo_row('View', dltsc.detailed_arrViewVar, ARR_VIEW_OPTIONS)
+    combo_row('Labels', dltsc.detailed_arrLabelsVar, ARR_LABEL_OPTIONS)
+
     dltsc.detailed_showSpectraVar = tk.BooleanVar(value=True)
-    ttk.Checkbutton(ctrl, text='Show DLTS spectra panel', variable=dltsc.detailed_showSpectraVar).pack(anchor='w')
     dltsc.detailed_nSpectraVar = tk.IntVar(value=5)
-    row('Spectra to plot', lambda p, **k: spinbox(p, dltsc.detailed_nSpectraVar, 2, 16, 1, '%d'))
+    dltsc.detailed_specLabelsVar = tk.StringVar(value=LABELS_TRAP_IDS)
+    panel_heading('Show DLTS spectra panel', dltsc.detailed_showSpectraVar)
+    row('Spectra to plot', lambda p, **k: spinbox(p, dltsc.detailed_nSpectraVar, 2, 60, 1, '%d'))
+    combo_row('Labels', dltsc.detailed_specLabelsVar, SPEC_LABEL_OPTIONS)
 
     dltsc.detailed_showTmapVar = tk.BooleanVar(value=True)
-    ttk.Checkbutton(ctrl, text='Show 2D transient map', variable=dltsc.detailed_showTmapVar).pack(anchor='w', pady=(6, 0))
-
     dltsc.detailed_showTauVar = tk.BooleanVar(value=True)
+    dltsc.detailed_tmapViewVar = tk.StringVar(value=MAP_VIEW_2D)
+    dltsc.detailed_tmapLabelsVar = tk.StringVar(value=LABELS_TRAP_IDS)
+    panel_heading('Show transient map', dltsc.detailed_showTmapVar)
     ttk.Checkbutton(ctrl, text='  Overlay τ(T) curve on map', variable=dltsc.detailed_showTauVar).pack(anchor='w')
+    combo_row('View', dltsc.detailed_tmapViewVar, MAP_VIEW_OPTIONS)
+    combo_row('Labels', dltsc.detailed_tmapLabelsVar, MAP_LABEL_OPTIONS)
 
     dltsc.detailed_showRwmVar = tk.BooleanVar(value=True)
-    ttk.Checkbutton(ctrl, text='Show Rate-Window Analysis map', variable=dltsc.detailed_showRwmVar).pack(
-        anchor='w', pady=(6, 0))
+    dltsc.detailed_rwmViewVar = tk.StringVar(value=MAP_VIEW_2D)
+    dltsc.detailed_rwmLabelsVar = tk.StringVar(value=LABELS_TRAP_IDS)
+    panel_heading('Show Rate-Window Analysis map', dltsc.detailed_showRwmVar)
+    combo_row('View', dltsc.detailed_rwmViewVar, MAP_VIEW_OPTIONS)
+    combo_row('Labels', dltsc.detailed_rwmLabelsVar, MAP_LABEL_OPTIONS)
+
+    for var, keys in ((dltsc.detailed_showSpectraVar, ()), (dltsc.detailed_showTmapVar, ()),
+                      (dltsc.detailed_showRwmVar, ()),
+                      (dltsc.detailed_stdWinsVar, (PANEL_ARRHENIUS,)), (dltsc.detailed_arrViewVar, (PANEL_ARRHENIUS,)),
+                      (dltsc.detailed_arrLabelsVar, (PANEL_ARRHENIUS,)), (dltsc.detailed_nSpectraVar, (PANEL_SPECTRA,)),
+                      (dltsc.detailed_specLabelsVar, (PANEL_SPECTRA,)), (dltsc.detailed_showTauVar, (PANEL_TMAP,)),
+                      (dltsc.detailed_tmapViewVar, (PANEL_TMAP,)), (dltsc.detailed_tmapLabelsVar, (PANEL_TMAP,)),
+                      (dltsc.detailed_rwmViewVar, (PANEL_RWM,)), (dltsc.detailed_rwmLabelsVar, (PANEL_RWM,))):
+        var.trace_add('write', lambda *_, keys=keys: _detailed_on_display_change(*keys))
 
     # ── Actions ───────────────────────────────────────────────────────────
     section('')

@@ -1,13 +1,13 @@
 # impedanceAnalysis_Tools
 
-`impedanceAnalysis_Tools.py` is the analysis library for DLTS runs. It loads the per-temperature step files a run writes (`.h5`, JSON in `.txt`/`.json`, or Zurich Instruments LabOne `.csv` exports), repairs the time axis, splits each record into excitation (fill pulse) and emission blocks by clustering the pulse signal, averages the emission transients, denoises them, and computes the double-boxcar DLTS signal with error propagation. It also holds the peak finders used to locate the DLTS peak temperature.
+`impedanceAnalysis_Tools.py` is the analysis library for DLTS runs. It loads the per-temperature step files a run writes (`.h5`, JSON in `.txt`/`.json`, or Zurich Instruments LabOne `.csv` exports), repairs the time axis, splits each record into excitation (fill pulse) and emission blocks by clustering the pulse signal, averages the emission transients, denoises them, and computes the double-boxcar DLTS signal with error propagation. It also holds the peak finders used to locate the DLTS peak temperature, and the peak-deconvolution functions that split overlapping DLTS peaks.
 
 Where the GUI uses it:
 
 | GUI file | What it calls |
 |---|---|
 | `liveDataTab.py` | Live mode: `impdData(fName=[path])` + `read_data()` for the first file, then `append_data(fName=[path])` for each new step, on a worker thread; then `cleanup_data()`, `selected_emissions(emissionIndex=0)`, `filter_emissions(method=..., emissionIndex=0, recalculate=True, interactivePlot=False)`, `selected_emissions(emissionIndex=-1)`. Offline mode: the same chain after `read_data()` on the chosen files. (Its transient extraction reads `.h5` step files with its own `_read_h5_step`, through `h5py`, not with `read_h5_record`.) |
-| `dataAnalysisTab.py` (Quick Analysis) | `impd.calculate_delC_normalized(...)` for each rate window, then `impdData._curveFit_peakFinder(...)` or `impdData._smoothingSpline_peakFinder(...)` for the peak. |
+| `dataAnalysisTab.py` (Quick Analysis) | `impd.calculate_delC_normalized(...)` for each rate window (Live/Offline `impdData` sources). Peak Deconvolution calls `impdData._deconvolve_peaks(...)` or, for a Smoothing Spline region, `impdData._smoothingSpline_multiPeakFinder(...)`; it also reads `DECONV_PRIMITIVES` and `DECONV_PEAK_PRIMITIVES`. Its single-peak helpers, no longer used by the UI, call `impdData._curveFit_peakFinder(...)`. |
 | `detailedAnalysisTab.py` | `impdData._pca_denoise`, `_wavelet_denoise`, `_savitzkyGolay_denoise`, `_lowess_denoise` on averaged transients, and `impdData._smoothingSpline_peakFinder` for Tp. |
 | `runParamsTab.py`, `runDLTS.py` | Import the module; no live calls (comments and commented-out code only). |
 
@@ -23,11 +23,16 @@ Importing the module also imports `zhinst.core`, `zhinst.toolkit`, `torch`, `zur
 
 ## Module constants and globals
 
-The module defines no named constants. The table lists every module-level name and import-time setting, followed by the literal values hard-coded inside functions that act as constants.
+The table lists every module-level name and import-time setting, followed by the literal values hard-coded inside functions that act as constants.
 
 | Name | Value / type | Meaning |
 |---|---|---|
 | `GAP_FACTOR` | `100` | `cleanup_data()` / `_gap_remove`: a time step larger than this many typical (median) steps is a gap and is closed. |
+| `DECONV_PEAK_PRIMITIVES` | `('mirroredLognormal', 'gaussian', 'lorentzian', 'voigt', 'pseudoVoigt')` | Peak-shaped primitives of `_deconvolve_peaks`. Each gives one peak (center, height). |
+| `DECONV_BASELINE_PRIMITIVES` | `('constant', 'linear')` | Baseline primitives of `_deconvolve_peaks`. They only absorb a background and give no peak. |
+| `DECONV_PRIMITIVES` | `DECONV_PEAK_PRIMITIVES + DECONV_BASELINE_PRIMITIVES` | Every valid primitive key. |
+| `DECONV_EDGE_FRAC` | `0.01` | A deconvolved peak whose center is within this fraction of the smallest x step of either end of the data is `onEdge`. |
+| `mirroredLognormal` | function | Left-tailed lognormal peak shape. See [Module-level functions](#module-level-functions). |
 | `_STEP_STEM_PATTERN` | regex `^([npNP]?)(\d+)(?:[pP](\d+))?[cC]?(?:_\d+)?$` | Step file name without extension → sign, whole degrees, decimals. Same rule as `liveDataTab._LEGACY_FILENAME_PATTERN`; a missing sign letter means positive. |
 | `_CSV_NAME_PATTERN` | regex `^([npNP]?)(\d+)(?:[pP.](\d+))?C_` | ZI export history name (`25C_000`, `n10C_000`, `p25p5C_000`) → sign, whole degrees, decimals. |
 | `read_h5_record` | function | Reads one HDF5 step file. See [Module-level functions](#module-level-functions). |
@@ -39,8 +44,9 @@ The module defines no named constants. The table lists every module-level name a
 | `sm`, `torch`, `lmfit`, `time`, `itertools`, `statistics` | modules | Imported; `lmfit` is used only through `lmfit.models`; the others are unused. |
 | `askopenfilenames` | `tkinter.filedialog` function | Opens the file-picker dialog when no file names are given. |
 | `GaussianMixture`, `KMeans`, `PCA` | scikit-learn classes | Used for level clustering and PCA denoising. |
-| `savgol_filter`, `UnivariateSpline`, `CubicSpline`, `differential_evolution` | SciPy functions/classes | Used. |
-| `GaussianModel`, `PseudoVoigtModel`, `VoigtModel`, `LorentzianModel` | lmfit models | Used by `_curveFit_peakFinder`. |
+| `savgol_filter`, `find_peaks`, `UnivariateSpline`, `CubicSpline`, `differential_evolution` | SciPy functions/classes | Used. `find_peaks` is used by `_smoothingSpline_multiPeakFinder` and `_deconvolution_center_guesses`. |
+| `GaussianModel`, `PseudoVoigtModel`, `VoigtModel`, `LorentzianModel` | lmfit models | Used by `_curveFit_peakFinder` and `_deconvolve_peaks`. |
+| `ConstantModel`, `LinearModel` | lmfit models | Baselines of `_deconvolve_peaks`. |
 | `ufloat` | `uncertainties` function | Used for error propagation in `calculate_delC_normalized`. |
 | `Lowess` | `fastlowess` class | Used by `_lowess_denoise`. |
 | `apply_along_axis`, `unumpy`, `FastICA`, `weibull_min`, `mode`, `quad`, `BSpline`, `interp2d`, `LognormalModel` | various | Imported, not used. |
@@ -58,7 +64,10 @@ Hard-coded values inside functions:
 | `window_size=100`; `wavelet="db4", level=4, mode="soft"`; `window_size=None, order=2`; `fraction=None` (becomes 0.1) | `filter_emissions` | Fixed denoiser settings. |
 | `iterations=3`, `robustness_method="bisquare"` | `_lowess_denoise` | LOWESS settings. |
 | 100000 points; 2000 points | `_smoothingSpline_peakFinder` | Fine grid for the spline peak; coarser grid for bootstrap peaks. |
-| 2000 points | `_curveFit_peakFinder` | Grid for the fitted curve. |
+| 20000 points; 2000 points | `_smoothingSpline_multiPeakFinder` | Grid for the spline peaks; coarser grid for bootstrap peaks. |
+| 2000 points | `_curveFit_peakFinder`, `_deconvolve_peaks` | Grid for the fitted curve(s). |
+| prominence `0.02 · max`, spacing `2 · min step` | `_deconvolution_center_guesses` | Smallest local maximum taken as a starting center, and the smallest distance between two starting centers. |
+| `shape` 0.3 (bounds 0.02–2.0); `sigma` bounds `0.5·median step` to `2·span` | `_deconvolve_peaks` | Starting shape of a mirrored lognormal; width bounds of the lmfit peak models. |
 
 ## Data model
 
@@ -504,6 +513,40 @@ rec = iaT.read_h5_record(r"C:\Users\spencer\Desktop\DATA\DLTS\092826\114655\p25p
 print(rec['ImpedanceIm'].shape)     # (262144,)
 ```
 
+### mirroredLognormal(x, height=1.0, center=0.0, width=1.0, shape=0.5)
+
+A lognormal peak mirrored so its heavy tail is on the left (low-x) side, the `'mirroredLognormal'` primitive of `_deconvolve_peaks`. In `u = D - x` it is a lognormal with median `width` and log-width `shape`, reflected at `D = center + width·exp(-shape²)`. It is parameterized by its mode: the peak sits at `x = center` with value `height`, so `center` is directly the peak position and its lmfit standard error the peak-position error.
+
+```text
+u_mode = width * exp(-shape^2)
+u      = center + u_mode - x
+f(x)   = height * (u_mode / u) * exp(-ln(u / width)^2 / (2 shape^2) + shape^2 / 2)    for u > 0
+       = 0                                                                          for x >= center + u_mode
+```
+
+| Name | Type | Default | Meaning |
+|---|---|---|---|
+| `x` | array | required | Positions (e.g. T in K). |
+| `height` | `float` | `1.0` | Peak value. |
+| `center` | `float` | `0.0` | Peak position (mode). |
+| `width` | `float` | `1.0` | Lognormal median in `u`; sets the overall width. Clipped to ≥ 1e-300. |
+| `shape` | `float` | `0.5` | Lognormal log-width. Larger = heavier left tail; a small `shape` tends to a Gaussian of σ ≈ `width·shape`. Clipped to ≥ 1e-12. |
+
+**Returns** a float array shaped like `x`. The mean, left of the peak, is `center + width·(exp(-shape²) − exp(shape²/2))`.
+
+**Side effects** none.
+
+**Example** (runs offline, verified)
+
+```python
+import numpy as np
+x = np.linspace(200.0, 400.0, 4001)
+y = iaT.mirroredLognormal(x, height=2.0, center=300.0, width=40.0, shape=0.4)
+print(x[np.argmax(y)], y.max())                       # 300.0 2.0
+print(iaT.mirroredLognormal(280.0, 2.0, 300.0, 40.0, 0.4) >
+      iaT.mirroredLognormal(320.0, 2.0, 300.0, 40.0, 0.4))   # True: the tail is on the left
+```
+
 ## Internal helpers
 
 All are `@staticmethod`s of `impdData` unless noted.
@@ -544,9 +587,11 @@ All four take `signal`, a `dataEmissions[T]`-style dict with `'x'`, `'y'`, `'yme
 
 ### Peak finders (also called directly by `dataAnalysisTab.py` and `detailedAnalysisTab.py`)
 
-Both return `(maxX, maxY, xf, yf, maxXErr, maxYErr)`, or `-1` (after printing) if `signalX` or `signalY` is `None`. Typical input is `x = delC[:, 0]` (T in K) and `y = delC[:, 3]`.
+Both single-peak finders return `(maxX, maxY, xf, yf, maxXErr, maxYErr)`, or `-1` (after printing) if `signalX` or `signalY` is `None`. Typical input is `x = delC[:, 0]` (T in K) and `y = delC[:, 3]`.
 
-`_smoothingSpline_peakFinder(signalX = None, signalY = None, smoothingFactor = None, nBootstrap = 200, randomState = 0, signalYErr = None)` fits a cubic `UnivariateSpline` and returns the point of largest absolute value on a 100000-point grid, so negative peaks are found too.
+`_smoothing_spline_fit(xs, ys, yErrs=None, smoothingFactor=None)` is the weighted smoothing spline that `_smoothingSpline_peakFinder` and `_smoothingSpline_multiPeakFinder` share. `xs` must be increasing. `yErrs` is used only if every entry is finite and > 0: then weights are `1/yErrs` and `smoothingFactor=None` becomes `len(xs)`. Otherwise the noise variance is estimated from second differences (plain variance for fewer than 5 points) and `smoothingFactor=None` becomes `noiseVar · len(xs)`. Returns `(spline, yErrs, weights, noiseStd, smoothingFactor)`: `yErrs` is `None` if unusable, `noiseStd` is `None` when `yErrs` is used. The bootstrap of both callers resamples with whichever of the two is set. Moving this code out of `_smoothingSpline_peakFinder` did not change that function's results.
+
+`_smoothingSpline_peakFinder(signalX = None, signalY = None, smoothingFactor = None, nBootstrap = 200, randomState = 0, signalYErr = None)` fits a cubic `UnivariateSpline` (`_smoothing_spline_fit`) and returns the point of largest absolute value on a 100000-point grid, so negative peaks are found too.
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
@@ -559,6 +604,78 @@ Both return `(maxX, maxY, xf, yf, maxXErr, maxYErr)`, or `-1` (after printing) i
 `maxXErr`/`maxYErr` are the standard deviations of the bootstrap peaks (2000-point grid), or `None` if the bootstrap was skipped or fewer than `max(10, nBootstrap // 4)` refits succeeded.
 
 `_curveFit_peakFinder(signalX = None, signalY = None, curveType = "pseudoVoigt", signalYErr = None)` fits an lmfit model after `model.guess()` and returns its `center` and `height` parameters with their `stderr` (which may be `None`). `curveType` is one of `pseudoVoigt`, `gaussian`, `lorenzian`/`lorentzian`, `voigt` (case-insensitive); anything else raises `ValueError`. `signalYErr` sets `weights = 1/err` when all finite and > 0. `xf`/`yf` is the fitted curve on 2000 points.
+
+### Peak deconvolution
+
+Used by the Peak Deconvolution frame of the Quick Analysis tab ([dataAnalysisTab](dataAnalysisTab.md)) to split overlapping DLTS peaks. Both finders flip the signal first if its dominant extremum is negative (`max(y) < |min(y)|`), so peaks are found in that direction, and return heights and curves in the signal's own sign. Both raise `ValueError` on missing input instead of returning `-1`. Tests: `tests/test_peak_deconvolution.py`.
+
+`_smoothingSpline_multiPeakFinder(signalX = None, signalY = None, minProminence = 0.05, smoothingFactor = None, nBootstrap = 200, randomState = 0, signalYErr = None)` fits the same spline as `_smoothingSpline_peakFinder` and returns every peak, not just the largest.
+
+| Name | Type | Default | Meaning |
+|---|---|---|---|
+| `signalX`, `signalY` | array | `None` | Data; sorted by x internally. |
+| `minProminence` | `float` | `0.05` | A peak's `scipy.signal.find_peaks` prominence must be at least this fraction of the spline's largest \|value\| (on a 20000-point grid). |
+| `smoothingFactor` | `float` | `None` | As in `_smoothing_spline_fit`. |
+| `nBootstrap` | `int` | `200` | Parametric bootstrap refits; `0` skips them. |
+| `randomState` | `int` | `0` | Seed for the bootstrap. |
+| `signalYErr` | array | `None` | Per-point errors, as in `_smoothingSpline_peakFinder`. |
+
+A peak needs a drop on both sides, so a signal still rising at either end of the range gives no peak there. Each bootstrap resample is refit and re-peak-found with the same absolute prominence threshold. Each original peak takes the resample peak nearest to it within its own catchment (halfway to the neighbouring peaks, or the range ends).
+
+**Returns** a dict: `peaks` (list of `{center, centerErr, height, heightErr, prominence}`, increasing center), `xf`, `yf` (spline in the signal's own sign), `sign` (+1 / −1). `centerErr`/`heightErr` are the standard deviations over the resamples, or `None` if fewer than `max(10, nBootstrap // 4)` resamples found that peak.
+
+`_deconvolution_center_guesses(xs, ys, n)` returns `n` starting centers in increasing order, for `ys` already flipped positive. After a light 3-point smoothing (7 points or more) it takes, in this order: the most prominent local maxima (prominence ≥ 0.02 · max), then shoulders (local minima of the second derivative, most negative curvature first) for peaks hidden under a bigger one, then the middle of the widest remaining gap. A maximum or shoulder closer than 2 smallest x steps to a center already chosen is skipped. Returns `[]` for `n <= 0`.
+
+`_deconvolve_peaks(signalX = None, signalY = None, primitives = None, signalYErr = None)` fits the sum of `primitives` with one lmfit composite model.
+
+| Name | Type | Default | Meaning |
+|---|---|---|---|
+| `signalX`, `signalY` | array | `None` | Data, e.g. one rate window's S(T) inside one region; sorted by x internally. |
+| `primitives` | list of `str` | `None` | `DECONV_PRIMITIVES` keys: peak shapes `'mirroredLognormal'` (see [mirroredLognormal](#mirroredlognormalx-height10-center00-width10-shape05)), `'gaussian'`, `'lorentzian'`, `'voigt'`, `'pseudoVoigt'`, and baselines `'constant'`, `'linear'`. List the peaks from low to high x. |
+| `signalYErr` | array | `None` | Per-point errors. Used as `weights = 1/err` only if every entry is finite and > 0. |
+
+How the fit is set up:
+
+- The peak primitives get the starting centers of `_deconvolution_center_guesses` in increasing x, in the order they are listed. Starting widths come from the distance to the nearest other center; starting heights from the data at the center (at least 5 % of the maximum). Amplitudes and heights are bounded ≥ 0.
+- **Order constraint.** The peaks keep their listed order: each later peak's center is `previous center + step`, with `step` a free parameter in `[0, span]`, so the same component means the same peak in every rate window and two like-shaped peaks cannot swap places. The first peak's center is bounded to the data's x range. lmfit propagates the center errors through that constraint.
+- A peak whose fitted center ends within `DECONV_EDGE_FRAC` (1 %) of the smallest x step of either end is flagged `onEdge`: it wants to sit outside the region.
+- Parameter errors are lmfit's covariance estimates (scaled by the reduced chi-square, lmfit's default).
+
+**Returns** a dict:
+
+| Key | Meaning |
+|---|---|
+| `success`, `message` | lmfit's result. `success=False` with a message and `xf=None` when there are no more points than free parameters (`n point(s) for m free parameters; widen the region or use fewer primitives.`) or the fit raised (`fit failed: ...`). |
+| `sign` | +1 or −1 (the flip above). |
+| `weighted` | `True` when `signalYErr` was used. |
+| `redchi`, `rsquared` | Reduced chi-square and R² of the fit. |
+| `x`, `residual` | Sorted input x and data − fit at x (in the signal's sign). |
+| `xf`, `yf` | Total fit on 2000 points. |
+| `componentCurves` | One array per primitive, on `xf`. They add up to `yf`. |
+| `components` | One dict per primitive: `primitive`, `isPeak`, `center`, `centerErr`, `height`, `heightErr`, `fwhm`, `onEdge`. `center`/`height`/`fwhm` are `None` for baselines. `fwhm` of a mirrored lognormal is measured on the fitted curve. |
+
+Raises `ValueError` for missing data, no primitives, or an unknown primitive.
+
+**Example** (runs offline, verified): a left-tailed peak at 300 K overlapping a Gaussian at 335 K, as in `tests/test_peak_deconvolution.py`.
+
+```python
+import numpy as np
+rng = np.random.default_rng(0)
+T = np.arange(250.0, 381.0, 5.0)
+S = iaT.mirroredLognormal(T, 0.03, 300.0, 40.0, 0.3) + 0.012 * np.exp(-0.5 * ((T - 335.0) / 10.0) ** 2)
+S = S + rng.normal(0, 2e-4, T.size)
+err = np.full(T.size, 2e-4)
+
+res = iaT.impdData._deconvolve_peaks(T, S, ['mirroredLognormal', 'gaussian'], signalYErr=err)
+for c in res['components']:
+    print(f"{c['primitive']}: {c['center']:.2f} +/- {c['centerErr']:.2f} K, height {c['height']:.4f}")
+# mirroredLognormal: 299.97 +/- 0.06 K, height 0.0298
+# gaussian: 335.20 +/- 0.10 K, height 0.0120
+
+found = iaT.impdData._smoothingSpline_multiPeakFinder(T, S, minProminence=0.02, signalYErr=err)
+print([(round(p['center'], 1), round(p['centerErr'], 2)) for p in found['peaks']])
+# [(299.9, 0.2), (335.5, 0.23)]
+```
 
 ### Nested functions
 

@@ -2,16 +2,16 @@
 
 ## What it's for
 
-`detailedAnalysisTab.py` builds the **Detailed Analysis** tab, a port of the standalone `DLTS_APP.py` ("DLTS Multiwindow Analysis") into this app. It loads a whole temperature sweep from a data folder, computes DLTS spectra for many log-spaced rate windows (plus five fixed "standard" windows for comparison), finds each peak with an error estimate, and fits an error-weighted Arrhenius line to get E_a, σ and N_T. It also draws a DLTS spectra panel, a ΔC/C₀(t, T) transient map with a τ(T) overlay, and a rate-window map. Loading and analysis run in the tab's own worker process so the GUI stays responsive.
+`detailedAnalysisTab.py` builds the **Detailed Analysis** tab, a port of the standalone `DLTS_APP.py` ("DLTS Multiwindow Analysis") into this app. It loads a whole temperature sweep from a data folder, computes DLTS spectra for many log-spaced rate windows (plus five fixed "standard" windows for comparison), finds the peaks inside one or more user-chosen **peak regions** with an error estimate, groups the same peak of every window into one trap, and fits one error-weighted Arrhenius line per trap to get E_a, σ and N_T. It also draws a DLTS spectra panel, a ΔC/C₀(t, T) transient map with τ(T) overlays, and a rate-window map, each panel with its own toolbar, the maps and the Arrhenius plot in 2D or 3D. Loading and analysis run in the tab's own worker process so the GUI stays responsive.
 
-The per-window steps (C∞, S(T), the peak with its edge guard, the Arrhenius fit with its exclusion rule, N_T) are also what [Quick Analysis](dataAnalysisTab.md) calls. The **Standard** result of this tab therefore equals the Quick Analysis result for the same transients, windows, search range and reverse bias; see [Matching Detailed Analysis](dataAnalysisTab.md#matching-detailed-analysis).
+A peak region either uses this tab's single-peak finder (the default, one peak per region and window, as the old Peak Search Range) or the peak primitives of a [Quick Analysis](dataAnalysisTab.md) Peak Deconvolution region, deconvolved with the same shared helpers (see "Peak regions" under Analysis method). Quick Analysis shares this tab's C∞, S(T), Arrhenius fit and region helpers. With the default single-peak region its results are close to this tab's **Standard** result but not identical; see [Matching Detailed Analysis](dataAnalysisTab.md#matching-detailed-analysis).
 
 ## What the user sees
 
 A header reads **Detailed Analysis** `(DLTS Multiwindow Analysis — ZI MFIA temperature sweep)`. Below it a horizontal `ttk.PanedWindow` has three parts:
 
 1. a scrollable control column on the left (295 px wide, mouse wheel scrolls it while the pointer is over it);
-2. the figure area in the middle (takes all extra width), with a matplotlib toolbar under the figure and a status label at the bottom (initial text `Load a data folder to begin.`);
+2. the figure area in the middle (takes all extra width): the plot panels, each with its own matplotlib toolbar on top (see Figure), and a status label at the bottom (initial text `Load a data folder to begin.`);
 3. a **Results** text box on the right (Consolas 9, dark background, read-only, 57 characters wide, no wrapping, horizontal and vertical scroll bars).
 
 ### Control column
@@ -25,7 +25,7 @@ Section headings are shown in upper case in the GUI. Spinboxes accept typed valu
 | `Data folder:` entry | empty | Path of the run folder. |
 | **Browse** | | Opens a folder dialog ("Select DLTS Data Folder"), puts the path in the entry and logs a description of the folder contents (`liveDataTab._describe_folder_contents`). |
 | **Load Data** | | Runs `_detailed_load_data()`: loads every temperature in the folder in the worker process. Disabled while a load or run is in progress. |
-| info label | `No data loaded.` | After a load: `<n> temperatures loaded: <Tmin> °C to <Tmax> °C` (blue). |
+| info label | `No data loaded.` | After a load: `<n> temperatures loaded: <Tmin> K to <Tmax> K` (blue; the stored °C + 273.15, no decimals). |
 
 **ZI MFIA GRID**
 
@@ -59,13 +59,22 @@ These two values are applied at **Load Data** time. Changing them later has no e
 | `Method:` | `detailed_signalMethodVar` | `Measured C (nearest sample)` | `Measured C (nearest sample)`, `Smoothed C (spline-interpolated)` |
 | `Denoise:` | `detailed_denoiseVar` | `None (raw)` | `None (raw)`, `pca`, `wavelet`, `sgolay`, `lowess` |
 
-**PEAK SEARCH RANGE**
+**PEAK REGIONS**
 
-| Label | Variable | Default | Range, step |
+A gray hint reads `Drag across the DLTS Spectra panel (after a run) or type T min / max, then Add Region. A new region uses the primitives of the Quick Analysis region overlapping it most, else the default peak method below.`
+
+| Widget | Variable | Default | What it does |
 |---|---|---|---|
-| `T min (K)` | `detailed_tpeakLoVar` | `250.0` | 100 to 350, 5 |
-| `T max (K)` | `detailed_tpeakHiVar` | `400.0` | 200 to 600, 5 |
-| `Peak method:` combobox | `detailed_peakMethodVar` | `Smoothing Spline (bootstrap)` | `Parabolic fit (lmfit)`, `Smoothing Spline (bootstrap)` |
+| region list (`tk.Listbox`, 4 rows) | `detailed_regionListbox` | one region, `R1: 250–400 K \| default` | One line per region: `R<n>: <lo>–<hi> K \| <method>[ [Quick R<m>]]`, where method is `default` or the short primitive names (`Gauss + Gauss`, `Spline (prom. ≥ 0.02)`). Selecting a line copies its bounds into T min / T max and its method into the method box. |
+| `T min (K)` spinbox | `detailed_tpeakLoVar` | `250.0` | Range 50 to 1000, step 5. Lower bound for Add / Update. |
+| `T max (K)` spinbox | `detailed_tpeakHiVar` | `400.0` | Range 50 to 1000, step 5. Upper bound for Add / Update. |
+| **Add Region** | | | Appends a region with the T min / T max bounds (`_detailed_add_region`). It takes the primitives (and prominence) of the Quick Analysis region (`dltsc.deconv_regions`) that overlaps it most, copied, with source `Quick R<n>`; with no overlapping usable Quick region it uses the default single-peak finder. The status label and the log say which. |
+| **Update** | | | Moves the selected region to the T min / T max bounds; its method is kept. |
+| **Remove** | | | Deletes the selected region; later regions are renumbered. |
+| `Method of the selected region:` combobox | `detailed_regionMethodVar` | `Default (Peak method below)` | Read-only. Choices: `Default (Peak method below)` plus one entry per usable Quick Analysis region, `Quick R<n> (<lo>–<hi> K): <primitives>`. The list is rebuilt each time it opens (`postcommand`), so it follows Quick Analysis' current regions. Choosing an entry copies that method into the selected region. |
+| `Default peak method (one peak per region):` combobox | `detailed_peakMethodVar` | `Smoothing Spline (bootstrap)` | `Parabolic fit (lmfit)`, `Smoothing Spline (bootstrap)`. Used by every region without primitives. |
+
+T min / T max (or a drag on the spectra panel, which fills them) alone change nothing: a region is only created or moved by **Add Region** / **Update**. Region edits do not refit; the status asks for **Run Analysis**, which uses the regions as they are then. A region keeps its own copy of a Quick Analysis method, so later edits in Quick Analysis do not change it.
 
 **MULTI-WINDOW PARAMETERS**
 
@@ -80,55 +89,72 @@ These two values are applied at **Load Data** time. Changing them later has no e
 
 | Widget | Default | What it does |
 |---|---|---|
-| `Show standard-window comparison (0 / 0 = unused)` checkbox (`detailed_stdWinsVar`) | on | Draws the standard-window fit (orange dashed line, diamond markers) on the Arrhenius panel. The standard-window fit is computed and written to Results whether or not this is checked. |
+| `Show standard-window comparison (0 / 0 = unused)` checkbox (`detailed_stdWinsVar`) | on | Draws each trap's standard-window fit (dashed line and diamond markers in the trap's colour) on the Arrhenius panel. The standard-window fits are computed and written to Results whether or not this is checked. Toggling it redraws the Arrhenius panel at once, like the Display options. |
 | `t1 / t2  (ms):` five spinbox pairs (`detailed_stdEntries`) | `5/25`, `10/50`, `20/100`, `50/250`, `100/490` (`DEFAULT_STD_WINDOWS`, the same as Quick Analysis' window sets) | t1 range 0 to 490, t2 range 0 to 499, step 1. A row with t1 ≤ 0 or t2 ≤ t1 (for example `0 / 0`) is not used; with no usable row there is no Standard result. |
 
 **DISPLAY**
 
+The options are grouped per panel. Each one applies at once to the last run's plots (`_detailed_on_display_change`), redrawing only the panel it concerns from the cached result (`detailed_lastOut`, `detailed_lastParams`); no re-run is needed. Before the first run they do nothing.
+
 | Widget | Variable | Default | What it does |
 |---|---|---|---|
-| `Show DLTS spectra panel` | `detailed_showSpectraVar` | on | Adds the DLTS Spectra panel. |
-| `Spectra to plot` spinbox | `detailed_nSpectraVar` (IntVar) | `5` | Range 2 to 16. Number of multi-windows drawn in the spectra panel. |
-| `Show 2D transient map` | `detailed_showTmapVar` | on | Adds the ΔC/C₀ transient map panel. |
-| `  Overlay τ(T) curve on map` | `detailed_showTauVar` | on | Draws τ(T) from the fit and the (T_p, 1/e_n) points on the transient map. |
-| `Show Rate-Window Analysis map` | `detailed_showRwmVar` | on | Adds the rate-window map panel. |
+| **Arrhenius plot** (bold heading; the panel is always shown) | | | |
+| `View` combobox | `detailed_arrViewVar` | `2D` | `2D`, `3D (peak height up)` (`ARR_VIEW_OPTIONS`). |
+| `Labels` combobox | `detailed_arrLabelsVar` | `Trap ids` | `Trap ids`, `Legend`, `Results (Et, σ, Nt)`, `None` (`ARR_LABEL_OPTIONS`). |
+| `Show DLTS spectra panel` checkbox | `detailed_showSpectraVar` | on | Adds the DLTS Spectra panel (rebuilds the panel grid). |
+| `Spectra to plot` spinbox | `detailed_nSpectraVar` (IntVar) | `5` | Range 2 to 60. Number of multi-window spectra drawn, spread evenly over the windows (at most N windows; a non-number counts as 5). |
+| `Labels` combobox | `detailed_specLabelsVar` | `Trap ids` | `Trap ids`, `Legend`, `Region names`, `None` (`SPEC_LABEL_OPTIONS`). |
+| `Show transient map` checkbox | `detailed_showTmapVar` | on | Adds the ΔC/C₀ transient map panel. |
+| `  Overlay τ(T) curve on map` checkbox | `detailed_showTauVar` | on | Draws each trap's τ(T) from its fit and its (T_p, 1/e_n) points on the transient map. |
+| `View` combobox | `detailed_tmapViewVar` | `2D colour map` | `2D colour map`, `3D isohypse surface` (`MAP_VIEW_OPTIONS`). |
+| `Labels` combobox | `detailed_tmapLabelsVar` | `Trap ids` | `Trap ids`, `Legend`, `None` (`MAP_LABEL_OPTIONS`). |
+| `Show Rate-Window Analysis map` checkbox | `detailed_showRwmVar` | on | Adds the rate-window map panel. |
+| `View` combobox | `detailed_rwmViewVar` | `2D colour map` | As for the transient map. |
+| `Labels` combobox | `detailed_rwmLabelsVar` | `Trap ids` | `Trap ids`, `Legend`, `None`. |
+
+`Labels` picks the one set of labels a panel shows: `Trap ids` writes each trap's id (`R<r>P<k>`) in bold in its colour on the plot; `Legend` adds the panel's legend; `Results (Et, σ, Nt)` adds a text legend with each trap's fit results; `Region names` writes `R<n>` at the top-left of each shaded peak region; `None` shows no labels. Legends are always placed outside the plot area, at the panel figure's right (`fig.legend(loc='outside right upper')`, 8 pt).
 
 **Actions** (under an empty section divider)
 
 | Button | What it does |
 |---|---|
-| **Run Analysis** | Disabled until data has been loaded. Runs `_detailed_run_analysis()`: snapshots all parameters, computes everything in the worker process, then draws the figure and fills Results. Status becomes `Done.  Et = <E ± err> eV  Nt = <N_T> cm⁻³`. |
+| **Run Analysis** | Disabled until data has been loaded. Runs `_detailed_run_analysis()`: checks the peak regions, snapshots all parameters, computes everything in the worker process (every panel's data and every window's spectrum, whatever the Display options), then draws the shown panels and fills Results. Status becomes `Done.  R1P1: Et = <E ± err> eV   R1P2: Et = ...` (one entry per trap). |
 | **Edit Labels & Legends** | Opens the "Edit Labels & Legends" dialog (`_detailed_open_label_editor`). Logs a hint if no analysis has been run yet. |
-| **Save Figure...** | Save dialog (default name `DLTS_MultiWindow.png`). Formats: PNG, PDF, SVG, EPS, JPEG, TIFF, BMP. Raster formats are saved at 180 dpi with the figure background; vector formats without a dpi. |
+| **Save Figure...** | Save dialog (default name `DLTS_MultiWindow.png`). Saves one combined figure of the shown panels, laid out as on screen and drawn with the current Display options (`_detailed_combined_figure`). Formats: PNG, PDF, SVG, EPS, JPEG, TIFF, BMP. Raster formats are saved at 180 dpi on a white background; vector formats without a dpi. Logs a hint if no analysis has been run yet. Each panel's own toolbar saves that panel alone. |
 | **Export Results to TXT** | Save dialog (default name `DLTS_Results.txt`); writes the Results text as UTF-8. |
 
 ### Figure
 
-The figure is rebuilt on every run. It always has the **Arrhenius Plot** panel. The other panels depend on the three Display checkboxes:
+Each panel is its own matplotlib `Figure` (6 × 4.5 in, constrained layout) in a `FigureCanvasTkAgg` with its own `NavigationToolbar2Tk` (pan, zoom, Home/Back, save) above it. The panels are gridded 2×2 in `detailed_figFrame`:
 
-| Spectra | Map | RW map | figsize (in) | Layout |
-|---|---|---|---|---|
-| on | on | on | 14 × 11.0 | 2×2: Arrhenius, Spectra / Transient map, RW map |
-| on | on | off | 13 × 10.5 | Arrhenius, Spectra (width 1.5:1) / Transient map across the bottom |
-| on | off | on | 13 × 10.5 | Arrhenius, Spectra / RW map across the bottom |
-| off | on | on | 14 × 10.5 | Arrhenius across the top / Transient map, RW map |
-| on | off | off | 13 × 5.4 | Arrhenius, Spectra side by side |
-| off | on | off | 10 × 10.5 | Arrhenius / Transient map |
-| off | off | on | 10 × 10.5 | Arrhenius / RW map |
-| off | off | off | 8 × 5.4 | Arrhenius only |
+| | column 1 | column 2 |
+|---|---|---|
+| top row | Arrhenius Plot (always) | DLTS Spectra |
+| bottom row | ΔC/C₀ Transient Map | Rate-Window Analysis Map |
 
-Every panel uses `set_box_aspect(0.9)`. The figure title is "DLTS Multiwindow Analysis".
+Only shown panels are placed. A panel alone in its row spans both columns (for example Arrhenius alone when the spectra are off); a row with no shown panel is dropped, and the shown rows share the height equally. Showing or hiding a panel rebuilds the grid (`_detailed_layout_panels`); every other Display option redraws just its panel (`_detailed_draw_panel`). A redraw resets that panel's toolbar history, so Home returns to the new drawing's view.
 
-- **Arrhenius Plot**: x "1000 / T  (K⁻¹)", y "ln(eₙ / T²)  (s⁻¹ K⁻²)". Multi-window points colored by log₁₀ eₙ (plasma colormap, colorbar "log₁₀ eₙ  (s⁻¹)"), error bars from T_p errors, blue fit line labeled `Multi (<N> win)  Et=<E> eV  R²=<R²>` with a shaded 2σ confidence band. Excluded windows are gray `x` markers "Excluded (peak at range edge, no Tp error)". Optional standard-window line and diamonds. A top axis shows °C ticks for 240 to 360 K in 10 K steps (only those inside the x range). A yellow box in the lower-left lists E_a, σ, N_T, R² and (if weighted) χ²ᵣ.
-- **DLTS Spectra**: x "Temperature  (°C)", y "ΔC/C₀  (×10⁻³)". One line per selected window (cool colormap), labeled `t=<t1>/<t2> ms  eₙ=<e_n> s⁻¹`; dotted vertical lines at each multi-window T_p.
-- **ΔC/C₀  Transient Map**: filled contours (jet, 64 levels, black contour every 6th level) of ΔC/C₀ ×10⁻⁵ vs "Temperature  (K)" and log "Time  (s)". With the τ overlay: white τ(T) line labeled `Z₁₂  τ(T)  Et=<E> eV`, cyan circles "Rate-window peaks  (Tₚ, 1/eₙ)", and a cyan "Z₁₂ defect" arrow at the middle point. Shows "Not enough time points" when the map cannot be built.
-- **Rate-Window Analysis Map**: black background, x "1/kT  (eV⁻¹)", log y "T²/eₙ  (K²s)", color N_T/N_D on a log scale (jet). White dashed Arrhenius line and 22 cyan circles "Z₁/₂ (fitted)". Shows "Insufficient data for Rate-Window map" when it cannot be built.
+**Linked temperature axes.** The two panels of a row show the same temperatures: zooming, panning, Home or Back on one sets the partner's x limits to the same temperature range, converted between the two x axes (1000/T ↔ T on the top row, T ↔ 1/kT on the bottom row; `_reciprocal_1000`, `_reciprocal_kT`). This works between 2D panels only (not for a 3D view), and is connected after a panel's first draw, so autoscaling never propagates; only the user's changes do (`_detailed_link_panel`, `_detailed_follow_xlim`).
 
-All legends and the results box can be dragged with the left mouse button.
+Styling follows Quick Analysis: matplotlib's default colours and font sizes, black axes, and a dotted grid on the line plots (Arrhenius 2D, Spectra). There is no overall figure title.
+
+Each trap (peak id `R<r>P<k>`, see Analysis method) has its own colour from `TRAP_COLORS`, in peak-id order; the first is `C0` (blue), the single-trap colour of earlier versions.
+
+All temperatures shown in this tab are in kelvin (axes, region bounds, span selection, Results).
+
+- **Arrhenius Plot**, 2D view: x "1000 / T (K⁻¹)", y "ln(eₙ / T²) (s⁻¹ K⁻²)". Per trap: multi-window points colored by log₁₀ eₙ (plasma colormap, one shared colorbar "log₁₀ eₙ (s⁻¹)") with an edge in the trap colour, error bars from T_p errors, a fit line in the trap colour labeled `<id> multi (<N>): <E ± err> eV` with a shaded 2σ confidence band. Excluded windows are black `x` markers "Excluded (no Tp error)" (one legend entry for all traps). Standard-window fit per trap (when **Show standard-window comparison** is on): dashed line in the trap colour labeled `<id> standard (<N>): <E ± err> eV`, its error bars, and diamonds with a black edge (legend entry "Standard windows"); the x range then includes them. The plot has no frame: only the left and bottom spines. Temperature "T (K)" is shown along the top (`secondary_xaxis`, about 5 tick labels, no tick marks or spine). Labels: `Trap ids` puts each trap's id at the high-temperature (left) end of its line; `Legend` shows the line/marker legend; `Results (Et, σ, Nt)` shows a monospace text legend with, per trap, `<id>  (<N> pts, weighted|unweighted)`, E_a, σₙ, N_T ± err (from peak heights), R² and (if weighted) χ²ᵣ, then `Nt (all traps, transient) = <N_T>` (`_detailed_results_legend`).
+- **Arrhenius Plot**, 3D view (`3D (peak height up)`): each trap's fit lines lie on the floor (multi solid, standard dashed), and every window's point stands on a stem at its peak height z = |ΔC/C₀| ×10⁻³ (circles for multi-windows, diamonds for standard windows, black `x` for excluded ones), so one trap's points should sit at about one height. Axes "1000 / T (K⁻¹)", "ln(eₙ / T²)", "Peak |ΔC/C₀| (×10⁻³)". `Trap ids` labels each trap's tallest point. No colorbar and no temperature axis.
+- **DLTS Spectra**: x "Temperature (K)", y "ΔC/C₀ (×10⁻³)", a black line at 0. Each peak region shaded light gray (`Region names` labels it `R<n>` at its top-left). One line per shown window (cool colormap by window index), labeled `<t1>/<t2> ms (eₙ = <e_n> s⁻¹)`; dotted vertical lines in the trap colour at every multi-window T_p of every trap; ▼ markers in the trap colour at each shown spectrum's own peaks (gray for a peak whose trap had no fit), legend entry "Peaks (trap colour)". `Trap ids` writes each trap id in bold above that trap's tallest marker. Dragging across this panel picks a peak-region range in K (see Peak Regions); legends are outside the axes, so they never interfere with the selection.
+- **ΔC/C₀ Transient Map**, 2D colour map: filled contours (jet, 64 levels, thin black contour every 6th level) of ΔC/C₀ ×10⁻⁵ vs "Temperature (K)" and log "Time (s)"; colorbar "ΔC/C₀ (×10⁻⁵)" with at most ~7 ticks. With the τ overlay, per trap in its colour with a white outline: τ(T) line labeled `<id> τ(T), Et = <E> eV` and open circles at (T_p, 1/e_n) labeled `<id> peaks (Tₚ, 1/eₙ)`. `Trap ids` writes the id above the top of the trap's column of circles, or below its bottom for every other trap, so neighbouring ids do not collide. A trap whose τ(T) falls outside the time range is skipped. Shows "Not enough time points" when the map cannot be built.
+- **ΔC/C₀ Transient Map**, 3D isohypse surface: the same values as a surface over (T, log₁₀ t) in the same jet colours (clipped to the colour range, at most about 90 × 90 facets), with black isohypses (every 6th level) on the surface and coloured ones projected on the floor (`_detailed_isohypse_surface`). The τ(T) curves and circles lie on the floor. Axes "Temperature (K)", "log₁₀ t (s)", "ΔC/C₀ (×10⁻⁵)".
+- **Rate-Window Analysis Map**, 2D colour map: black background, x "1/kT (eV⁻¹)", log y "T²/eₙ (K² s)", colour N_T/N_D on a log scale (jet, colorbar "Nₜ / N_D"). Per trap, in its colour with a white outline: dashed Arrhenius line `<id> Arrhenius, Et = <E> eV` and 22 open circles `<id> (fitted)`. `Trap ids` labels the middle visible circle. Shows "Insufficient data for Rate-Window map" when it cannot be built.
+- **Rate-Window Analysis Map**, 3D isohypse surface: log₁₀(N_T/N_D) as a surface over (1/kT, log₁₀ T²/eₙ), same colours and isohypses as above; each trap's dashed Arrhenius line lies on the floor (no circles). Axes "1/kT (eV⁻¹)", "log₁₀ T²/eₙ (K² s)", "log₁₀ Nₜ/N_D".
+
+Legends and labels are fixed (they cannot be dragged); a left-drag on the spectra panel is the region selection, unless the toolbar's pan or zoom mode is on.
 
 ### Edit Labels & Legends dialog
 
-A scrollable `Toplevel` (500×580, minimum 460×340). For each existing panel (Arrhenius Panel, DLTS Spectra Panel, Transient Map Panel, Rate-Window Map Panel) it offers `Title`, `X label`, `Y label` text entries with a point-size spinbox (6 to 28). For each existing legend (Arrhenius Legend, Spectra Legend, Transient Map Legend, Rate-Window Legend) it offers one `Font size` spinbox (6 to 18) and one entry per legend item (`Entry n`). Buttons: **Apply** (applies and redraws), **Apply & Close**, **Close** (discards unapplied edits). Edits are lost on the next **Run Analysis**, which rebuilds the figure.
+A scrollable `Toplevel` (500×580, minimum 460×340). For each existing panel (Arrhenius Panel, DLTS Spectra Panel, Transient Map Panel, Rate-Window Map Panel) it offers `Title`, `X label`, `Y label` text entries with a point-size spinbox (6 to 28). For each existing legend (Arrhenius Legend, Spectra Legend, Transient Map Legend, Rate-Window Legend) it offers one `Font size` spinbox (6 to 18) and one entry per legend item (`Entry n`); a legend exists only when that panel's Labels choice is `Legend` (or `Results (Et, σ, Nt)` for the Arrhenius panel). The z label of a 3D view is not offered. Buttons: **Apply** (applies and redraws every panel canvas), **Apply & Close**, **Close** (discards unapplied edits). Edits last until the panel is redrawn: any Display change affecting it, or the next **Run Analysis**.
 
 ### Results text
 
@@ -141,8 +167,11 @@ Example layout (numbers from the synthetic example further below):
 
   Signal     : Measured C (nearest sample)
   Denoise    : None (raw)
-  Peak method: Smoothing Spline (bootstrap)
+  Peak regions:
+    R1: 250-400 K, single peak, Smoothing Spline (bootstrap)
 
+-------------------------------------------------------
+  Trap R1P1  (single peak, Smoothing Spline (bootstrap))
   Multi-window  (16 windows)
     fit  : weighted by Tpeak errors
     Et   = 0.5968 +/- 0.0032 eV
@@ -151,19 +180,21 @@ Example layout (numbers from the synthetic example further below):
     intercept = ...
     R2   = ...
     red. chi2 = ...
-    Nt   ~ 6.236e+12 cm-3
-
+    Nt   = ... +/- ... cm-3  (2 Nd dC/C, from peak heights)
   Standard  (5 windows)
     ...
     Et uncertainty improvement: <Et_se(std) / Et_se(multi)>x
 
   Window detail  (multi):
-    t1(ms)    t2(ms)     en(s-1)    Tpeak(C)   +/-(K)
+    t1(ms)    t2(ms)     en(s-1)    Tpeak(K)   +/-(K)
   -----------------------------------------------------
        5.0      25.0       80.47       ...        ...
+
+-------------------------------------------------------
+  Nt (all traps, transient amplitude) ~ 6.236e+12 cm-3
 ```
 
-`excl.` marks a window left out of the fit. `n/a` means the peak fit gave no T_p error. The fit line reads `UNWEIGHTED (no Tpeak errors)` when no weighting was possible, and adds `, <k> window(s) excluded` when windows were excluded.
+A region with primitives is listed with its short primitive names and `  (from Quick R<n>)` when its method came from Quick Analysis. There is one `Trap` block per fitted trap, in peak-id order; a trap's **Standard** part appears only when the standard windows gave a fit for the same peak id. The per-trap `Nt` is `_trap_density_from_peaks` over the windows used in the fit; the last line is the total `_trap_density` (Step 8). `excl.` marks a window left out of the fit. `n/a` means the peak fit gave no T_p error. The fit line reads `UNWEIGHTED (no Tpeak errors)` when no weighting was possible, and adds `, <k> window(s) excluded` when windows were excluded.
 
 ## Import
 
@@ -175,17 +206,17 @@ import detailedAnalysisTab as daT   # alias used in tests/test_hdf5_analysis.py 
 data, temps, errs = daT._load_detailed_data(folder, None, None, None, 500.0, 0.4, 0.9)
 ```
 
-`dataAnalysisTab.py` also imports this module, as `dA`, for `_cap_noise_at`, `_valid_errors` and `_fit_arrhenius_line`. In `DLTSGUI_MainWindow.py` the alias `daT` means `dataAnalysisTab`, not this module.
+`dataAnalysisTab.py` also imports this module, as `dA`, for the shared signal, peak and Arrhenius functions and defaults, including the peak-region helpers (`PRIMITIVE_*` and `DEFAULT_PROMINENCE`, which it re-exports under the same names, `_region_problem`, `_deconvolve_region`, `_trap_density_from_peaks`). In `DLTSGUI_MainWindow.py` the alias `daT` means `dataAnalysisTab`, not this module.
 
 ## Module constants and globals
 
 | Name | Value / type | Meaning |
 |---|---|---|
-| `C0` | `'#2a78d6'` | Blue: multi-window fit, info label text. |
-| `C1` | `'#eb6834'` | Orange: standard-window fit. |
-| `SURFACE` | `'#fcfcfb'` | Figure/axes background; raster save background. |
-| `TEXT_PRI`, `TEXT_SEC`, `TEXT_MUT` | `'#0b0b0b'`, `'#52514e'`, `'#898781'` | Text colors. |
-| `GRIDLINE`, `BASELINE` | `'#e1e0d9'`, `'#c3c2b7'` | Grid and axis-spine colors. |
+| `C0` | `'#2a78d6'` | Blue: first trap's colour, info label text, region-drag highlight. |
+| `C1` | `'#eb6834'` | Orange: fourth trap colour. |
+| `TRAP_COLORS` | `(C0, '#1b9e77', '#9b59b6', C1, '#d4a017', '#e7298a', '#3f4f75')` | One colour per trap in peak-id order, cycling (`_detailed_trap_color`). |
+| `TEXT_PRI`, `TEXT_SEC`, `TEXT_MUT` | `'#0b0b0b'`, `'#52514e'`, `'#898781'` | Text colors of the control column and dialogs. |
+| `SURFACE`, `GRIDLINE`, `BASELINE` | `'#fcfcfb'`, `'#e1e0d9'`, `'#c3c2b7'` | Unused (the plots now use matplotlib's default styling). |
 | `CTRL_BG` | `'#f0f0f0'` | Control column and dialog background. |
 | `DEFAULT_GRID_OFF` | `-0.001` | Default `Grid offset (s)` (not used by the loader). |
 | `DEFAULT_GRID_DT` | `1.86667e-5` | Default `Grid dt (s)` (not used by the loader). |
@@ -196,7 +227,7 @@ data, temps, errs = daT._load_detailed_data(folder, None, None, None, 500.0, 0.4
 | `DEFAULT_ND` | `3.2e14` | Default Nd, cm⁻³ (both tabs). |
 | `DEFAULT_GAMMA` | `1.66e21` | Default γ, cm⁻² s⁻¹ K⁻² (4H-SiC; both tabs). |
 | `PEAK_MIN_FRAC` | `0.05` | A window whose peak is at most this fraction of max\|S\| is skipped (`_peak_from_signal`). |
-| `DEFAULT_TPEAK_LO`, `DEFAULT_TPEAK_HI` | `250.0`, `400.0` | Default peak search range, K (both tabs). |
+| `DEFAULT_TPEAK_LO`, `DEFAULT_TPEAK_HI` | `250.0`, `400.0` | Bounds of the default peak region, K (both tabs). |
 | `DEFAULT_STD_WINDOWS` | `[(5, 25), (10, 50), (20, 100), (50, 250), (100, 490)]` (ms, floats) | Default standard windows, and Quick Analysis' default window sets. |
 | `_FOLDER_RE` | `re.compile(r'^(n?)(\d+)C(?:_\d+)?$', re.I)` | Temperature subfolder names: `25C_001`, `85C`, `n10C`. |
 | `SIGNAL_METHOD_MEASURED` | `'Measured C (nearest sample)'` | Signal method (default). |
@@ -207,9 +238,23 @@ data, temps, errs = daT._load_detailed_data(folder, None, None, None, 500.0, 0.4
 | `PEAK_METHOD_PARABOLIC` | `'Parabolic fit (lmfit)'` | Peak method. |
 | `PEAK_METHOD_SPLINE` | `'Smoothing Spline (bootstrap)'` | Peak method (default). |
 | `PEAK_METHOD_OPTIONS` | `[PEAK_METHOD_PARABOLIC, PEAK_METHOD_SPLINE]` | Combobox values. |
-| `EDGE_PEAK_FRAC` | `0.01` | A peak within this fraction of a grid step of either end of the peak search range is an edge peak (`_peak_on_edge`) and gets no T_p error. |
+| `EDGE_PEAK_FRAC` | `0.01` | A peak within this fraction of a grid step of either end of its peak region is an edge peak (`_peak_on_edge`) and gets no T_p error. |
 | `MIN_TP_ERR_K` | `1e-4` (K) | Smallest T_p error accepted as real; smaller ones are treated as no error. |
+| `PRIMITIVE_SPLINE` | `'Smoothing Spline (prominence peaks)'` | The spline primitive. Not a fit component: a spline region uses `impdData._smoothingSpline_multiPeakFinder`. Shared with Quick Analysis. |
+| `PRIMITIVE_KEYS` | `{'Mirrored Lognormal (left tail)': 'mirroredLognormal', 'Gaussian': 'gaussian', 'Lorentzian': 'lorentzian', 'Voigt': 'voigt', 'Pseudo-Voigt': 'pseudoVoigt', 'Constant Baseline': 'constant', 'Linear Baseline': 'linear'}` | Primitive label → `iaT.DECONV_PRIMITIVES` key. |
+| `PRIMITIVE_OPTIONS` | the `PRIMITIVE_KEYS` labels, then `PRIMITIVE_SPLINE` | All primitive labels (Quick Analysis' primitive combobox). |
+| `PRIMITIVE_SHORT` | `MirLogN`, `Gauss`, `Lorentz`, `Voigt`, `pVoigt`, `Const`, `Linear`, `Spline` | Short primitive names used in region lists, Results and legends of both tabs. |
+| `DEFAULT_PROMINENCE` | `'0.02'` (str) | Default spline minimum prominence, as a fraction of the region's largest \|S\|. |
+| `METHOD_DEFAULT` | `'Default (Peak method below)'` | First choice of the region method combobox: no primitives, use the default peak method. |
 | `_FIGURE_SAVE_FILETYPES` | list of 8 `(label, pattern)` tuples | Save Figure dialog file types. |
+| `PANEL_ARRHENIUS`, `PANEL_SPECTRA`, `PANEL_TMAP`, `PANEL_RWM` | `'arr'`, `'spec'`, `'tmap'`, `'rwm'` | Panel keys of the `detailed_figures` etc. dicts. |
+| `PANEL_ROWS` | `((PANEL_ARRHENIUS, PANEL_SPECTRA), (PANEL_TMAP, PANEL_RWM))` | The 2×2 panel grid. |
+| `PANEL_LINKS` | dict panel key → `(partner key, x-axis map)` | Row partner of each panel and the map from its x axis to the partner's (`_reciprocal_1000` on the top row, `_reciprocal_kT` on the bottom row). |
+| `ARR_VIEW_2D`, `ARR_VIEW_3D`, `ARR_VIEW_OPTIONS` | `'2D'`, `'3D (peak height up)'`, list of both | Arrhenius View choices. |
+| `MAP_VIEW_2D`, `MAP_VIEW_3D`, `MAP_VIEW_OPTIONS` | `'2D colour map'`, `'3D isohypse surface'`, list of both | Map View choices. |
+| `LABELS_TRAP_IDS`, `LABELS_LEGEND`, `LABELS_NONE`, `ARR_LABELS_RESULTS`, `SPEC_LABELS_REGIONS` | `'Trap ids'`, `'Legend'`, `'None'`, `'Results (Et, σ, Nt)'`, `'Region names'` | Labels choices. |
+| `ARR_LABEL_OPTIONS`, `SPEC_LABEL_OPTIONS`, `MAP_LABEL_OPTIONS` | lists | Labels combobox values of the Arrhenius, Spectra and both map panels (Trap ids first, None last). |
+| `MAP_STROKE` | `[withStroke(linewidth=3.5, foreground='white')]` | White outline of trap curves, circles and ids on the jet maps. |
 
 Shared state in `dltsConfig` (`dltsc`):
 
@@ -217,21 +262,29 @@ Shared state in `dltsConfig` (`dltsc`):
 |---|---|---|
 | `detailed_data` | dict `T_C -> (t_ms, cap_pF, C_inf)` | Loaded sweep. |
 | `detailed_temps` | sorted list of float, °C | Loaded temperatures. |
-| `detailed_figure`, `detailed_canvas`, `detailed_figFrame` | `Figure`, `FigureCanvasTkAgg`, `tk.Frame` | Current figure and its container. |
-| `detailed_ax1` … `detailed_ax4` | `Axes` or `None` | Arrhenius, Spectra, Transient map, RW map. |
-| `detailed_leg1`, `detailed_leg2`, `detailed_legM`, `detailed_legRW` | `Legend` or `None` | Legends of those panels. |
-| `detailed_annBox` | `Annotation` | Arrhenius results box. |
-| `detailed_lastResMw`, `detailed_lastResStd`, `detailed_lastNt` | dict, dict/None, float | Last run's results. |
+| `detailed_figFrame` | `tk.Frame` | Container the panels are gridded into. |
+| `detailed_figures`, `detailed_canvases` | dict panel key → `Figure` / `FigureCanvasTkAgg` | One entry per shown panel (keys `PANEL_*`). |
+| `detailed_panelAxes` | dict panel key → `Axes` (2D or 3D) | Each shown panel's main axes. |
+| `detailed_panelLegends` | dict panel key → `Legend` or `None` | Each shown panel's side legend (per its Labels choice). |
+| `detailed_linkCids` | dict panel key → int | Pending `draw_event` connection that links the panel's x axis to its row partner after its first draw. |
+| `detailed_linkBusy` | bool | True while one linked panel sets its partner's x limits (stops the echo back). |
+| `detailed_lastOut`, `detailed_lastParams` | dict, dict | Last run's `_compute_detailed_analysis` result and parameter snapshot; every panel is drawn from them. |
+| `detailed_lastResMw`, `detailed_lastResStd` | dict, dict/None | Last run's first trap: multi-window and standard result (kept for callers that read one trap). |
+| `detailed_lastNt` | float | Last run's total N_T (all traps, transient amplitude, `_trap_density`). |
+| `detailed_lastTraps`, `detailed_lastTrapsStd` | list of dict | Last run's multi-window / standard results, one per trap (`_compute_trap_arrhenius`). |
+| `detailed_regions` | list of `{'tLo', 'tHi', 'primitives', 'prominence', 'source'}` | The peak regions (K). `primitives` is `[]` for the default single-peak finder, else `PRIMITIVE_OPTIONS` labels; `source` is `'Quick R<n>'` or `None`. Seeded with the default region (250–400 K, no primitives) by `construct_detailedAnalysisTab` when empty. |
+| `detailed_regionListbox`, `detailed_regionMethodVar`, `detailed_regionMethodCombo` | `tk.Listbox`, `tk.StringVar`, `ttk.Combobox` | Region list and the selected region's method box. |
+| `detailed_spanSelector` | `SpanSelector` or `None` | Region picker on the DLTS Spectra panel; `None` when that panel is off. |
+| read: `deconv_regions` | list | Quick Analysis' Peak Deconvolution regions, the source of region methods. |
 | `detailed_loadingBusy`, `detailedProcessingBusy` | bool (or `None` before first use) | Load / Run in progress. |
 | `detailed_executor` | `ProcessPoolExecutor` or `None` | The tab's single worker process. Shut down by `DLTSGUI_MainWindow.py` on exit. |
-| `detailed_hitTestStale` | bool | True between a canvas resize and its redraw (drag hit-testing). |
-| `detailed_*Var`, `detailed_stdEntries` | Tk variables | All control values (see tables above). |
+| `detailed_*Var`, `detailed_stdEntries` | Tk variables | All control values (see tables above), including the Display `View` / `Labels` variables `detailed_arrViewVar`, `detailed_tmapViewVar`, `detailed_rwmViewVar`, `detailed_arrLabelsVar`, `detailed_specLabelsVar`, `detailed_tmapLabelsVar`, `detailed_rwmLabelsVar`. |
 | `detailed_loadButton`, `detailed_runButton`, `detailed_loadInfoLabel`, `detailed_statusLabel`, `detailed_resultsText` | widgets | Buttons, labels, Results text. |
 | read: `tabControl`, `detailedAnalysisTab`, `root`, `log_to_textbox` | | Main-window objects. |
 
 ## Analysis method
 
-Times are in ms unless noted; temperatures are stored in °C and converted with `T_K = T_C + 273.15`; capacitance is in pF (as returned by the extractors).
+Times are in ms unless noted; temperatures are stored in °C (the keys of `detailed_data`) and converted with `T_K = T_C + 273.15`, and everything computed from them, shown or reported is in K; capacitance is in pF (as returned by the extractors).
 
 **Step 1. Load transients** (`_load_detailed_data`). The folder format is detected in this order:
 
@@ -273,10 +326,17 @@ noise(t) = sqrt( sum(d2^2) / (6 * len(d2)) ),  d2 = c[k-1] - 2 c[k] + c[k+1]
 
 `noise(t)` is the Rice (1984) second-difference estimator over the samples `cap_raw[i-25 : i+26]`, where `i = searchsorted(t_ms, t)`. It always uses the raw (not denoised) transient. It returns NaN when fewer than 5 samples are available.
 
-**Step 5. Peak per window** (`_peak_from_signal`, `_find_peak_full`):
+**Step 5. Peaks per window and region** (`_compute_trap_arrhenius`, `_window_region_peaks`). Every window's S(T) is searched in every peak region, in list order:
+
+- **Region with primitives** (from Quick Analysis): `_deconvolve_region`, the Peak Deconvolution of Quick Analysis (its [Step 5](dataAnalysisTab.md#analysis-method)): a Smoothing Spline region gives every peak above the region's prominence, a primitive region one peak per peak-shaped primitive, each with T_p, height and their errors. A peak on the region edge, or with an error below `MIN_TP_ERR_K`, keeps its T_p but has no T_p error (`_usable_tp_err`).
+- **Region without primitives** (default): this tab's single-peak finder over the region, `_peak_from_signal(T_K, S, S_err, tLo, tHi, peak method)`, as below. The region then acts exactly like the old Peak Search Range. Such a peak has no height error.
+
+Peak `P<k>` of region `R<r>` is the k-th peak of that region in that window, counted from low T; the same peak id in different windows is one trap. A region fit failure is recorded as a message (`<t1>/<t2> ms, R<r>: <message>`) and that window simply has no peak there.
+
+The single-peak finder (`_peak_from_signal`, `_find_peak_full`) works on one region:
 
 ```text
-mask = (T_K >= T_min) & (T_K <= T_max)
+mask = (T_K >= tLo) & (T_K <= tHi)
 S_m  = S[mask];  if max(S_m) < |min(S_m)|: S_m = -S_m          # make the peak positive
 skip the window if max(S_m) <= 0.05 * max(|S|)  (over all temperatures)
 ```
@@ -291,14 +351,14 @@ var(T_p) = J · Cov(a, b) · J^T
 
   Otherwise T_p = T_ref with no error. No error either when `result.covar` is `None` or `nfree < 1`.
 
-**Step 6. Arrhenius fit** (`_arrhenius_fit`, `_fit_arrhenius_line`):
+**Step 6. Arrhenius fit, one per trap** (`_compute_trap_arrhenius` → `_arrhenius_fit`, `_fit_arrhenius_line`). The peaks are grouped by peak id and each trap is fitted on its own windows, separately for the multi-window and the standard set:
 
 ```text
 x = 1000 / T_p            # K^-1 (x 1000)
 y = ln(e_n / T_p^2)       # ln(s^-1 K^-2)
 ```
 
-`_find_peak` reports no T_p error for a peak on the edge of the search range (the signal is still rising out of the range, so the grid end is not a real peak) and for any error below `MIN_TP_ERR_K`, whichever peak method is used. Windows with no T_p error are excluded from the fit (`fit_mask`) unless fewer than 3 windows have errors; then all windows are fitted. Fewer than 2 windows returns `None`.
+`_find_peak` reports no T_p error for a peak on the edge of its region (the signal is still rising out of the region, so the grid end is not a real peak) and for any error below `MIN_TP_ERR_K`, whichever peak method is used. Windows with no T_p error are excluded from the fit (`fit_mask`) unless fewer than 3 windows have errors; then all windows are fitted. A trap with fewer than 2 fittable windows gets no line (message `<id>: fewer than 2 windows can be fitted; no Arrhenius line.`). Traps are ordered by peak id, numerically (`_peak_id_order`: R2 before R10).
 
 `_fit_arrhenius_line` first fits `y = slope·x + intercept` unweighted (lmfit `LinearModel`). If every T_p error is finite and > 0, it iterates up to 10 times:
 
@@ -320,21 +380,33 @@ R^2      = lmfit rsquared
 
 With fewer than 3 fitted points, slope/intercept errors and the covariance are set to `None`.
 
-**Step 8. Trap density** (`_trap_density`):
+**Step 8. Trap density.** Two values are reported.
+
+Per trap (`_trap_density_from_peaks`, shared with Quick Analysis), from the peak heights of the windows used in that trap's fit:
+
+```text
+r      = t2 / t1
+f(r)   = r^(-1/(r-1)) - r^(-r/(r-1))                # _boxcar_peak_factor
+N_T,w  = 2 * Nd * |S_peak| / f(r)                   # cm^-3, one value per window
+```
+
+combined as the error-weighted mean (error scaled by `sqrt(χ²ᵣ)` when > 1) when every peak has a height error, else the plain mean and its standard error. Default-method (single-peak) peaks have no height error, so their N_T is always the plain mean.
+
+Total (`_trap_density`), the value earlier versions reported as N_T:
 
 ```text
 S_ref(T) = (C(rb_ms) - C(2.0 ms)) / C_inf
 N_T      = 2 * max_T |S_ref(T)| * Nd              # cm^-3 (Nd in cm^-3)
 ```
 
-This uses all loaded temperatures, not only the peak-search range.
+This uses all loaded temperatures, not only the peak regions, and does not separate traps.
 
 **Step 9. Display arrays.**
 
-- Spectra (`_prepare_spectra`): windows at indices `round(linspace(0, N-1, min(nSpectra, N)))`; curve `S(T) · 1e3`.
+- Spectra (`_prepare_spectra`): windows at indices `round(linspace(0, N-1, min(nSpectra, N)))`; curve `S(T) · 1e3`. The tab passes `nSpectra = N`, so every window's spectrum is computed; the panel then shows `Spectra to plot` of them at indices `unique(round(linspace(0, N-1, min(n, N))))` (`_detailed_shown_spectra`).
 - Transient map (`_prepare_transient_map`): time range `max(2.0, t[1])` to `0.95 · rb_ms` ms; up to 250 log-spaced sample indices; `Z = (C(t) - C_inf) / C_inf`, displayed as `Z · 1e5`; 64 color levels between the 1st and 99th percentile. Needs at least 10 time points.
-- τ overlay (`_detailed_plot_transient_map`): `e_n(T) = gamma · sigma_n · T^2 · exp(-E_a / (kB T))`, `tau = 1/e_n` (s), over T from `min(T) − 20` to `max(T) + 20` K.
-- Rate-window map (`_prepare_rate_window_map`): 100 log-spaced t1 from t1_min to t1_max, `t2 = ratio · t1`; for every (window, temperature): `x = 1/(kB T)` (eV⁻¹), `y = T^2 / e_n` (K² s), `z = 2 |S|` (= N_T/N_D); points with `z < 1e-8` or `|C_inf| < 1e-30` skipped. Linearly interpolated (`scipy.interpolate.griddata`) onto 220 × 220 points in (x, log10 y); log color scale from the 2nd percentile (≥ 1e-8) to the 98th percentile (≥ 10 × low). Overlay line `y = exp(E_a · x) / (gamma · sigma_n)`. Needs at least 6 points.
+- τ overlay (`_detailed_tau_curves`), per trap: `e_n(T) = gamma · sigma_n · T^2 · exp(-E_a / (kB T))`, `tau = 1/e_n` (s), over T from `min(T) − 20` to `max(T) + 20` K (600 points). Only the part within 0.5× to 2× the map's time range is kept and then clipped to that range; the same for the (T_p, 1/e_n) points.
+- Rate-window map (`_prepare_rate_window_map`): 100 log-spaced t1 from t1_min to t1_max, `t2 = ratio · t1`; for every (window, temperature): `x = 1/(kB T)` (eV⁻¹), `y = T^2 / e_n` (K² s), `z = 2 |S|` (= N_T/N_D); points with `z < 1e-8` or `|C_inf| < 1e-30` skipped. Linearly interpolated (`scipy.interpolate.griddata`) onto 220 × 220 points in (x, log10 y); log color scale from the 2nd percentile (≥ 1e-8) to the 98th percentile (≥ 10 × low). Overlay line per trap `y = exp(E_a · x) / (gamma · sigma_n)`. Needs at least 6 points.
 - Confidence band on the Arrhenius panel: `half = 2 · sqrt(var_m · x^2 + var_b + 2 x cov_mb)`.
 - Arrhenius error bars (`_detailed_arrhenius_errorbars`): `dx = 1000 · dT / T^2`, `dy = 2 · dT / T`.
 
@@ -354,7 +426,7 @@ Adds the **Detailed Analysis** tab to `dltsc.tabControl` and builds all its widg
 
 **Returns** `None`.
 
-**Side effects** `dltsc.tabControl.add(dltsc.detailedAnalysisTab, text='Detailed Analysis')`, `tabControl.pack(expand=1, fill="both")`; creates every `dltsc.detailed_*` variable and widget listed above with the defaults listed above. Run starts disabled. `dltsc.detailedAnalysisTab` must already exist as a `ttk.Frame` in the notebook.
+**Side effects** `dltsc.tabControl.add(dltsc.detailedAnalysisTab, text='Detailed Analysis')`, `tabControl.pack(expand=1, fill="both")`; creates every `dltsc.detailed_*` variable and widget listed above with the defaults listed above, seeds `dltsc.detailed_regions` with the default region when it is empty, and selects R1 in the region list. Run starts disabled. `dltsc.detailedAnalysisTab` must already exist as a `ttk.Frame` in the notebook.
 
 **Called by** `DLTSGUI_MainWindow.py` (`deT.construct_detailedAnalysisTab()`).
 
@@ -433,7 +505,7 @@ Adds the **Detailed Analysis** tab to `dltsc.tabControl` and builds all its widg
 
 **Returns** `(S, S_err)`, two ndarrays in `temps` order: `S = (C(t2) - C(t1)) / C_inf` and its 1σ error (Step 4).
 
-**Side effects** None. **Called by** `_compute_arrhenius`.
+**Side effects** None. **Called by** `_compute_trap_arrhenius`, `_compute_arrhenius`.
 
 #### _valid_errors(err)
 
@@ -599,7 +671,7 @@ One window's peak from its S(T) curve (Step 5). Shared with Quick Analysis.
 
 **Returns** `dict(skipped=True)` when no point is in range or the peak is at most `peak_min_frac·max|S_full|`; otherwise `dict(skipped=False, Tp, Tp_err, S_peak, sign, xFit, yFit)`. `S_peak` is the in-range grid maximum of `sign·S`, given back in the curve's own sign; `yFit` is in the curve's own sign too.
 
-**Called by** `_compute_arrhenius`; `dataAnalysisTab._window_peaks`, `dataAnalysisTab._calculate_rate_windows`.
+**Called by** `_window_region_peaks` (regions without primitives), `_compute_arrhenius`; `dataAnalysisTab._window_peaks`, `dataAnalysisTab._calculate_rate_windows`.
 
 #### _arrhenius_fit(en_list, Tp_list, Tp_err_list, gamma)
 
@@ -614,15 +686,15 @@ Steps 6 and 7 on a list of peaks. Shared with Quick Analysis.
 
 **Returns** `None` when fewer than 2 windows can be fitted; otherwise the dict described under `_compute_arrhenius` below, without `Sp_arr`, `peak_method` and `detail`.
 
-**Called by** `_compute_arrhenius`; `dataAnalysisTab._quick_arrhenius`.
+**Called by** `_compute_trap_arrhenius`, `_compute_arrhenius`; `dataAnalysisTab._quick_arrhenius`, `dataAnalysisTab._run_arrhenius_solver`.
 
 #### _trap_density(data, temps, rb_ms, nd)
 
-Step 8: `2 · max_T |(C(rb_ms) − C(2 ms)) / C∞| · nd`, cm⁻³, from `_prepare_signal_data` records. **Called by** `_compute_detailed_analysis`; `dataAnalysisTab._quick_arrhenius`.
+Step 8, total: `2 · max_T |(C(rb_ms) − C(2 ms)) / C∞| · nd`, cm⁻³, from `_prepare_signal_data` records. **Called by** `_compute_detailed_analysis`; `dataAnalysisTab._quick_arrhenius`.
 
 #### _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_method=PEAK_METHOD_SPLINE, peak_min_frac=0.05)
 
-Steps 4 to 7 for one set of windows: `_rate_window_signal` and `_peak_from_signal` per window, then `_arrhenius_fit`.
+Steps 4 to 7 for one set of windows and one peak-search range, the single-trap path the tab used before peak regions: `_rate_window_signal` and `_peak_from_signal` per window, then `_arrhenius_fit`. The tab now uses `_compute_trap_arrhenius`; a single region without primitives gives exactly this result (`tests/test_peak_deconvolution.py`).
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
@@ -646,7 +718,52 @@ Steps 4 to 7 for one set of windows: `_rate_window_signal` and `_peak_from_signa
 | `sigma`, `sigma_se` | σ_n and its error, cm². |
 | `slope`, `slope_se`, `intercept`, `intercept_se`, `covar` | Line parameters; `covar` is the lmfit `[slope, intercept]` covariance (or `None`). |
 | `R2`, `redchi`, `weighted`, `peak_method` | Fit quality and settings. |
-| `detail` | list of `(t1, t2, e_n, T_p in °C, T_p error or None, peak S)`. |
+| `detail` | list of `(t1, t2, e_n, T_p in K, T_p error or None, peak S)`. |
+
+**Side effects** None. **Called by** `tests/test_peak_deconvolution.py` (no longer by the tab).
+
+#### Peak-region helpers (shared with Quick Analysis)
+
+These live in the "PEAK REGIONS (SHARED WITH QUICK ANALYSIS)" section so both tabs, and this tab's worker process, can run them. A region is a dict `{'tLo', 'tHi' (K), 'primitives' (list of PRIMITIVE_OPTIONS labels), 'prominence' (float)}`, plus `'source'` in this tab. Quick Analysis calls them as `dA.*`; its reference documents the method in [Steps 5 and 7](dataAnalysisTab.md#analysis-method).
+
+| Function | Returns |
+|---|---|
+| `_region_problem(region)` | Why a region cannot be deconvolved (upper bound ≤ lower, no primitives, Smoothing Spline mixed with other primitives, no peak-shaped primitive), or `None`. |
+| `_usable_tp_err(tpErr, onEdge)` | `float(tpErr)`, or `None` for an edge peak or a `None` / non-finite / below-`MIN_TP_ERR_K` error. |
+| `_deconvolve_region(sig, region)` | One window's S(T) (`sig = {'T_k', 'Signal', 'Signal_err'}`) deconvolved inside a region with primitives: dict `ok`, `message`, `x`, `residual`, `residualNorm`, `xf`/`yf`, `componentCurves`, `peaks` (`{T_peak, T_peak_err, S_peak, S_peak_err, primitive, onEdge}`, low to high T), `redchi`, `rsquared`. Fewer than 5 points in the region, or an exception, gives `ok=False` with a message. |
+| `_boxcar_peak_factor(t1, t2)` | `f(r) = r^(-1/(r-1)) - r^(-r/(r-1))`, `r = t2/t1`: the double-boxcar peak height of a unit exponential transient. `_boxcar_peak_factor(20.0, 100.0)` ≈ 0.535. |
+| `_trap_density_from_peaks(peaks, nd)` | `(Nt, Nt_err)` in cm⁻³ from peaks `{S_peak, S_peak_err or None, t1, t2}` (Step 8). `Nt_err` is `None` for a single peak without a height error. |
+| `_region_method_text(region, peak_method)` | How the region finds peaks: short primitive names joined by ` + ` (with ` (prom. ≥ <p>)` for a spline region), or `single peak, <peak_method>` without primitives. |
+| `_peak_id_order(peakId)` | Sort key `(r, k)` of `'R<r>P<k>'` as integers. |
+
+#### _window_region_peaks(T_K, S, S_err, region, peak_method, peak_min_frac=PEAK_MIN_FRAC)
+
+Peaks of one window's S(T) inside one region (Step 5): `_deconvolve_region` when the region has primitives, else `_peak_from_signal` over `[tLo, tHi]` with `peak_method`.
+
+**Returns** `(peaks, message)`: peaks as `[{T_peak, T_peak_err, S_peak, S_peak_err, primitive, onEdge}]`, low to high T; `message` is `''` unless the deconvolution failed. A single-peak result has `S_peak_err=None`, `primitive=peak_method` and `onEdge = (Tp_err is None)`; a skipped window gives `([], '')`.
+
+**Side effects** None. **Called by** `_compute_trap_arrhenius`.
+
+#### _compute_trap_arrhenius(windows, temps, data, gamma, regions, peak_method=PEAK_METHOD_SPLINE, nd=DEFAULT_ND, peak_min_frac=PEAK_MIN_FRAC)
+
+Steps 4 to 8 for one set of windows and all regions: every region's peaks in every window, grouped by peak id, one `_arrhenius_fit` per trap.
+
+| Name | Type | Default | Meaning |
+|---|---|---|---|
+| `windows` | list of (t1, t2) | | Gate times, ms. |
+| `temps` | list of float | | Temperatures, °C. |
+| `data` | dict | | `_prepare_signal_data` records. |
+| `gamma` | float | | γ, cm⁻² s⁻¹ K⁻². |
+| `regions` | list of dict | | Peak regions (see above). |
+| `peak_method` | str | `PEAK_METHOD_SPLINE` | Single-peak finder for regions without primitives. |
+| `nd` | float | `DEFAULT_ND` | Nd, cm⁻³, for the per-trap N_T. |
+| `peak_min_frac` | float | `0.05` | Skip threshold of the single-peak finder. |
+
+**Returns** `(traps, windowPeaks, messages)`:
+
+- `traps`: one dict per trap with at least 2 fittable windows, in peak-id order: the `_arrhenius_fit` keys plus `peakId`, `region` (0-based index), `method` and `peak_method` (both `_region_method_text`), `win_idx` (window index of each point), `Sp_arr` (|S_peak|), `detail` (rows `(t1, t2, e_n, T_p in K, T_p error or None, |S_peak|)`), `Nt`, `Nt_err` (`_trap_density_from_peaks` over the fitted windows).
+- `windowPeaks[w]`: list of `(peakId, peak)` found in window `w`, including peaks of traps without a fit.
+- `messages`: region fit failures and traps with too few windows.
 
 **Side effects** None. **Called by** `_compute_detailed_analysis`.
 
@@ -692,11 +809,23 @@ Everything **Run Analysis** computes. Runs in the worker process.
 |---|---|---|---|
 | `data` | dict | | `_load_detailed_data` output. |
 | `temps` | list of float | | °C. |
-| `p` | dict | | Parameter snapshot with keys `signalMethod`, `denoise`, `t1Min`, `t1Max`, `nWin`, `ratio`, `stdWins`, `gamma`, `nd`, `tpLo`, `tpHi`, `peakMethod`, `rbMs`, `nSpectra`, `showSpectra`, `showTmap`, `showRwm` (the GUI also passes `showStd`, `showTau`, used only for plotting). |
+| `p` | dict | | Parameter snapshot with keys `signalMethod`, `denoise`, `t1Min`, `t1Max`, `nWin`, `ratio`, `stdWins`, `gamma`, `nd`, `regions`, `tpLo`, `tpHi`, `peakMethod`, `rbMs`, `nSpectra`, `showSpectra`, `showTmap`, `showRwm` (the GUI also passes `showStd`, `showTau`, unused here). The GUI always passes `showSpectra`, `showTmap`, `showRwm` (and `showStd`, `showTau`) as `True` and `nSpectra` = N windows, so the result holds every panel's data and the Display options can change the plots without a re-run. `regions` is optional: when it is missing or empty, one region `[tpLo, tpHi]` without primitives is used, the old single-peak behaviour. |
 
-**Returns** `dict(resMw, resStd, mw, T_K, Nt, spectra, tmap, rwm)`. `resStd` may be `None`; `spectra`, `tmap`, `rwm` are `None` when their panel is off or cannot be built.
+**Returns** a dict:
 
-**Side effects** None. Raises `ValueError('Multi-window: no peaks found. Check t1 range and temperature bounds.')` when the multi-window fit returns `None`.
+| Key | Meaning |
+|---|---|
+| `traps`, `trapsStd` | `_compute_trap_arrhenius` trap lists for the multi-windows and the usable standard windows (`[]` when there are none). |
+| `resMw` | `traps[0]`, the first trap (for callers that read one trap). |
+| `resStd` | The standard-window trap with the same peak id as `resMw`, or `None`. |
+| `windowPeaks` | Per multi-window, the `(peakId, peak)` list (spectra markers). |
+| `regions` | The regions used. |
+| `messages` | Fit messages of both sets (standard ones prefixed `standard `). |
+| `mw`, `T_K` | Multi-windows `(t1, t2)` in ms; temperatures in K. |
+| `Nt` | Total `_trap_density`, cm⁻³. |
+| `spectra`, `tmap`, `rwm` | Display arrays; `None` when their `show*` flag is false or the map cannot be built. |
+
+**Side effects** None. Raises `ValueError('Multi-window: no peaks found. Check the t1 range and the peak regions.')` when no trap has a multi-window fit.
 
 **Called by** `_detailed_run_analysis` (through `_run_in_detailed_process`).
 
@@ -733,7 +862,7 @@ print(daT._fmt_pm(r['sigma'], r['sigma_se'], '.3e')) # 8.904e-16 ± 1.076e-16
 print(f"{out['Nt']:.3e}")                            # 6.236e+12
 ```
 
-On the same data the five standard windows give E_a = 0.5979 ± 0.0042 eV.
+On the same data the five standard windows give E_a = 0.5979 ± 0.0042 eV. `p` has no `regions`, so this is the default region 250–400 K with the spline finder; `out['traps']` holds the one trap `R1P1`. To deconvolve two overlapping traps instead, pass for example `regions=[dict(tLo=250.0, tHi=420.0, primitives=['Gaussian', 'Gaussian'], prominence=0.02, source=None)]`, which gives traps `R1P1` and `R1P2` (`tests/test_peak_deconvolution.py`).
 
 ### Worker process helpers
 
@@ -761,43 +890,74 @@ Sets **Load Data** to `state`. **Run Analysis** is disabled for `'disabled'`; fo
 
 #### _detailed_run_analysis()
 
-**Run Analysis** command. Logs `load data first.` without data; returns silently when busy. Snapshots every parameter into a dict, runs `_compute_detailed_analysis` in the worker, then on the main thread calls `_detailed_plot` and `_detailed_write_results`, stores `detailed_lastResMw`, `detailed_lastResStd`, `detailed_lastNt`, and sets the status label. Errors appear as `Error: <message>` in the status label and the log.
+**Run Analysis** command. Logs `load data first.` without data; returns silently when busy. Then checks the peak regions: with none it reports `Peak regions: add at least one peak region.`; a region with upper ≤ lower bound, or with primitives that fail `_region_problem`, is reported as `Peak regions: R<n>: <problem>; ...` in the status label and the log, and nothing runs. Otherwise it snapshots every parameter into a dict (including copies of `dltsc.detailed_regions`, so later region edits cannot change a running analysis; `showStd`, `showSpectra`, `showTmap`, `showTau`, `showRwm` are always `True` and `nSpectra` is N windows, so no Display variable is read), runs `_compute_detailed_analysis` in the worker, then on the main thread calls `_detailed_plot` and `_detailed_write_results`, stores `detailed_lastResMw`, `detailed_lastResStd`, `detailed_lastNt`, `detailed_lastTraps`, `detailed_lastTrapsStd`, logs up to 10 fit messages (then `... and <n> more fit message(s).`), and sets the status label to `Done.` plus each trap's `<id>: Et = <E ± err> eV`. Errors appear as `Error: <message>` in the status label and the log.
 
-#### _detailed_plot(out, params)
+#### Peak region controls
 
-Destroys the old canvas, builds a new `Figure` with the layout from the Figure table, draws the Arrhenius panel (fit line, 2σ band, colored points, excluded points, optional standard fit, colorbar, results box, °C top axis, legend) and the optional panels, embeds it with `FigureCanvasTkAgg` and a toolbar, and installs drag handlers on each legend and the results box. Uses `Figure()` rather than `plt.figure()` so no extra pyplot window opens. It does not call `draw()`; the resize after packing triggers the single render.
+The "PEAK REGIONS (CONTROLS)" section edits `dltsc.detailed_regions` from the Peak Regions widgets. Every edit refreshes the region list and reports `<message>  Run Analysis to refit.` in the status label (and the message in the log) through `_detailed_regions_changed(message)`; nothing is recomputed.
 
-#### _detailed_arrhenius_errorbars(ax, res, color)
+| Function | What it does |
+|---|---|
+| `_detailed_add_region()` | **Add Region**. Reads the bounds (`_detailed_region_bounds`), gives the new region the method of `_detailed_best_quick_method(tLo, tHi)` and appends it. Reports `R<n> added (<lo>–<hi> K) with the method of Quick R<m> (...)`, or `... no Quick Analysis region covers it, so it uses the default <peak method>.` |
+| `_detailed_update_region()` | **Update**. Moves the selected region to the bounds (`R<n> moved to ...`). |
+| `_detailed_remove_region()` | **Remove**. Deletes the selected region (`R<n> removed (later regions renumbered).`). |
+| `_detailed_apply_method()` | Method combobox selection: gives the selected region the chosen Quick Analysis method, or the default finder for `Default (Peak method below)`. |
+| `_detailed_refresh_method_options()` | `postcommand` of the method combobox: `METHOD_DEFAULT` plus `_detailed_quick_methods()` labels. |
+| `_detailed_quick_methods()` | `[(label, quick region)]` for every Quick Analysis region in `dltsc.deconv_regions` that passes `_region_problem`; label `Quick R<n> (<lo>–<hi> K): <primitives>`. |
+| `_detailed_best_quick_method(tLo, tHi)` | The Quick method whose region overlaps `[tLo, tHi]` by the most kelvin, or `None` if none overlaps. |
+| `_detailed_set_region_method(region, method)` | Copies the Quick region's primitives and prominence into `region` with `source='Quick R<n>'`, or sets `primitives=[]`, the default prominence and `source=None` when `method` is `None`. |
+| `_detailed_region_bounds()` | `(tLo, tHi)` from T min / T max, or `None` with a status message when they are not numbers or T max ≤ T min. |
+| `_detailed_on_region_select()` | List selection: copies the region's bounds into T min / T max and its method into the method box. |
+| `_detailed_refresh_regions(selectIndex=None)`, `_detailed_region_text(r, region)`, `_detailed_selected_region()` | Rebuild the list (also when the default peak method changes), format one line, and return the selected index (or `None`). |
+| `_detailed_on_span_select(tLo, tHi)` | `SpanSelector` callback on the DLTS Spectra panel (x axis in K): fills T min / T max (1 decimal) and shows `Picked <lo>–<hi> K: click Add Region (or Update Region).` |
+| `_detailed_trap_color(trapIndex)` | `TRAP_COLORS[trapIndex % len(TRAP_COLORS)]`. |
 
-Draws x/y error bars (`dx = 1000·dT/T²`, `dy = 2·dT/T`) for fitted windows that have a T_p error.
+#### Plotting
 
-#### _detailed_install_drag(canvas, fig, artist, kind)
+The "PLOTTING", "LINKED TEMPERATURE AXES", "ARRHENIUS PANEL", "DLTS SPECTRA PANEL", "TRANSIENT MAP PANEL", "RATE-WINDOW ANALYSIS MAP PANEL" and "DISPLAY OPTIONS" sections draw the panels described under Figure. Artist creation only: every array was computed in the worker. Panels are built with `Figure()`, never `pyplot`, so no extra pyplot window opens. A panel-drawing function takes a `Figure` or `SubFigure` and the Display options dict and returns `(ax, legend)`, so the same code draws the on-screen panels and the saved figure.
 
-Connects `button_press_event`, `motion_notify_event` and `button_release_event` so a left-drag moves a legend (`kind='legend'`, updates `artist._loc`) or annotation (`kind='annot'`, updates `artist.xyann`). Redraws once before hit-testing only when `dltsc.detailed_hitTestStale` is True. Contains nested `_on_press`, `_on_motion`, `_on_release`. `_detailed_plot` also defines nested `_mark_stale` / `_mark_fresh` that set `detailed_hitTestStale` on resize and draw events.
-
-#### _detailed_plot_transient_map(ax, res_mw, T_K, tmap, params)
-
-Draws the transient map contours, colorbar and optional τ(T) overlay (Step 9). Returns the legend when the overlay was drawn, else `None`.
-
-#### _detailed_plot_rate_window_map(ax, res_mw, rwm, params)
-
-Draws the rate-window map with `pcolormesh` (log color scale), colorbar, Arrhenius line and 22 circles. Returns the legend.
-
-#### _detailed_style_rwm_axes(ax)
-
-Applies labels, title, white ticks and gray spines to the rate-window map axes.
+| Function | What it does |
+|---|---|
+| `_detailed_plot(out, params)` | Stores `out` / `params` as `dltsc.detailed_lastOut` / `detailed_lastParams`, then `_detailed_layout_panels()`. Called after each run. |
+| `_detailed_layout_panels()` | Destroys the old panel widgets (and forgets their entries), then for each shown panel creates a holder frame gridded as in the Figure table, a `Figure(figsize=(6.0, 4.5), layout='constrained')`, its `FigureCanvasTkAgg` (requested size 1×1, so packing sizes it) and a `NavigationToolbar2Tk` above it, and draws it with `_detailed_draw_panel(key, draw=False)`. No explicit draw: the resize after packing triggers the single render. Does nothing before the first run. |
+| `_detailed_forget_panel(key)` | Drops the panel's entries from `detailed_figures`, `detailed_canvases`, `detailed_panelAxes`, `detailed_panelLegends`, `detailed_linkCids`; for the spectra panel also sets `detailed_spanSelector = None`. |
+| `_detailed_draw_panel(key, draw=True)` | Clears the panel's figure and redraws it from the last result with the current Display options; stores its axes and legend; resets the toolbar history; for the spectra panel creates `dltsc.detailed_spanSelector` (horizontal `SpanSelector`, `minspan=1.0` K, keeping the x limits the selector would otherwise stretch to 0); then `_detailed_link_panel(key)` and `draw_idle()` (when `draw`). |
+| `_detailed_redraw(*keys)` | `_detailed_draw_panel` for each given panel that is shown. |
+| `_detailed_display()` | The Display options now, as a dict: `showSpectra`, `showTmap`, `showRwm`, `showTau`, `showStd`, `nSpectra` (at least 1; 5 if the spinbox does not hold a number), `arrView`, `tmapView`, `rwmView`, `arrLabels`, `specLabels`, `tmapLabels`, `rwmLabels`. |
+| `_detailed_shown_panels(disp)` | Rows of `PANEL_ROWS` keeping the shown panels (Arrhenius always), empty rows dropped. |
+| `_detailed_draw_panel_on(fig, key, out, params, disp)` | Dispatches to the panel's drawing function below. |
+| `_detailed_side_legend(fig, handles, labels, **kw)` | `fig.legend(..., loc='outside right upper', fontsize=8)`, or `None` without handles. |
+| `_detailed_link_panel(key)` | Replaces the panel's pending link with a one-shot `draw_event` handler that, after the first draw, connects the 2D axes' `xlim_changed` callback to `_detailed_follow_xlim`. |
+| `_detailed_follow_xlim(key, ax)` | Converts `ax`'s x limits with the `PANEL_LINKS` map and sets them on the row partner (if shown and 2D), guarded by `detailed_linkBusy`; skipped for non-positive or non-finite limits. |
+| `_reciprocal_1000(v)`, `_reciprocal_kT(v)` | `1000/v` (1000/T ↔ T) and `1/(KB_EV·v)` (T ↔ 1/kT); each is its own inverse. Division warnings suppressed. |
+| `_detailed_arrhenius_errorbars(ax, res, color)` | x/y error bars (`dx = 1000·dT/T²`, `dy = 2·dT/T`) for fitted windows that have a T_p error. |
+| `_detailed_fit_label(res, kind)` | `'<id> <kind> (<N>): <Et ± err> eV'`. |
+| `_detailed_results_legend(fig, out)` | The `Results (Et, σ, Nt)` text legend (monospace, invisible handles). |
+| `_detailed_draw_arrhenius(fig, out, disp)` | Arrhenius panel, 2D view (or `_detailed_draw_arrhenius_3d` for the 3D view). |
+| `_detailed_draw_arrhenius_3d(fig, out, traps, stdById, disp)` | Arrhenius panel, 3D view (peak height as z). |
+| `_detailed_shown_spectra(spectra, nSpectra)` | `nSpectra` of the computed spectra, spread evenly over the windows. |
+| `_detailed_draw_spectra(fig, out, disp)` | DLTS Spectra panel. |
+| `_detailed_tau_curves(traps, T_K, t_s, gamma)` | Per trap with a visible τ(T): `(index, res, T, τ(T), Tp, 1/eₙ)` on the map's time range (Step 9). |
+| `_detailed_draw_transient_map(fig, out, params, disp)` | Transient map panel, 2D or 3D. |
+| `_detailed_isohypse_surface(ax, X, Y, Z, norm, levels, cmap='jet')` | 3D surface (at most ~90 × 90 facets) with black isohypses every 6th level on it and coloured ones projected on the floor at `levels[0]`; sets the z limits and returns a `ScalarMappable` for the colorbar. |
+| `_detailed_draw_rate_window_map(fig, out, params, disp)` | Rate-window map panel, 2D or 3D. |
+| `_detailed_on_display_change(*keys)` | Trace callback of every Display variable and of `detailed_stdWinsVar`: redraws the given panels, or (no keys: a Show checkbox changed) rebuilds the grid. Does nothing before the first run. |
 
 #### _detailed_open_label_editor()
 
-**Edit Labels & Legends** command. Builds the dialog described above. Nested helpers: `section(title)` (divider and heading), `axis_row(parent, label, current_text, current_size, setter_fn)` (text entry plus size spinbox), `apply_all()` (applies every edit and calls `draw_idle()`).
+**Edit Labels & Legends** command. Builds the dialog described above from `detailed_panelAxes` and `detailed_panelLegends`; logs a hint and returns when no panel exists yet. Nested helpers: `section(title)` (divider and heading), `axis_row(parent, label, current_text, current_size, setter_fn)` (text entry plus size spinbox), `apply_all()` (applies every edit and calls `draw_idle()` on every panel canvas).
 
-#### _detailed_write_results(res_mw, res_std, Nt, params)
+#### _detailed_write_results(out, params)
 
-Builds the Results text shown above and writes it into `dltsc.detailed_resultsText`. Nested `fit_block(res)` formats one fit.
+Builds the Results text shown above from the `_compute_detailed_analysis` result (settings, peak regions, one block per trap, total N_T) and writes it into `dltsc.detailed_resultsText`. Nested `fit_block(res)` formats one fit.
 
 #### _detailed_save_figure()
 
-**Save Figure...** command. Logs a hint if there is no figure. `.svg`/`.eps`/`.pdf`: `savefig(path, bbox_inches='tight')`; other extensions: `savefig(path, dpi=180, bbox_inches='tight', facecolor=SURFACE)`. Save errors are logged.
+**Save Figure...** command. Logs a hint if no analysis has been run (`detailed_lastOut` is `None`). Builds the figure with `_detailed_combined_figure(detailed_lastOut, detailed_lastParams, _detailed_display())`, then `.svg`/`.eps`/`.pdf`: `savefig(path, bbox_inches='tight')`; other extensions: `savefig(path, dpi=180, bbox_inches='tight', facecolor='white')`. Save errors are logged. Label-editor edits are not in the saved figure, which is drawn afresh.
+
+#### _detailed_combined_figure(out, params, disp)
+
+**Returns** a new `Figure(figsize=(14, 5.5 · rows), layout='constrained')` with one `SubFigure` per shown panel on a rows × 2 grid, laid out as on screen (a panel alone in its row spans it), each drawn by the same panel function as on screen.
 
 #### _detailed_export_txt()
 
@@ -805,7 +965,7 @@ Builds the Results text shown above and writes it into `dltsc.detailed_resultsTe
 
 #### Nested helpers in construct_detailedAnalysisTab
 
-`section(title)` draws a divider and an upper-case heading; `row(label, widget_factory, **kw)` packs a 15-character label and a widget; `spinbox(parent_, var, lo, hi, inc, fmt='%g', width=9)` builds a `ttk.Spinbox`.
+`section(title)` draws a divider and an upper-case heading; `row(label, widget_factory, **kw)` packs a 15-character label and a widget; `spinbox(parent_, var, lo, hi, inc, fmt='%g', width=9)` builds a `ttk.Spinbox`; `combo_row(label, var, options)` packs a 9-character label and a read-only combobox (Display `View` / `Labels`); `panel_heading(text, var=None)` packs a bold Display panel heading, or a checkbox when `var` is given. After the Display widgets, a `trace_add('write', ...)` on each Display variable and on `detailed_stdWinsVar` calls `_detailed_on_display_change` with the panel(s) it affects.
 
 ## Notes and limitations
 
@@ -816,16 +976,20 @@ Builds the Results text shown above and writes it into `dltsc.detailed_resultsTe
 - The legacy `.h5`/`.txt` extractor multiplies `ImpedanceIm` by 1e12 unconditionally. On the HDF5 test run this gives values near 5e6 "pF", so the stored channel is not a capacitance in F. S = ΔC/C∞ is a ratio and is unaffected by the scale, but the pF label is not meaningful there.
 - Labels say ΔC/C₀, but every quantity is normalized by C∞ (the late-time mean).
 - Edge peaks no longer dominate the fit. The spline finder puts a peak that is still rising out of the search range on the last grid point in every bootstrap sample, with an "error" of about 1e-13 K; earlier versions kept such windows in the weighted fit, where they swamped the rest. On the 23 Sep run with the GUI-default windows this gave Et = 90.967 ± 7.9e9 eV; now those six edge windows are excluded and the result is 0.693 ± 0.013 eV (0.685 ± 0.015 eV with windows suited to the data). Tests: `tests/test_detailed_peaks.py`.
-- N_T is `2·max|S_ref|·Nd` with `S_ref = (C(rb_ms) − C(2 ms))/C∞`, taken over all loaded temperatures, not the peak range. Quick Analysis uses the same definition (`_trap_density`). If `rb_ms` is past the end of a transient, `_cap_at` returns the last sample (Measured C) or extrapolates the spline (Smoothed C).
-- The standard-window fit is always computed and written to Results. **Show standard-window comparison** only controls drawing, and the Arrhenius x range includes the standard windows even when they are hidden.
+- The total N_T is `2·max|S_ref|·Nd` with `S_ref = (C(rb_ms) − C(2 ms))/C∞`, taken over all loaded temperatures, not the peak regions, so it sums every trap. `_quick_arrhenius` uses the same definition (`_trap_density`). If `rb_ms` is past the end of a transient, `_cap_at` returns the last sample (Measured C) or extrapolates the spline (Smoothed C). The per-trap N_T comes from the peak heights instead (Step 8).
+- The standard-window fits are always computed and written to Results. **Show standard-window comparison** only controls drawing. When the standard windows are shown, the Arrhenius x range includes them.
 - The Results line `slope = ... K` has the wrong unit. x is `1000/T`, so the slope is in units of 1000 K (slope = −E_a/(1000·kB)).
-- The °C top axis uses `k − 273` (not 273.15) and only has ticks for 240 to 360 K.
-- The τ overlay and the rate-window map are labeled `Z₁₂` / `Z₁/₂` (the 4H-SiC Z1/2 defect) for any data.
+- The peak id is a position (k-th peak of a region in a window, from low T), not an identity check. If a window misses a peak of a multi-peak region (below the spline prominence, or still rising at the region edge), its later peaks shift to a lower `P<k>` and join the wrong trap. Check the ▼ markers on the spectra panel and the window detail of each trap.
+- A region's T bounds only change with **Add Region** / **Update**; typing T min / T max or dragging on the spectra panel without clicking one of them has no effect on the next run. A region's Quick Analysis method is a copy taken when it was assigned.
+- The region selector exists only on the DLTS Spectra panel, so the first region change after loading has to be typed (or the default region used) until a run has drawn the panel.
+- `resMw` / `resStd` and `detailed_lastResMw` / `detailed_lastResStd` describe only the first trap. With several regions or primitives, read `traps` / `detailed_lastTraps`.
 - If `_prepare_transient_map` finds equal 1st and 99th percentiles, it falls back to levels ±1e-4 in the ×1e5 display units, which is a tiny range.
 - `_prepare_transient_map` builds its time axis from the first temperature and assumes all transients share it.
 - In `_find_peak_parabolic` a vertex outside the 5 fitted points, or an upward-opening parabola, falls back to the grid maximum with no error; that window is then excluded from the weighted fit.
 - A failed load keeps the previously loaded data, and **Run Analysis** stays enabled for that old data.
 - `_detailed_export_txt` does not catch file-write errors.
-- Figure edits made in **Edit Labels & Legends** are lost on the next run.
+- Figure edits made in **Edit Labels & Legends** last only until the panel is redrawn (a Display change affecting it, or the next run), and are not in the figure written by **Save Figure...** (a panel's own toolbar save keeps them).
+- The Display options redraw from the last result, which was computed with the parameters of that run. Changes to any analysis parameter (windows, regions, constants, signal method) only take effect at the next **Run Analysis**.
+- The linked temperature axes work between 2D panels only; with a 3D view on either side of a row, zooming does not propagate.
 - Both analysis tabs use `KB_EV` = `8.617333262145e-5` eV/K. (Before, this tab used `8.617333e-5`; the difference in E_a is below 1e-7 relative.)
 - The whole `detailed_data` dict is pickled to the worker process on every Run. For long sweeps with 500 ms transients this is tens of MB per run.

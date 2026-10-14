@@ -171,64 +171,88 @@ rateWindow_denoiseVar = None      # tk.StringVar: 'None (raw)' (default) / pca /
                                    # only applies to the Measured C / Smoothed C signal methods
 rateWindow_denoisedEmissions = None  # last impdData.calculate_delC_normalized() call's denoised/raw
                                       # emission snapshot, T -> {'x','yRaw','yFiltered','yerr','filterMethod'}
-rateWindow_peakMethodVar = None   # tk.StringVar: 'Smoothing Spline' (default) or lmfit curve fit
 rateWindow_windowVars = None      # list of 5 (t1Var, t2Var) tk.StringVar pairs, one per rate window set
-rateWindow_tpLoVar = None         # tk.StringVar: peak-search lower temperature bound (K), blank = no bound
-rateWindow_tpHiVar = None         # tk.StringVar: peak-search upper temperature bound (K), blank = no bound
-rateWindow_signals = None        # rw_index -> {'T_k': array, 'Signal': array, 'Signal_err':,
-                                   # 'xFit':, 'yFit':} (fit curve None when the peak method has none)
-rateWindow_extractedPeaks = None  # rw_index -> {'T_peak':, 'S_peak':, 'e_n':, 'T_peak_err':, 't1':, 't2':}
-                                   # (skipped windows are left out)
-rateWindow_plotContext = None     # {'tpLo':, 'tpHi':, 'peakMethod':} of the last Compute, so the
-                                   # spectrum can be redrawn when the Extracted Peaks selection changes
-rateWindow_transients = None      # (records, temps, rb_ms) of the averaged transients the last Compute
-                                   # used, in Detailed Analysis' record shape -- Nt is computed from
-                                   # these; None when the signal came from impdData directly
-rateWindow_peakTable = None       # ttk.Treeview showing per-window fit results
+rateWindow_signals = None        # rw_index -> {'T_k': array (sorted), 'Signal': array, 'Signal_err': array
+                                   # or None, 't1':, 't2': (ms), 'e_n': (s^-1)} of the last Compute
+rateWindow_extractedPeaks = None  # Extracted Peaks row id 'w<set>r<region>p<peak>' -> {'set':, 'region':,
+                                   # 'peakId': 'R<n>P<n>', 'primitive':, 'T_peak':, 'T_peak_err':, 'S_peak':,
+                                   # 'S_peak_err':, 'onEdge':, 'e_n':, 't1':, 't2':} from Peak Deconvolution
+rateWindow_rowInfo = None         # every Extracted Peaks row id -> (set index, peakId or None for a
+                                   # 'no peak' / 'fit failed' row)
+rateWindow_peakTable = None       # ttk.Treeview showing per-peak deconvolution results
 rateWindow_figure = None
 rateWindow_ax = None
 rateWindow_canvas = None
 
-# Arrhenius Defect Mapping (bottom frame). Consumes rateWindow_extractedPeaks.
+# Peak Deconvolution (middle frame). Splits each rate window set's S(T) into
+# primitives, region by region; fills rateWindow_extractedPeaks.
+deconv_regions = None             # list of {'tLo':, 'tHi': (K), 'primitives': [PRIMITIVE_OPTIONS labels],
+                                   # 'prominence': (fraction, Smoothing Spline regions only)}
+deconv_results = None             # set index -> one dataAnalysisTab._deconvolve_region() result per region
+deconv_displaySetVar = None       # tk.StringVar 'Set n': the set the deconvolution plot shows
+deconv_displaySetCombo = None
+deconv_regionListbox = None
+deconv_primitiveListbox = None    # primitives of the region selected in deconv_regionListbox
+deconv_primitiveVar = None        # tk.StringVar: primitive to add
+deconv_tLoVar = None              # tk.StringVar: region lower bound (K), also set by dragging on the plot
+deconv_tHiVar = None              # tk.StringVar: region upper bound (K)
+deconv_prominenceVar = None       # tk.StringVar: Smoothing Spline minimum prominence (fraction)
+deconv_fitInfoLabel = None        # per-region fit quality of the displayed set
+deconv_statusLabel = None
+deconv_spanSelector = None        # matplotlib SpanSelector on deconv_ax (rebuilt on every redraw)
+deconv_figure = None
+deconv_ax = None
+deconv_residAx = None
+deconv_canvas = None
+
+# Arrhenius Defect Mapping (right frame). Consumes rateWindow_extractedPeaks.
 arrhenius_ndVar = None            # tk.StringVar, background doping Nd (cm^-3)
 arrhenius_gammaVar = None         # tk.StringVar, emission pre-factor gamma (cm^-2 s^-1 K^-2) for sigma
-arrhenius_energyLabel = None
-arrhenius_captureLabel = None
-arrhenius_densityLabel = None
+arrhenius_trapTable = None        # ttk.Treeview: one row per trap (peakId) -- Et, sigma, Nt, sets used
+arrhenius_trapResults = None      # list of the last solver run's dA._arrhenius_fit results, one per
+                                   # trap, plus 'peakId', 'Nt', 'Nt_err'
 arrhenius_figure = None
 arrhenius_ax = None
 arrhenius_canvas = None
+arrhenius_windowPoints = None     # Extracted Peaks row id -> (1000/T, ln(e_n/T^2)) of each point the last
+                                   # solver run plotted
+arrhenius_highlightArtists = None # matplotlib Line2D star markers for the peaks selected in the
+                                   # Extracted Peaks table (removed and redrawn on each selection change)
 
 ##---------------------DETAILED ANALYSIS (PORTED FROM DLTS_APP.py)-------------------------
 # Multi-window ZI MFIA temperature-sweep analysis: many logspace-swept rate
 # windows (not just 4) plus the 5 "standard" windows, an Arrhenius panel, an
-# optional DLTS spectra panel, a 2D ΔC/C0(t,T) transient map, and a
-# Rate-Window Analysis (Nt/Nd) map. Self-contained: its own data folder format
+# optional DLTS spectra panel, a ΔC/C0(t,T) transient map, and a
+# Rate-Window Analysis (Nt/Nd) map -- each panel its own figure and toolbar. Self-contained: its own data folder format
 # (one subfolder per temperature) and its own analysis pipeline, independent
 # of Qualitative Analysis / Automated Live Data / Quick Analysis's registries.
 detailed_data = None          # tempC -> (t_ms array, cap array (pF), C_infinity)
 detailed_temps = None         # sorted list of tempC (float, Celsius)
-detailed_figure = None        # current matplotlib Figure (rebuilt each run)
-detailed_canvas = None        # current FigureCanvasTkAgg embedding detailed_figure
-detailed_figFrame = None      # frame the canvas/toolbar are packed into (cleared before each rebuild)
-detailed_ax1 = None           # Arrhenius panel (always present after a run)
-detailed_ax2 = None           # DLTS Spectra panel (optional)
-detailed_ax3 = None           # 2D Transient Map panel (optional)
-detailed_ax4 = None           # Rate-Window Analysis map panel (optional)
-detailed_leg1 = None
-detailed_leg2 = None
-detailed_legM = None
-detailed_legRW = None
-detailed_annBox = None        # draggable Arrhenius results annotation
-detailed_lastResMw = None     # last multi-window compute_arrhenius() result dict
-detailed_lastResStd = None    # last standard-windows compute_arrhenius() result dict
-detailed_lastNt = None
+detailed_figFrame = None      # frame the panels (figure + toolbar each) are gridded into
+detailed_figures = None       # panel key ('arr', 'spec', 'tmap', 'rwm') -> Figure of each shown panel
+detailed_canvases = None      # panel key -> FigureCanvasTkAgg of that Figure
+detailed_panelAxes = None     # panel key -> its main Axes (2D or 3D)
+detailed_panelLegends = None  # panel key -> its legend beside the plot, or None (per its Labels choice)
+detailed_linkCids = None      # panel key -> pending draw_event connection that links its x axis to its
+                               # row partner's (see _detailed_link_panel)
+detailed_linkBusy = None      # True while one linked panel sets its partner's x limits
+detailed_lastOut = None       # last run's _compute_detailed_analysis result, redrawn on Display changes
+detailed_lastParams = None    # the parameter snapshot that run used
+detailed_lastResMw = None     # last run's first trap, multi-window _arrhenius_fit result dict
+detailed_lastResStd = None    # last run's first trap, standard-windows result dict (or None)
+detailed_lastNt = None        # last run's total Nt (all traps, transient amplitude)
+detailed_lastTraps = None     # last run's multi-window results, one per trap (peak id R<r>P<k>)
+detailed_lastTrapsStd = None  # last run's standard-window results, one per trap
+detailed_regions = None       # peak regions: list of {'tLo', 'tHi' (K), 'primitives' ([] = default
+                               # single-peak finder), 'prominence', 'source' ('Quick R<n>' or None)}
+detailed_regionListbox = None
+detailed_regionMethodVar = None   # tk.StringVar: method of the selected region (default / a Quick region)
+detailed_regionMethodCombo = None
+detailed_spanSelector = None  # matplotlib SpanSelector on the DLTS Spectra panel (picks a region's T range)
 detailed_loadingBusy = None   # True while _detailed_load_data_async's background worker is running
 detailedProcessingBusy = None # True while _detailed_run_analysis's background worker is running
 detailed_executor = None      # this tab's own single-worker ProcessPoolExecutor: Load/Run math runs
                                # there (own GIL) so it never stalls the Tk main thread or other tabs
-detailed_hitTestStale = None  # True between a canvas resize and its redraw, i.e. while legend/annotation
-                               # hit-test transforms are stale; the drag press handler redraws only then
 
 # Control variables (tk.StringVar/DoubleVar/IntVar/BooleanVar), seeded in
 # construct_detailedAnalysisTab().
@@ -241,9 +265,10 @@ detailed_cinfLoVar = None
 detailed_cinfHiVar = None
 detailed_gammaVar = None
 detailed_ndVar = None
-detailed_tpeakLoVar = None
+detailed_tpeakLoVar = None    # T min / T max (K) boxes of the Peak Regions controls
 detailed_tpeakHiVar = None
-detailed_peakMethodVar = None # tk.StringVar: per-window peak finder -- lmfit parabola or smoothing spline
+detailed_peakMethodVar = None # tk.StringVar: default per-window peak finder for regions without primitives --
+                               # lmfit parabola or smoothing spline
 detailed_signalMethodVar = None # tk.StringVar: C(t) read-off -- nearest measured sample / spline-interpolated
 detailed_denoiseVar = None    # tk.StringVar: 'None (raw)' / pca / wavelet / sgolay / lowess, applied per transient
 detailed_nWinVar = None
@@ -257,6 +282,13 @@ detailed_nSpectraVar = None
 detailed_showTmapVar = None
 detailed_showTauVar = None
 detailed_showRwmVar = None
+detailed_arrViewVar = None    # Display: Arrhenius 2D / 3D (peak height up)
+detailed_tmapViewVar = None   # Display: transient map 2D colour map / 3D isohypse surface
+detailed_rwmViewVar = None    # Display: rate-window map 2D colour map / 3D isohypse surface
+detailed_arrLabelsVar = None  # Display: the one set of labels each panel shows (legend, trap ids, ...)
+detailed_specLabelsVar = None
+detailed_tmapLabelsVar = None
+detailed_rwmLabelsVar = None
 
 # Widgets referenced outside their construction function.
 detailed_loadButton = None
@@ -401,49 +433,66 @@ def init():
     global rateWindow_signalMethodVar
     global rateWindow_denoiseVar
     global rateWindow_denoisedEmissions
-    global rateWindow_peakMethodVar
     global rateWindow_windowVars
-    global rateWindow_tpLoVar
-    global rateWindow_tpHiVar
     global rateWindow_signals
     global rateWindow_extractedPeaks
-    global rateWindow_plotContext
-    global rateWindow_transients
+    global rateWindow_rowInfo
     global rateWindow_peakTable
     global rateWindow_figure
     global rateWindow_ax
     global rateWindow_canvas
+    global deconv_regions
+    global deconv_results
+    global deconv_displaySetVar
+    global deconv_displaySetCombo
+    global deconv_regionListbox
+    global deconv_primitiveListbox
+    global deconv_primitiveVar
+    global deconv_tLoVar
+    global deconv_tHiVar
+    global deconv_prominenceVar
+    global deconv_fitInfoLabel
+    global deconv_statusLabel
+    global deconv_spanSelector
+    global deconv_figure
+    global deconv_ax
+    global deconv_residAx
+    global deconv_canvas
     global arrhenius_ndVar
     global arrhenius_gammaVar
-    global arrhenius_energyLabel
-    global arrhenius_captureLabel
-    global arrhenius_densityLabel
+    global arrhenius_trapTable
+    global arrhenius_trapResults
     global arrhenius_figure
     global arrhenius_ax
     global arrhenius_canvas
+    global arrhenius_windowPoints
+    global arrhenius_highlightArtists
 
     ##---------------------DETAILED ANALYSIS (PORTED FROM DLTS_APP.py)-------------------------
     global detailed_data
     global detailed_temps
-    global detailed_figure
-    global detailed_canvas
     global detailed_figFrame
-    global detailed_ax1
-    global detailed_ax2
-    global detailed_ax3
-    global detailed_ax4
-    global detailed_leg1
-    global detailed_leg2
-    global detailed_legM
-    global detailed_legRW
-    global detailed_annBox
+    global detailed_figures
+    global detailed_canvases
+    global detailed_panelAxes
+    global detailed_panelLegends
+    global detailed_linkCids
+    global detailed_linkBusy
+    global detailed_lastOut
+    global detailed_lastParams
     global detailed_lastResMw
     global detailed_lastResStd
     global detailed_lastNt
+    global detailed_lastTraps
+    global detailed_lastTrapsStd
+    global detailed_regions
+    global detailed_regionListbox
+    global detailed_regionMethodVar
+    global detailed_regionMethodCombo
+    global detailed_spanSelector
     global detailed_loadingBusy
     global detailedProcessingBusy
     global detailed_executor
-    global detailed_hitTestStale
     global detailed_baseVar
     global detailed_gridOffVar
     global detailed_gridDtVar
@@ -469,6 +518,13 @@ def init():
     global detailed_showTmapVar
     global detailed_showTauVar
     global detailed_showRwmVar
+    global detailed_arrViewVar
+    global detailed_tmapViewVar
+    global detailed_rwmViewVar
+    global detailed_arrLabelsVar
+    global detailed_specLabelsVar
+    global detailed_tmapLabelsVar
+    global detailed_rwmLabelsVar
     global detailed_loadButton
     global detailed_runButton
     global detailed_loadInfoLabel
@@ -516,13 +572,24 @@ def init():
     quickData_processingBusy = False
     rateWindow_signals = dict()
     rateWindow_extractedPeaks = dict()
-    rateWindow_plotContext = None
+    rateWindow_rowInfo = dict()
+    deconv_regions = list()
+    deconv_results = dict()
+    arrhenius_trapResults = list()
+    arrhenius_windowPoints = dict()
+    arrhenius_highlightArtists = list()
     detailed_data = dict()
+    detailed_regions = list()
     detailed_temps = list()
     detailed_loadingBusy = False
     detailedProcessingBusy = False
     detailed_executor = None
-    detailed_hitTestStale = True
+    detailed_figures = dict()
+    detailed_canvases = dict()
+    detailed_panelAxes = dict()
+    detailed_panelLegends = dict()
+    detailed_linkCids = dict()
+    detailed_linkBusy = False
 
 #-----------------------Global Functions--------------------------------#
 def log_to_textbox(message):
