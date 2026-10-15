@@ -313,10 +313,12 @@ def _window_peaks(records, temps, windows, tpLo, tpHi, peakMethod):
     dA._peak_from_signal's result (skipped, Tp, Tp_err, S_peak, xFit, yFit)."""
     T_K = np.array([tc + 273.15 for tc in temps])
     method = _peak_method_for(peakMethod)
+    signals = [dA._rate_window_signal(temps, records, t1, t2) for t1, t2 in windows]
+    # Small-peak skip relative to the in-range max over all windows, as Detailed Analysis does.
+    refMax = dA._in_range_max(T_K, [S for S, _ in signals], tpLo, tpHi)
     out = []
-    for t1, t2 in windows:
-        S, S_err = dA._rate_window_signal(temps, records, t1, t2)
-        pk = dA._peak_from_signal(T_K, S, S_err, tpLo, tpHi, method)
+    for (t1, t2), (S, S_err) in zip(windows, signals):
+        pk = dA._peak_from_signal(T_K, S, S_err, tpLo, tpHi, method, ref_max=refMax)
         pk.update(t1=t1, t2=t2, e_n=dA._emission_rate(t1, t2), T_k=T_K, Signal=S, Signal_err=S_err)
         out.append(pk)
     return out
@@ -1284,7 +1286,11 @@ def _run_arrhenius_solver():
         for iid, used in zip(iids, fitMask):
             fitStatus[iid] = 'used' if used else 'excluded (no Tp error)'
         nt, ntErr = dA._trap_density_from_peaks([p for p, used in zip(peaks, fitMask) if used], nBackgroundDoping)
-        res.update(peakId=peakId, Nt=nt, Nt_err=ntErr)
+        # The window peaks go along for the Trap Concentration tab's corrected Nt
+        # (this tab's transients start at the fill end: t_FE = 0).
+        res.update(peakId=peakId, Nt=nt, Nt_err=ntErr, t_fe=0.0, nd=nBackgroundDoping, peaks=[
+            dict(t1=p['t1'], t2=p['t2'], e_n=p['e_n'], T_peak=p['T_peak'], T_peak_err=p['T_peak_err'],
+                 S_peak=p['S_peak'], S_peak_err=p['S_peak_err'], used=bool(used)) for p, used in zip(peaks, fitMask)])
         dltsc.arrhenius_trapResults.append(res)
 
         # T_peak error on this plot's axes: x = 1000/T so dx = 1000*dT/T^2;
@@ -1333,6 +1339,9 @@ def _run_arrhenius_solver():
     # ax.clear() above already removed the old highlight markers.
     dltsc.arrhenius_highlightArtists = []
     _update_arrhenius_highlight()
+    # Trap Concentration recalculates Nt from these traps when it follows this tab.
+    if dltsc.trapconc_sourceUpdated is not None:
+        dltsc.trapconc_sourceUpdated('quick')
 
 def _build_arrheniusFrame(parent):
     # Plot on top, parameter/control fields below it -- see _build_rateWindowFrame()

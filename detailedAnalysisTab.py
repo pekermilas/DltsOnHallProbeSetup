@@ -1,5 +1,7 @@
+import json
 import os
 import re
+import textwrap
 import threading
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -22,6 +24,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.widgets import SpanSelector
 
 import dltsConfig as dltsc
+import dltsPhysics as dP   # fill-end emission rate, fill-pulse information, C0 (v3.1 corrections)
 import liveDataTab as ldT   # reuses its data-folder format detection/extraction -- see _load_detailed_data
 import impedanceAnalysis_Tools as iaT   # smoothing-spline peak finder shared with Quick Analysis
 
@@ -68,6 +71,9 @@ DEFAULT_GAMMA = 1.66e21            # emission pre-factor, cm^-2 s^-1 K^-2 (4H-Si
 PEAK_MIN_FRAC = 0.05               # skip a window whose peak is below this fraction of max|S|
 DEFAULT_TPEAK_LO = 250.0           # peak-search range, K
 DEFAULT_TPEAK_HI = 400.0
+# Peak-search presets of Dr. Kayi's v3.1 (K); picking one fills T min / T max.
+TRAP_PRESETS = {'Z1/Z2': (250.0, 430.0), 'EH6/EH7': (540.0, 730.0)}
+TRAP_PRESET_CUSTOM = 'Custom range'
 # Standard rate windows (t1, t2) in ms: this tab's "standard-window comparison"
 # and Quick Analysis' default window sets.
 DEFAULT_STD_WINDOWS = [(5.0, 25.0), (10.0, 50.0), (20.0, 100.0), (50.0, 250.0), (100.0, 490.0)]
@@ -178,7 +184,19 @@ def _valid_errors(err):
 
 PEAK_METHOD_PARABOLIC = 'Parabolic fit (lmfit)'
 PEAK_METHOD_SPLINE = 'Smoothing Spline (bootstrap)'
-PEAK_METHOD_OPTIONS = [PEAK_METHOD_PARABOLIC, PEAK_METHOD_SPLINE]
+# Dr. Kayi's v3.1 profile finders: one line shape plus a constant baseline,
+# fitted (lmfit, weighted by the point errors) over the whole search range;
+# Tp is the fitted centre. The 3-5 point parabola overestimates Et and σ for
+# broad / asymmetric DLTS peaks, so v3.1 made Pseudo-Voigt its default.
+PEAK_METHOD_GAUSSIAN = 'Gaussian + const (lmfit)'
+PEAK_METHOD_LORENTZIAN = 'Lorentzian + const (lmfit)'
+PEAK_METHOD_PVOIGT = 'Pseudo-Voigt + const (lmfit)'
+PEAK_METHOD_VOIGT = 'Voigt + const (lmfit)'
+PEAK_METHOD_PROFILES = {PEAK_METHOD_GAUSSIAN: 'gaussian', PEAK_METHOD_LORENTZIAN: 'lorentzian',
+                        PEAK_METHOD_PVOIGT: 'pseudoVoigt', PEAK_METHOD_VOIGT: 'voigt'}
+PEAK_METHOD_OPTIONS = [PEAK_METHOD_PARABOLIC, PEAK_METHOD_SPLINE, PEAK_METHOD_GAUSSIAN, PEAK_METHOD_LORENTZIAN,
+                       PEAK_METHOD_PVOIGT, PEAK_METHOD_VOIGT]
+PEAK_METHOD_DEFAULT = PEAK_METHOD_PVOIGT
 
 # A peak within this fraction of a grid step of either end of the search range
 # is on the edge: the signal still rises out of the range, so it isn't a real peak.
@@ -197,17 +215,42 @@ def _find_peak(T_arr, S_arr, S_err, method):
     return _find_peak_full(T_arr, S_arr, S_err, method)[:2]
 
 def _find_peak_full(T_arr, S_arr, S_err, method):
-    """(Tp, Tp_err, xFit, yFit): _find_peak plus the fitted curve for plotting
-    (None, None when the method has none). `method` is PEAK_METHOD_SPLINE,
-    PEAK_METHOD_PARABOLIC, or a callable (T, S, S_err) -> (Tp, Tp_err, xFit,
-    yFit) -- Quick Analysis passes its lmfit curve-fit finders that way."""
+    """(Tp, Tp_err, xFit, yFit, Sp, Sp_err): _find_peak plus the fitted curve
+    for plotting (None, None when the method has none) and the fitted peak
+    height with its error (None, None when the method gives none -- the grid
+    maximum is used then). `method` is one of PEAK_METHOD_OPTIONS or a callable
+    (T, S, S_err) -> (Tp, Tp_err, xFit, yFit[, Sp, Sp_err]) -- Quick Analysis
+    passes its lmfit curve-fit finders that way."""
     if callable(method):
-        Tp, Tp_err, xFit, yFit = method(T_arr, S_arr, S_err)
+        found = method(T_arr, S_arr, S_err)
     elif method == PEAK_METHOD_SPLINE:
-        Tp, Tp_err, xFit, yFit = _find_peak_spline(T_arr, S_arr, S_err)
+        found = _find_peak_spline(T_arr, S_arr, S_err)
+    elif method in PEAK_METHOD_PROFILES:
+        found = _find_peak_profile(T_arr, S_arr, S_err, PEAK_METHOD_PROFILES[method])
     else:
-        (Tp, Tp_err), xFit, yFit = _find_peak_parabolic(T_arr, S_arr, S_err), None, None
-    return Tp, _guard_peak_error(T_arr, Tp, Tp_err), xFit, yFit
+        found = (*_find_peak_parabolic(T_arr, S_arr, S_err), None, None)
+    Tp, Tp_err, xFit, yFit, Sp, Sp_err = tuple(found) + (None,) * (6 - len(found))
+    return Tp, _guard_peak_error(T_arr, Tp, Tp_err), xFit, yFit, Sp, Sp_err
+
+def _find_peak_profile(T_arr, S_arr, S_err, primitive):
+    """Peak of one line shape (an iaT.DECONV_PEAK_PRIMITIVES key) plus a
+    constant baseline fitted over the whole search range -- v3.1's Gaussian /
+    Lorentzian / Pseudo-Voigt / Voigt finders, through the same lmfit
+    deconvolution Peak Regions use (iaT.impdData._deconvolve_peaks), so Tp and
+    the height carry lmfit's covariance errors. The height is the fitted total
+    curve at Tp (baseline included), as v3.1 takes it. As in v3.1, a failed fit
+    or a centre on the range edge falls back to the 3-5 point parabola; the
+    fallback returns no curve (xFit None), which is how callers count it.
+    Returns (Tp, Tp_err, xFit, yFit, Sp, Sp_err)."""
+    try:
+        res = iaT.impdData._deconvolve_peaks(T_arr, S_arr, [primitive, 'constant'], signalYErr=_valid_errors(S_err))
+        comp = res['components'][0] if res['xf'] is not None else None
+    except Exception:
+        comp = None
+    if comp is None or comp['onEdge']:
+        return (*_find_peak_parabolic(T_arr, S_arr, S_err), None, None, None, None)
+    Tp = comp['center']
+    return Tp, comp['centerErr'], res['xf'], res['yf'], float(np.interp(Tp, res['xf'], res['yf'])), comp['heightErr']
 
 def _guard_peak_error(T_arr, Tp, Tp_err):
     """Tp_err, or None for a peak on the edge of the search range or an error
@@ -230,14 +273,15 @@ def _find_peak_spline(T_arr, S_arr, S_err):
     """Peak of a weighted smoothing cubic spline over the whole search range,
     via Quick Analysis' own iaT.impdData._smoothingSpline_peakFinder, whose
     Tp error is a parametric-bootstrap estimate (a spline has no parameter
-    covariance). Returns (Tp, Tp_err, xFit, yFit); falls back to the raw grid
-    maximum (no error, no curve) if it fails."""
+    covariance). Returns (Tp, Tp_err, xFit, yFit, Sp, Sp_err), Sp the spline's
+    peak height; falls back to the raw grid maximum (no error, no curve, no
+    height) if it fails."""
     try:
-        Tp, _, xFit, yFit, Tp_err, _ = iaT.impdData._smoothingSpline_peakFinder(
+        Tp, Sp, xFit, yFit, Tp_err, Sp_err = iaT.impdData._smoothingSpline_peakFinder(
             T_arr, S_arr, signalYErr=_valid_errors(S_err))
     except Exception:
-        return float(T_arr[int(np.argmax(S_arr))]), None, None, None
-    return float(Tp), Tp_err, xFit, yFit
+        return float(T_arr[int(np.argmax(S_arr))]), None, None, None, None, None
+    return float(Tp), Tp_err, xFit, yFit, float(Sp), Sp_err
 
 def _find_peak_parabolic(T_arr, S_arr, S_err=None, hw=2):
     """Sub-grid peak temperature from a parabola fitted (lmfit QuadraticModel,
@@ -291,7 +335,11 @@ def _fmt_pm(val, err, fmt, sep=' ± '):
     """'val ± err' formatted with fmt (e.g. '.3f'), or just 'val' when err is None."""
     return f'{val:{fmt}}{sep}{err:{fmt}}' if err is not None else f'{val:{fmt}}'
 
-def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cinf_hi):
+def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cinf_hi, c0_pre_pulse=True):
+    """(data, temps, errorMsgs) of _load_detailed_data_full."""
+    return _load_detailed_data_full(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cinf_hi, c0_pre_pulse)[:3]
+
+def _load_detailed_data_full(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cinf_hi, c0_pre_pulse=True):
     """Load every available temperature under base, auto-detecting which of
     this app's three data-folder formats it is (reusing liveDataTab.py's own
     detection/extraction, the same machinery Qualitative Analysis' folder
@@ -312,9 +360,23 @@ def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cin
     extractors use for the rest of the app, so this tab's C_infinity
     estimation is unaffected by which format backed the raw transient.
 
+    For the JSON / h5 step files (format 3), the raw records are read once
+    more for Dr. Kayi's v3.1 corrections (dP): the capacitance is converted
+    from susceptance (C = B/ω, f_osc from runParams.txt) when ImpedanceIm
+    holds B rather than C, each record's fill-pulse information (V_fill,
+    V_rev, width, C_fill) is read from its AuxInput1 bias monitor, and -- with
+    c0_pre_pulse -- C_infinity is the lower of the tail mean and the pre-pulse
+    equilibrium C, with the tail window cut before a second fill pulse
+    (dP.c0_estimate). ZI exports have no bias monitor here, so they keep the
+    tail mean.
+
     Pure computation (no Tk calls), safe to run on a background thread.
-    Returns (data_dict, temps_list, errorMsgs) where data_dict[tc] =
-    (t_ms, cap, c_inf), matching this tab's existing internal shape.
+    Returns (data_dict, temps_list, errorMsgs, loadInfo) where data_dict[tc] =
+    (t_ms, cap, c_inf), matching this tab's existing internal shape, and
+    loadInfo = dict(formats, tFe (the fill-end time of this format: dP.T_FE_ZI_MS
+    for ZI exports, 0 for step files cut at the fill end), f_osc, cap_mode,
+    second_pulse (ms, or None), fill (dP.fill_summary or None), fillByT
+    ({T (K): dP.fill_record_info}), c0Source ({tc: 'tail' / 'pre-pulse'})).
     """
     errorMsgs = []
     registry = {}
@@ -333,8 +395,10 @@ def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cin
         if not registry:
             registry = ldT._compute_legacy_dataset(base, errorMsgs)
 
+    loadInfo = dict(formats=[], tFe=dP.T_FE_ZI_MS, f_osc=None, cap_mode=None, second_pulse=None, fill=None,
+                    fillByT={}, c0Source={})
     if not registry:
-        return {}, [], errorMsgs
+        return {}, [], errorMsgs, loadInfo
 
     allTemps = sorted(registry.keys())
     ziTemps = [t for t in allTemps if isinstance(registry[t], tuple) and registry[t][0] == 'zi']
@@ -349,13 +413,69 @@ def _load_detailed_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cin
         samplingRateS=1.8666666666666665e-05, ziSubfolderTemps=ziSubTemps)
     errorMsgs.extend(extractionErrors)
 
+    loadInfo['formats'] = [name for name, temps in (('ZI', ziTemps), ('ZI subfolders', ziSubTemps),
+                                                    ('step files', legacyTemps)) if temps]
+    # Fill end of the transients' time axis: step files are cut at it, ZI
+    # exports start 1 ms before the trigger (see dP.T_FE_ZI_MS).
+    loadInfo['tFe'] = dP.T_FE_STEP_FILES_MS if not (ziTemps or ziSubTemps) else dP.T_FE_ZI_MS
+    stepRecords = _read_step_records(base, legacyTemps, registry, errorMsgs, loadInfo)
+
     data = {}
     for tc, rec in raw.items():
-        t_ms = rec['time_ms']
-        cap = rec['avg_cap_pf']
-        data[tc] = (t_ms, cap, _cinf_range_mean(t_ms, cap, rb_ms, cinf_lo, cinf_hi))
+        t_ms = np.asarray(rec['time_ms'], dtype=np.float64)
+        cap = np.asarray(rec['avg_cap_pf'], dtype=np.float64)
+        info = None
+        if tc in stepRecords:
+            scale, info = stepRecords[tc]
+            cap = cap * scale
+            if info is not None:
+                loadInfo['fillByT'][tc + 273.15] = info
+        if c0_pre_pulse and info is not None:
+            cInf, source = dP.c0_estimate(t_ms, cap, rb_ms, cinf_lo, cinf_hi, info)
+        else:
+            cInf, source = _cinf_range_mean(t_ms, cap, rb_ms, cinf_lo, cinf_hi), 'tail'
+        loadInfo['c0Source'][tc] = source
+        data[tc] = (t_ms, cap, cInf)
 
-    return data, sorted(data.keys()), errorMsgs
+    temps = sorted(data.keys())
+    loadInfo['second_pulse'] = dP.detect_second_pulse(data, temps)
+    loadInfo['fill'] = dP.fill_summary(loadInfo['fillByT'])
+    return data, temps, errorMsgs, loadInfo
+
+def _read_step_records(base, temps, registry, errorMsgs, loadInfo):
+    """{tc: (scale, fillInfo)} for the JSON (.txt) / h5 step files among temps:
+    scale converts the extractor's ImpedanceIm x 1e12 to pF (1, or 1/ω when the
+    run stored the susceptance B -- decided once, from the first file, as
+    v3.1 does), fillInfo is dP.fill_record_info of the raw record (None when
+    it has no AuxInput1). Sets loadInfo f_osc / cap_mode."""
+    out = {}
+    fOsc = dP.read_osc_frequency(base)
+    loadInfo['f_osc'] = fOsc
+    capMode = None
+    for tc in temps:
+        path = registry.get(tc)
+        if not isinstance(path, str) or os.path.splitext(path)[1].lower() not in ('.txt', '.h5'):
+            continue
+        try:
+            if path.lower().endswith('.h5'):
+                rec, _ = ldT._read_h5_step(path)
+            else:
+                with open(path, 'r') as fh:
+                    rec = json.load(fh)
+            imp = np.asarray(rec['ImpedanceIm'], dtype=np.float64)
+            dtS = ldT._sample_interval_s(rec.get('timeStampImps'), 1.8666666666666665e-05)
+            if capMode is None:
+                capMode = dP.capacitance_mode(imp, fOsc or dP.DEFAULT_F_OSC_HZ)
+                loadInfo['cap_mode'] = capMode
+            scale = 1.0 if capMode == 'direct' else 1.0 / (2.0 * np.pi * (fOsc or dP.DEFAULT_F_OSC_HZ))
+            info = None
+            if 'AuxInput1' in rec:
+                info = dP.fill_record_info(np.arange(imp.size) * dtS * 1e3, imp * 1e12 * scale,
+                                           np.asarray(rec['AuxInput1'], dtype=np.float64))
+            out[tc] = (scale, info)
+        except Exception as exc:
+            errorMsgs.append(f"{tc}°C: fill-pulse information not read: {exc}")
+    return out
 
 def _cinf_range_mean(t_ms, cap, rb_ms, cinf_lo=DEFAULT_CINF_LO, cinf_hi=DEFAULT_CINF_HI):
     """C_infinity of one averaged transient: the mean capacitance over
@@ -391,19 +511,34 @@ def _fit_arrhenius_line(x, y, Tp, Tp_err):
             break
     return result, True
 
-def _emission_rate(t1, t2):
-    """Rate-window emission rate e_n (s^-1) for t1, t2 in ms."""
-    return np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+def _emission_rate(t1, t2, t_fe=0.0):
+    """Rate-window emission rate e_n (s^-1) for t1, t2 in ms, with the times
+    measured from the fill end t_fe (ms) -- dP.emission_rate; None when the
+    window starts inside or before the fill pulse."""
+    return dP.emission_rate(t1, t2, t_fe)
+
+def _in_range_max(T_K, signals, t_peak_lo, t_peak_hi):
+    """Largest |S| inside [t_peak_lo, t_peak_hi] (K) over every window's S(T)
+    -- the reference v3.1's small-peak skip uses (see _peak_from_signal)."""
+    mask = (np.asarray(T_K) >= t_peak_lo) & (np.asarray(T_K) <= t_peak_hi)
+    if not mask.any():
+        return None
+    return max((float(np.max(np.abs(np.asarray(S)[mask]))) for S in signals), default=None)
 
 def _peak_from_signal(T_K, S_full, S_err_full, t_peak_lo, t_peak_hi, peak_method=PEAK_METHOD_SPLINE,
-                      peak_min_frac=PEAK_MIN_FRAC):
+                      peak_min_frac=PEAK_MIN_FRAC, ref_max=None):
     """One rate window's peak from its S(T) curve -- the step both analysis tabs
     share. Inside [t_peak_lo, t_peak_hi] (K) the signal is flipped positive if
     the peak is negative; a window whose peak is at most peak_min_frac of
-    max|S| over all temperatures is skipped. Returns a dict: skipped (bool),
-    and unless skipped Tp, Tp_err (None if unusable, see _find_peak), S_peak
-    (grid maximum, in the curve's own sign), sign, and xFit/yFit (fitted curve in
-    the curve's own sign, or None)."""
+    ref_max is skipped. ref_max is the in-range max|S| over all windows
+    (_in_range_max, v3.1: a stronger trap outside the range then can't
+    suppress a weaker trap's windows), or, when None, max|S| of this window
+    over all temperatures (the old rule). Returns a dict: skipped (bool), and
+    unless skipped Tp, Tp_err (None if unusable, see _find_peak), S_peak (the
+    fitted peak height when the method gives one, else the grid maximum; in
+    the curve's own sign), S_peak_err (None without one), sign, xFit/yFit
+    (fitted curve in the curve's own sign, or None), and fallback (a profile
+    fit fell back to the parabola)."""
     T_K, S_full = np.asarray(T_K, dtype=float), np.asarray(S_full, dtype=float)
     S_err_full = None if S_err_full is None else np.asarray(S_err_full, dtype=float)
     mask = (T_K >= t_peak_lo) & (T_K <= t_peak_hi)
@@ -414,25 +549,28 @@ def _peak_from_signal(T_K, S_full, S_err_full, t_peak_lo, t_peak_hi, peak_method
     sign = -1.0 if np.max(S_m) < abs(np.min(S_m)) else 1.0
     S_m = sign * S_m
     peak_val = float(np.max(S_m))
-    if peak_val <= peak_min_frac * np.max(np.abs(S_full)):
+    if peak_val <= peak_min_frac * (np.max(np.abs(S_full)) if ref_max is None else ref_max):
         return dict(skipped=True)
-    Tp, Tp_err, xFit, yFit = _find_peak_full(T_m, S_m, S_err_m, peak_method)
-    return dict(skipped=False, Tp=float(Tp), Tp_err=Tp_err, S_peak=sign * peak_val, sign=sign,
-                xFit=xFit, yFit=None if yFit is None else sign * np.asarray(yFit))
+    Tp, Tp_err, xFit, yFit, Sp, Sp_err = _find_peak_full(T_m, S_m, S_err_m, peak_method)
+    return dict(skipped=False, Tp=float(Tp), Tp_err=Tp_err, S_peak=sign * (peak_val if Sp is None else Sp),
+                S_peak_err=Sp_err, sign=sign, xFit=xFit, yFit=None if yFit is None else sign * np.asarray(yFit),
+                fallback=peak_method in PEAK_METHOD_PROFILES and xFit is None)
 
 def _compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi, peak_method=PEAK_METHOD_SPLINE,
-                       peak_min_frac=PEAK_MIN_FRAC):
+                       peak_min_frac=PEAK_MIN_FRAC, t_fe=0.0):
     T_K  = np.array([tc + 273.15 for tc in temps])
 
     en_list, Tp_list, Tp_err_list, Sp_list = [], [], [], []
     rows_detail = []
 
-    for (t1, t2) in windows:
-        S_full, S_err_full = _rate_window_signal(temps, data, t1, t2)
-        pk = _peak_from_signal(T_K, S_full, S_err_full, t_peak_lo, t_peak_hi, peak_method, peak_min_frac)
+    signals = [(t1, t2, *_rate_window_signal(temps, data, t1, t2)) for (t1, t2) in windows
+               if _emission_rate(t1, t2, t_fe) is not None]
+    ref_max = _in_range_max(T_K, [s[2] for s in signals], t_peak_lo, t_peak_hi)
+    for (t1, t2, S_full, S_err_full) in signals:
+        pk = _peak_from_signal(T_K, S_full, S_err_full, t_peak_lo, t_peak_hi, peak_method, peak_min_frac, ref_max)
         if pk['skipped']:
             continue
-        en = _emission_rate(t1, t2)
+        en = _emission_rate(t1, t2, t_fe)
         Tp, Tp_err, peak_val = pk['Tp'], pk['Tp_err'], abs(pk['S_peak'])
         en_list.append(en); Tp_list.append(Tp); Sp_list.append(peak_val)
         Tp_err_list.append(np.nan if Tp_err is None else Tp_err)
@@ -597,33 +735,26 @@ def _deconvolve_region(sig, region):
     out['residual'] = residual / e if e is not None else residual
     return out
 
-def _boxcar_peak_factor(t1, t2):
+def _boxcar_peak_factor(t1, t2, t_fe=0.0):
     """S_peak / (ΔC/C∞) of an ideal exponential transient for a double boxcar
     (t1, t2): exp(-e t1) - exp(-e t2) at the rate-window emission rate e,
-    = r^(-1/(r-1)) - r^(-r/(r-1)) with r = t2/t1."""
-    r = t2 / t1
-    return r ** (-1.0 / (r - 1.0)) - r ** (-r / (r - 1.0))
+    = r^(-1/(r-1)) - r^(-r/(r-1)) = r^(-1/(r-1)) (1 - 1/r) with r = t2/t1, the
+    times measured from the fill end t_fe (dP.boxcar_factor)."""
+    return dP.boxcar_factor(t1, t2, t_fe)
 
-def _trap_density_from_peaks(peaks, nd):
-    """Trap density Nt = 2 Nd ΔC/C∞ (small-signal), with ΔC/C∞ = |S_peak| /
-    _boxcar_peak_factor for each peak (one per set), combined into an
-    error-weighted mean when every peak has a height error (its error is the
+def _trap_density_from_peaks(peaks, nd, t_fe=0.0):
+    """Trap density Nt = 2 Nd ΔC/C∞ (small-signal, no fill-geometry or N_D(T)
+    correction -- those are the Trap Concentration tab's), with ΔC/C∞ =
+    |S_peak| / _boxcar_peak_factor for each peak (one per set), combined into
+    an error-weighted mean when every peak has a height error (its error is the
     weighted-mean error, scaled up by sqrt(reduced chi-square) when the sets
     scatter more than their errors), else the plain mean and its standard
-    error. Returns (Nt, Nt_err); Nt_err is None for a single peak without one."""
-    values = np.array([2.0 * nd * abs(p['S_peak']) / _boxcar_peak_factor(p['t1'], p['t2']) for p in peaks])
-    errs = np.array([np.nan if p['S_peak_err'] is None
-                     else 2.0 * nd * p['S_peak_err'] / _boxcar_peak_factor(p['t1'], p['t2']) for p in peaks])
-    if np.all(np.isfinite(errs)) and np.all(errs > 0):
-        w = 1.0 / errs ** 2
-        mean = float(np.sum(w * values) / np.sum(w))
-        err = float(np.sqrt(1.0 / np.sum(w)))
-        if len(values) > 1:
-            redchi = float(np.sum(w * (values - mean) ** 2) / (len(values) - 1))
-            err *= np.sqrt(max(redchi, 1.0))
-        return mean, err
-    mean = float(np.mean(values))
-    return mean, (float(np.std(values, ddof=1) / np.sqrt(len(values))) if len(values) > 1 else None)
+    error (dP.weighted_mean). Returns (Nt, Nt_err); Nt_err is None for a single
+    peak without one."""
+    values = [2.0 * nd * abs(p['S_peak']) / _boxcar_peak_factor(p['t1'], p['t2'], t_fe) for p in peaks]
+    errs = [None if p['S_peak_err'] is None
+            else 2.0 * nd * p['S_peak_err'] / _boxcar_peak_factor(p['t1'], p['t2'], t_fe) for p in peaks]
+    return dP.weighted_mean(values, errs)
 
 def _region_method_text(region, peak_method):
     """How a region's peaks are found: its primitives, or the single-peak
@@ -640,24 +771,25 @@ def _peak_id_order(peakId):
     r, k = peakId[1:].split('P')
     return int(r), int(k)
 
-def _window_region_peaks(T_K, S, S_err, region, peak_method, peak_min_frac=PEAK_MIN_FRAC):
+def _window_region_peaks(T_K, S, S_err, region, peak_method, peak_min_frac=PEAK_MIN_FRAC, ref_max=None):
     """Peaks of one window's S(T) inside one region, low to high T: with the
     region's primitives (_deconvolve_region -- Quick Analysis' method) when it
     has any, else this tab's single-peak finder over the region
-    (_peak_from_signal with peak_method, i.e. the region acts as the old Peak
-    Search Range). Returns (peaks, message): peaks as [{T_peak, T_peak_err,
-    S_peak, S_peak_err, primitive, onEdge}], message '' unless something failed."""
+    (_peak_from_signal with peak_method and ref_max, i.e. the region acts as
+    the old Peak Search Range). Returns (peaks, message): peaks as [{T_peak,
+    T_peak_err, S_peak, S_peak_err, primitive, onEdge, fallback}], message ''
+    unless something failed."""
     if region['primitives']:
         res = _deconvolve_region(dict(T_k=T_K, Signal=S, Signal_err=_valid_errors(S_err)), region)
-        return res['peaks'], res['message']
-    pk = _peak_from_signal(T_K, S, S_err, region['tLo'], region['tHi'], peak_method, peak_min_frac)
+        return [dict(p, fallback=False) for p in res['peaks']], res['message']
+    pk = _peak_from_signal(T_K, S, S_err, region['tLo'], region['tHi'], peak_method, peak_min_frac, ref_max)
     if pk['skipped']:
         return [], ''
-    return [dict(T_peak=pk['Tp'], T_peak_err=pk['Tp_err'], S_peak=pk['S_peak'], S_peak_err=None,
-                 primitive=peak_method, onEdge=pk['Tp_err'] is None)], ''
+    return [dict(T_peak=pk['Tp'], T_peak_err=pk['Tp_err'], S_peak=pk['S_peak'], S_peak_err=pk['S_peak_err'],
+                 primitive=peak_method, onEdge=pk['Tp_err'] is None, fallback=pk['fallback'])], ''
 
 def _compute_trap_arrhenius(windows, temps, data, gamma, regions, peak_method=PEAK_METHOD_SPLINE, nd=DEFAULT_ND,
-                            peak_min_frac=PEAK_MIN_FRAC):
+                            peak_min_frac=PEAK_MIN_FRAC, t_fe=0.0):
     """Every region's peaks in every window, grouped into traps by peak id
     R<r>P<k> (the k-th peak of region r from low T), each trap with its own
     _arrhenius_fit -- the multi-trap counterpart of _compute_arrhenius, which a
@@ -667,17 +799,35 @@ def _compute_trap_arrhenius(windows, temps, data, gamma, regions, peak_method=PE
     per trap with at least 2 fittable windows, in peak-id order, plus peakId,
     region (index), method (text), win_idx (window index of each point),
     Sp_arr (|S_peak|), detail (t1, t2, en, Tp (K), Tp_err, |S_peak| rows, as
-    _compute_arrhenius), peak_method, and Nt / Nt_err (_trap_density_from_peaks
-    over the fitted windows). windowPeaks[w]: [(peakId, peak)] of window w.
-    messages: fit problems worth logging."""
+    _compute_arrhenius), peak_method, Nt / Nt_err (_trap_density_from_peaks
+    over the fitted windows), n_fallback (profile fits that fell back to the
+    parabola), t_fe, and peaks (one dict per window: t1, t2, e_n, T_peak,
+    T_peak_err, S_peak, S_peak_err, used -- what Trap Concentration needs).
+    windowPeaks[w]: [(peakId, peak)] of window w. messages: fit problems worth
+    logging.
+
+    Emission rates are measured from the fill end t_fe (ms); a window that
+    starts inside the fill pulse is left out. The small-peak skip of a region
+    without primitives is relative to its in-range max over all windows (v3.1)."""
     T_K = np.array([tc + 273.15 for tc in temps])
     byTrap, windowPeaks, messages = dict(), [], []
+    signals = [_rate_window_signal(temps, data, t1, t2) for (t1, t2) in windows]
+    usable = [_emission_rate(t1, t2, t_fe) is not None for (t1, t2) in windows]
+    if not all(usable):
+        messages.append(f'{usable.count(False)} window(s) start inside the fill pulse (t1 <= t_FE = {t_fe:g} ms); '
+                        f'left out.')
+    refMax = [None if region['primitives'] else
+              _in_range_max(T_K, [s[0] for s, ok in zip(signals, usable) if ok], region['tLo'], region['tHi'])
+              for region in regions]
     for w, (t1, t2) in enumerate(windows):
-        S, S_err = _rate_window_signal(temps, data, t1, t2)
-        en = _emission_rate(t1, t2)
         found = []
+        if not usable[w]:
+            windowPeaks.append(found)
+            continue
+        S, S_err = signals[w]
+        en = _emission_rate(t1, t2, t_fe)
         for r, region in enumerate(regions):
-            peaks, message = _window_region_peaks(T_K, S, S_err, region, peak_method, peak_min_frac)
+            peaks, message = _window_region_peaks(T_K, S, S_err, region, peak_method, peak_min_frac, refMax[r])
             if message:
                 messages.append(f'{t1:g}/{t2:g} ms, R{r + 1}: {message}')
             for k, pk in enumerate(peaks):
@@ -694,27 +844,30 @@ def _compute_trap_arrhenius(windows, temps, data, gamma, regions, peak_method=PE
         if res is None:
             messages.append(f'{peakId}: fewer than 2 windows can be fitted; no Arrhenius line.')
             continue
-        used = [dict(S_peak=pk['S_peak'], S_peak_err=pk['S_peak_err'], t1=t1, t2=t2)
-                for (_, t1, t2, _, pk), fitted in zip(entries, res['fit_mask']) if fitted]
-        nt, ntErr = _trap_density_from_peaks(used, nd)
+        peaks = [dict(t1=t1, t2=t2, e_n=en, T_peak=pk['T_peak'], T_peak_err=pk['T_peak_err'], S_peak=pk['S_peak'],
+                      S_peak_err=pk['S_peak_err'], used=bool(fitted))
+                 for (_, t1, t2, en, pk), fitted in zip(entries, res['fit_mask'])]
+        nt, ntErr = _trap_density_from_peaks([p for p in peaks if p['used']], nd, t_fe)
         r = _peak_id_order(peakId)[0] - 1
         res.update(peakId=peakId, region=r, method=_region_method_text(regions[r], peak_method),
                    win_idx=np.array([e[0] for e in entries]),
                    Sp_arr=np.array([abs(e[4]['S_peak']) for e in entries]),
                    detail=[(t1, t2, en, pk['T_peak'], pk['T_peak_err'], abs(pk['S_peak']))
                            for _, t1, t2, en, pk in entries],
-                   peak_method=_region_method_text(regions[r], peak_method), Nt=nt, Nt_err=ntErr)
+                   peak_method=_region_method_text(regions[r], peak_method), Nt=nt, Nt_err=ntErr,
+                   n_fallback=sum(1 for e in entries if e[4].get('fallback')), t_fe=t_fe, peaks=peaks)
         traps.append(res)
     return traps, windowPeaks, messages
 
-def _prepare_spectra(mw, temps, data, n_spectra):
-    """DLTS spectra for n_spectra of the multi-windows: list of (k, t1, t2, en, S*1e3)."""
+def _prepare_spectra(mw, temps, data, n_spectra, t_fe=0.0):
+    """DLTS spectra for n_spectra of the multi-windows: list of (k, t1, t2, en, S*1e3),
+    en from the fill end (from t = 0 for a window inside the fill pulse)."""
     idx_show = np.round(np.linspace(0, len(mw) - 1, min(n_spectra, len(mw)))).astype(int)
     spectra = []
     for k in idx_show:
         t1, t2 = mw[k]
         S = np.array([(_cap_at(data[tc], t2) - _cap_at(data[tc], t1)) / data[tc][2] * 1e3 for tc in temps])
-        en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+        en = _emission_rate(t1, t2, t_fe) or _emission_rate(t1, t2)
         spectra.append((int(k), t1, t2, en, S))
     return spectra
 
@@ -753,10 +906,11 @@ def _prepare_transient_map(temps, data, rb_ms):
     levels = np.linspace(vlo, vhi, 64)
     return dict(t_s=t_s, Z_disp=Z_disp, levels=levels)
 
-def _prepare_rate_window_map(temps, data, t1_min, t1_max, ratio):
+def _prepare_rate_window_map(temps, data, t1_min, t1_max, ratio, t_fe=0.0):
     """Nt/Nd sampled over (1/kT, T^2/en) and interpolated onto a 220x220 grid
-    for the Rate-Window Analysis map. Returns dict(Xi, Yi, Zi, z_lo, z_hi,
-    x_min, x_max), or None if there are too few points to interpolate."""
+    for the Rate-Window Analysis map (en from the fill end; windows inside the
+    fill pulse left out). Returns dict(Xi, Yi, Zi, z_lo, z_hi, x_min, x_max),
+    or None if there are too few points to interpolate."""
     kB     = KB_EV
     n_map  = 100
     t1_arr = np.logspace(np.log10(t1_min), np.log10(t1_max), n_map)
@@ -765,7 +919,9 @@ def _prepare_rate_window_map(temps, data, t1_min, t1_max, ratio):
     x_pts, y_pts, z_pts = [], [], []
     for t1 in t1_arr:
         t2 = ratio * t1
-        en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+        en = _emission_rate(t1, t2, t_fe)
+        if en is None:
+            continue
         for j, tc in enumerate(temps):
             T = T_K[j]
             cinf = data[tc][2]
@@ -824,15 +980,16 @@ def _compute_detailed_analysis(data, temps, p):
     t1Arr = np.logspace(np.log10(p['t1Min']), np.log10(p['t1Max']), p['nWin'])
     mw = [(float(t1), float(p['ratio'] * t1)) for t1 in t1Arr]
 
+    tFe = p.get('tFe', 0.0)
     trapsMw, windowPeaks, messages = _compute_trap_arrhenius(mw, temps, data, p['gamma'], regions,
-                                                             p['peakMethod'], p['nd'])
+                                                             p['peakMethod'], p['nd'], t_fe=tFe)
     # A standard window set to 0 / 0 (or any t2 <= t1) is unused, so the table can
     # also hold fewer than 5 windows -- e.g. Quick Analysis' four, for comparison.
     stdWins = [(float(a), float(b)) for a, b in p['stdWins'] if a > 0 and b > a]
     trapsStd = []
     if stdWins:
         trapsStd, _, stdMessages = _compute_trap_arrhenius(stdWins, temps, data, p['gamma'], regions,
-                                                           p['peakMethod'], p['nd'])
+                                                           p['peakMethod'], p['nd'], t_fe=tFe)
         messages += [f'standard {m}' for m in stdMessages]
     if not trapsMw:
         raise ValueError('Multi-window: no peaks found. Check the t1 range and the peak regions.')
@@ -844,11 +1001,134 @@ def _compute_detailed_analysis(data, temps, p):
 
     return dict(
         resMw=resMw, resStd=resStd, traps=trapsMw, trapsStd=trapsStd, windowPeaks=windowPeaks,
-        regions=regions, messages=messages, mw=mw, T_K=T_K, Nt=Nt,
-        spectra=_prepare_spectra(mw, temps, data, p['nSpectra']) if p['showSpectra'] else None,
+        regions=regions, messages=messages, mw=mw, T_K=T_K, Nt=Nt, tFe=tFe,
+        methodTable=(_peak_method_table(mw, temps, data, p, regions, trapsMw) if p.get('methodTable') else None),
+        stability=(_region_stability(mw, temps, data, p, regions, trapsMw) if p.get('stability') else None),
+        spectra=_prepare_spectra(mw, temps, data, p['nSpectra'], tFe) if p['showSpectra'] else None,
         tmap=_prepare_transient_map(temps, data, p['rbMs']) if p['showTmap'] else None,
-        rwm=(_prepare_rate_window_map(temps, data, p['t1Min'], p['t1Max'], p['ratio'])
+        rwm=(_prepare_rate_window_map(temps, data, p['t1Min'], p['t1Max'], p['ratio'], tFe)
              if p['showRwm'] else None))
+
+def _peak_method_table(mw, temps, data, p, regions, trapsMw):
+    """v3.1's peak-finder sensitivity table: the multi-window analysis redone
+    with every PEAK_METHOD_OPTIONS finder (same windows and regions). Only
+    regions without primitives use the finder, so only their traps are listed.
+    Returns {peakId: [(method, None or dict(Et, Et_se, sigma, R2, Nt, n_fallback))]},
+    in PEAK_METHOD_OPTIONS order; empty if every region has primitives."""
+    single = {t['peakId'] for t in trapsMw if not regions[t['region']]['primitives']}
+    table = {pid: [] for pid in sorted(single, key=_peak_id_order)}
+    if not table:
+        return table
+    for method in PEAK_METHOD_OPTIONS:
+        try:
+            traps = (trapsMw if method == p['peakMethod'] else
+                     _compute_trap_arrhenius(mw, temps, data, p['gamma'], regions, method, p['nd'],
+                                             t_fe=p.get('tFe', 0.0))[0])
+        except Exception:
+            traps = []
+        byId = {t['peakId']: t for t in traps}
+        for pid in table:
+            t = byId.get(pid)
+            table[pid].append((method, None if t is None else dict(
+                Et=t['Et'], Et_se=t['Et_se'], sigma=t['sigma'], R2=t['R2'], Nt=t['Nt'], n_fallback=t['n_fallback'])))
+    return table
+
+STABILITY_DELTA_K = 20.0    # v3.1: limits moved by ±20 °C
+STABILITY_MARGIN_K = 15.0   # a limit moves inward only if every peak stays this far inside it
+STABILITY_MAX_SPREAD_EV = 0.05
+
+def _region_stability(mw, temps, data, p, regions, trapsMw, delta=STABILITY_DELTA_K):
+    """v3.1's range-stability scan of the deconvolution regions (those with
+    primitives): each is refitted with its T limits moved by ±delta K. A
+    limit is moved inward only if every fitted peak centre stays at least
+    STABILITY_MARGIN_K inside it (otherwise the test would just cut the peak
+    off); ranges whose Arrhenius line is poor (R² < 0.95, or < 8 windows) are
+    ignored. Returns {peakId: (min Et, max Et, number of usable ranges)} -- a
+    spread above STABILITY_MAX_SPREAD_EV means the split is not robust (merged
+    peaks are model dependent)."""
+    out = {}
+    for r, region in enumerate(regions):
+        if not region['primitives']:
+            continue
+        base = [t for t in trapsMw if t['region'] == r]
+        t0s = [float(tp) for t in base for tp in t['Tp_arr']]
+        tMin, tMax = (min(t0s), max(t0s)) if t0s else (region['tLo'], region['tHi'])
+        lo, hi = region['tLo'], region['tHi']
+        los = [lo - delta, lo] + ([lo + delta] if lo + delta <= tMin - STABILITY_MARGIN_K else [])
+        his = [hi + delta, hi] + ([hi - delta] if hi - delta >= tMax + STABILITY_MARGIN_K else [])
+        ets = {}
+        for loK in los:
+            for hiK in his:
+                if (loK, hiK) == (lo, hi):
+                    traps = [dict(t, peakId=f"R1P{_peak_id_order(t['peakId'])[1]}") for t in base]
+                else:
+                    try:
+                        traps = _compute_trap_arrhenius(mw, temps, data, p['gamma'], [dict(region, tLo=loK, tHi=hiK)],
+                                                        p['peakMethod'], p['nd'], t_fe=p.get('tFe', 0.0))[0]
+                    except Exception:
+                        continue
+                for t in traps:
+                    if t['R2'] >= 0.95 and t['N'] >= 8:
+                        ets.setdefault(f"R{r + 1}P{_peak_id_order(t['peakId'])[1]}", []).append(t['Et'])
+        for t in base:
+            e = ets.get(t['peakId'])
+            out[t['peakId']] = (min(e), max(e), len(e)) if e else None
+    return out
+
+def _detailed_checks(out, params, loadInfo):
+    """v3.1's "Checks" on the Et / σ result, per trap, in plain language:
+    line-shape sensitivity, parabola bias, overlap (R²), peaks at the region
+    edge, emission-rate span, a second fill pulse inside the windows, lock-in
+    settling at low test frequency, range stability. The Nt checks are the
+    Trap Concentration tab's (dP.nt_checks)."""
+    notes = []
+    loadInfo = loadInfo or {}
+    windows = list(out['mw'])
+    for res in out['traps']:
+        pid = res['peakId']
+        rows = dict((m, v) for m, v in (out.get('methodTable') or {}).get(pid, []) if v)
+        sym = [rows[m]['Et'] for m in (PEAK_METHOD_GAUSSIAN, PEAK_METHOD_PVOIGT, PEAK_METHOD_VOIGT) if m in rows]
+        par = rows.get(PEAK_METHOD_PARABOLIC)
+        if len(sym) >= 2 and (max(sym) - min(sym)) > 0.03:
+            notes.append(f'{pid}: Gaussian / Pseudo-Voigt / Voigt disagree by {max(sym) - min(sym):.3f} eV: the '
+                         f'result depends on the line shape, quote it as a range.')
+        if par and sym and abs(par['Et'] - float(np.median(sym))) > 0.05:
+            notes.append(f'{pid}: the parabolic peak top gives Eₜ = {par["Et"]:.3f} eV vs {float(np.median(sym)):.3f} eV '
+                         f'from the fitted profiles. DLTS peaks are asymmetric; the parabola biases Eₜ and σₙ. '
+                         f'Use a fitted profile.')
+        if res['R2'] < 0.995:
+            notes.append(f'{pid}: Arrhenius R² = {res["R2"]:.4f} (< 0.995): the peak is probably overlapped by a '
+                         f'neighbouring trap. Deconvolve it (Peak Regions with primitives) and check its range '
+                         f'stability before quoting Eₜ.')
+        region = out['regions'][res['region']]
+        nEdge = sum(1 for tp in res['Tp_arr'] if tp < region['tLo'] + 3 or tp > region['tHi'] - 3)
+        if nEdge:
+            notes.append(f'{pid}: {nEdge} window peak(s) lie within 3 K of the region limit: widen the region or '
+                         f'the peak is cut off.')
+        if res.get('n_fallback'):
+            notes.append(f'{pid}: the {params["peakMethod"]} fit fell back to the parabola in {res["n_fallback"]} '
+                         f'window(s).')
+        en = res['en_arr']
+        if len(en) and max(en) / min(en) < 30:
+            notes.append(f'{pid}: emission rates span only {max(en) / min(en):.0f}x: Eₜ and σₙ are strongly '
+                         f'correlated and the ± shown is statistical only.')
+        st = (out.get('stability') or {}).get(pid)
+        if st is not None and st[1] - st[0] > STABILITY_MAX_SPREAD_EV:
+            notes.append(f'{pid}: NOT ROBUST -- Eₜ moves from {st[0]:.3f} to {st[1]:.3f} eV when the region limits '
+                         f'move by ±{STABILITY_DELTA_K:g} K ({st[2]} usable ranges).')
+    sp = loadInfo.get('second_pulse')
+    if sp:
+        late = [w for w in windows if w[1] > sp - 3.0]
+        if late:
+            notes.append(f'A second fill pulse sits at ~{sp:.0f} ms in the transients; {len(late)} window(s) have '
+                         f't₂ within 3 ms of it or beyond. Keep t₂ below ~{sp - 5:.0f} ms.')
+    fo = loadInfo.get('f_osc')
+    if fo and fo <= 20e3 and windows:
+        t1m = min(w[0] for w in windows) - out.get('tFe', 0.0)
+        if t1m < 4.0:
+            notes.append(f'Test frequency is {fo / 1e3:g} kHz: the lock-in needs about 3 ms to settle after the fill '
+                         f'pulse (τ₁ = {t1m:.1f} ms here). Use t₁ ≥ 5 ms.')
+    return notes
 
 
 #---------------------WORKER PROCESS-------------------------#
@@ -922,13 +1202,14 @@ def _detailed_load_data():
     rbMs = dltsc.detailed_rbMsVar.get()
     cinfLo = dltsc.detailed_cinfLoVar.get()
     cinfHi = dltsc.detailed_cinfHiVar.get()
+    c0PrePulse = bool(dltsc.detailed_c0PrePulseVar.get())
 
     def worker():
         errorMsg = None
-        data, temps, loadErrors = {}, [], []
+        data, temps, loadErrors, loadInfo = {}, [], [], {}
         try:
-            data, temps, loadErrors = _run_in_detailed_process(
-                _load_detailed_data, base, gridOff, gridDt, chunkSize, rbMs, cinfLo, cinfHi)
+            data, temps, loadErrors, loadInfo = _run_in_detailed_process(
+                _load_detailed_data_full, base, gridOff, gridDt, chunkSize, rbMs, cinfLo, cinfHi, c0PrePulse)
             if not temps:
                 errorMsg = "No recognizable data found (checked ZI single-file, ZI subfolder-per-temperature, and legacy per-temperature formats)."
         except Exception as exc:
@@ -945,9 +1226,13 @@ def _detailed_load_data():
 
             dltsc.detailed_data = data
             dltsc.detailed_temps = temps
+            dltsc.detailed_loadInfo = loadInfo
+            dltsc.detailed_folder = base
             _set_detailed_buttons_state('normal')
-            n = len(temps)
-            msg = f'{n} temperatures loaded: {temps[0] + 273.15:.0f} K to {temps[-1] + 273.15:.0f} K'
+            # The fill end of this format's time axis (v3.1's t_FE): 0 for step
+            # files (cut at the fill end), 1.307 ms for ZI exports.
+            dltsc.detailed_tFeVar.set(loadInfo['tFe'])
+            msg = _detailed_load_message(temps, loadInfo)
             if dltsc.detailed_loadInfoLabel is not None:
                 dltsc.detailed_loadInfoLabel.config(text=msg, foreground=C0)
             if dltsc.detailed_statusLabel is not None:
@@ -959,6 +1244,31 @@ def _detailed_load_data():
         dltsc.root.after(0, apply)
 
     threading.Thread(target=worker, daemon=True).start()
+
+def _detailed_load_message(temps, loadInfo):
+    """Load summary: temperatures, format, f_osc and capacitance mode, second
+    fill pulse, the fill pulse read from AuxInput1, C0 source, and t_FE."""
+    n = len(temps)
+    msg = f'{n} temperatures loaded: {temps[0] + 273.15:.0f} K to {temps[-1] + 273.15:.0f} K'
+    if loadInfo.get('formats'):
+        msg += f' ({", ".join(loadInfo["formats"])})'
+    if loadInfo.get('cap_mode'):
+        fo = loadInfo.get('f_osc')
+        msg += (f'  |  C from {"direct value" if loadInfo["cap_mode"] == "direct" else "B/ω"}'
+                + (f', f_osc {fo / 1e3:g} kHz' if fo else f', f_osc not in runParams.txt '
+                   f'(assumed {dP.DEFAULT_F_OSC_HZ / 1e3:g} kHz)'))
+    if loadInfo.get('second_pulse'):
+        msg += f'  |  2nd fill pulse at {loadInfo["second_pulse"]:.0f} ms'
+    fs = loadInfo.get('fill')
+    if fs:
+        msg += (f'  |  fill {fs["v_fill"]:+.2f} V / reverse {fs["v_rev"]:+.2f} V'
+                + (f' / {fs["width_ms"]:.2g} ms' if fs.get('width_ms') else '')
+                + f' (from AuxInput1), C_fill in {fs["n_cfill"]}/{n} records')
+    nPre = sum(1 for s in loadInfo.get('c0Source', {}).values() if s == 'pre-pulse')
+    if nPre:
+        msg += f'  |  C₀ from the pre-pulse level in {nPre}/{n} records'
+    msg += f'  |  t_FE set to {loadInfo.get("tFe", 0.0):g} ms'
+    return msg
 
 
 #---------------------RUN ANALYSIS-------------------------#
@@ -1007,6 +1317,9 @@ def _detailed_run_analysis():
         signalMethod=dltsc.detailed_signalMethodVar.get(),
         denoise=dltsc.detailed_denoiseVar.get(),
         rbMs=dltsc.detailed_rbMsVar.get(),
+        tFe=dltsc.detailed_tFeVar.get(),
+        methodTable=bool(dltsc.detailed_methodTableVar.get()),
+        stability=bool(dltsc.detailed_stabilityVar.get()),
         # Every panel's data and every window's spectrum, whatever is shown
         # now: the Display options then change the plots without a re-run.
         showStd=True,
@@ -1045,6 +1358,9 @@ def _detailed_run_analysis():
             dltsc.detailed_lastNt = out['Nt']
             dltsc.detailed_lastTraps = out['traps']
             dltsc.detailed_lastTrapsStd = out['trapsStd']
+            # Trap Concentration recalculates Nt from these traps when it follows this tab.
+            if dltsc.trapconc_sourceUpdated is not None:
+                dltsc.trapconc_sourceUpdated('detailed')
 
             messages = out['messages']
             for message in messages[:10]:
@@ -1945,6 +2261,7 @@ def _detailed_write_results(out, params):
 
     lines.append(f'  Signal     : {params["signalMethod"]}')
     lines.append(f'  Denoise    : {params["denoise"]}')
+    lines.append(f'  t_FE       : {out.get("tFe", 0.0):g} ms  (e_n, f(r) from the fill end)')
     lines.append('  Peak regions:')
     for r, region in enumerate(out['regions']):
         source = f'  (from {region["source"]})' if region.get('source') else ''
@@ -1957,9 +2274,17 @@ def _detailed_write_results(out, params):
         lines.append('-' * 55)
         lines.append(f'  Trap {res_mw["peakId"]}  ({res_mw["method"]})')
         lines.append(f'  Multi-window  ({res_mw["N"]} windows)')
+        if res_mw.get('n_fallback'):
+            lines.append(f'    ({res_mw["n_fallback"]} window(s) fell back to the parabola)')
         lines.extend(fit_block(res_mw))
         lines.append(f'    Nt   = {_fmt_pm(res_mw["Nt"], res_mw["Nt_err"], ".3e", " +/- ")} cm-3'
-                     '  (2 Nd dC/C, from peak heights)')
+                     '  (2 Nd S/f(r), uncorrected;')
+        lines.append('           N_D(T) and fill geometry: Trap Concentration tab)')
+        st = (out.get('stability') or {}).get(res_mw['peakId'], 'n/a')
+        if st != 'n/a':
+            lines.append('    range stability: ' + ('no usable ranges' if st is None else
+                         f'Et {st[0]:.3f}-{st[1]:.3f} eV over {st[2]} ranges'
+                         + ('  NOT ROBUST' if st[1] - st[0] > STABILITY_MAX_SPREAD_EV else '  robust')))
         if res_std:
             lines.append(f'  Standard  ({res_std["N"]} windows)')
             lines.extend(fit_block(res_std))
@@ -1977,6 +2302,29 @@ def _detailed_write_results(out, params):
     lines.append('')
     lines.append('-' * 55)
     lines.append(f'  Nt (all traps, transient amplitude) ~ {Nt:.3e} cm-3')
+
+    for pid, rows in (out.get('methodTable') or {}).items():
+        lines.append('')
+        lines.append(f'  Peak-finder sensitivity, {pid}  (same windows and regions)')
+        lines.append(f'  {"Finder":<16}{"Et (eV)":>15}{"σ (cm²)":>10}{"R²":>8}{"Nt (cm⁻³)":>10}')
+        lines.append('  ' + '-' * 59)
+        for method, v in rows:
+            name = method.replace(' + const (lmfit)', '').replace(' (lmfit)', '').replace(' (bootstrap)', '')
+            mark = ' <' if method == params['peakMethod'] else ''
+            if v is None:
+                lines.append(f'  {name:<16}  (no result)')
+            else:
+                etTxt = _fmt_pm(v['Et'], v['Et_se'], '.3f', '±')
+                lines.append(f'  {name:<16}{etTxt:>15}{v["sigma"]:10.2e}{v["R2"]:8.4f}{v["Nt"]:10.2e}{mark}')
+
+    notes = _detailed_checks(out, params, dltsc.detailed_loadInfo)
+    if notes:
+        lines.append('')
+        lines.append('-' * 55)
+        lines.append('  Checks')
+        for note in notes:
+            # The results column doesn't wrap (tables stay aligned), so wrap the notes here.
+            lines.append(textwrap.fill(note, width=55, initial_indent='   - ', subsequent_indent='     '))
 
     text = '\n'.join(lines)
     if dltsc.detailed_resultsText is not None:
@@ -2169,7 +2517,7 @@ def construct_detailedAnalysisTab():
 
     dltsc.detailed_loadButton = ttk.Button(ctrl, text='Load Data', command=_detailed_load_data)
     dltsc.detailed_loadButton.pack(fill='x', pady=(4, 0))
-    dltsc.detailed_loadInfoLabel = ttk.Label(ctrl, text='No data loaded.', foreground=TEXT_MUT)
+    dltsc.detailed_loadInfoLabel = ttk.Label(ctrl, text='No data loaded.', foreground=TEXT_MUT, wraplength=250)
     dltsc.detailed_loadInfoLabel.pack(fill='x')
 
     # ── ZI MFIA Grid ──────────────────────────────────────────────────────
@@ -2191,6 +2539,12 @@ def construct_detailedAnalysisTab():
 
     row('Start  (frac RB)', lambda p, **k: spinbox(p, dltsc.detailed_cinfLoVar, 0.1, 0.8, 0.05, '%.2f'))
     row('End    (frac RB)', lambda p, **k: spinbox(p, dltsc.detailed_cinfHiVar, 0.3, 0.99, 0.05, '%.2f'))
+    dltsc.detailed_c0PrePulseVar = tk.BooleanVar(value=True)
+    ttk.Checkbutton(ctrl, text='Pre-pulse C₀ when lower (step files)', variable=dltsc.detailed_c0PrePulseVar).pack(
+        anchor='w')
+    tk.Label(ctrl, text='  v3.1: C₀ = min(pre-pulse level, tail mean), the tail cut before a 2nd fill pulse '
+                        '(needs AuxInput1). Applies on Load.',
+             bg=CTRL_BG, fg=TEXT_MUT, font=('Segoe UI', 7, 'italic'), wraplength=250, justify='left').pack(anchor='w')
 
     # ── Physical constants ────────────────────────────────────────────────
     section('Physical Constants (4H-SiC)')
@@ -2228,6 +2582,19 @@ def construct_detailedAnalysisTab():
     dltsc.detailed_tpeakLoVar = tk.DoubleVar(value=DEFAULT_TPEAK_LO)
     dltsc.detailed_tpeakHiVar = tk.DoubleVar(value=DEFAULT_TPEAK_HI)
 
+    dltsc.detailed_trapPresetVar = tk.StringVar(value=TRAP_PRESET_CUSTOM)
+
+    def on_preset(_e=None):
+        if dltsc.detailed_trapPresetVar.get() in TRAP_PRESETS:
+            lo, hi = TRAP_PRESETS[dltsc.detailed_trapPresetVar.get()]
+            dltsc.detailed_tpeakLoVar.set(lo)
+            dltsc.detailed_tpeakHiVar.set(hi)
+            dltsc.detailed_statusLabel.config(text=f'{dltsc.detailed_trapPresetVar.get()}: {lo:g}–{hi:g} K. '
+                                                   f'Click Add Region (or Update).')
+    presetCombo = row('Trap preset', lambda p, **k: ttk.Combobox(
+        p, textvariable=dltsc.detailed_trapPresetVar, values=list(TRAP_PRESETS) + [TRAP_PRESET_CUSTOM],
+        state='readonly', font=('Segoe UI', 9)))
+    presetCombo.bind('<<ComboboxSelected>>', on_preset)
     row('T min (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakLoVar, 50, 1000, 5))
     row('T max (K)', lambda p, **k: spinbox(p, dltsc.detailed_tpeakHiVar, 50, 1000, 5))
     f_regionButtons = tk.Frame(ctrl, bg=CTRL_BG)
@@ -2244,15 +2611,18 @@ def construct_detailedAnalysisTab():
     dltsc.detailed_regionMethodCombo.pack(fill='x', pady=2)
     dltsc.detailed_regionMethodCombo.bind('<<ComboboxSelected>>', lambda e: _detailed_apply_method())
 
-    # Both methods give each window's Tpeak a 1-sigma error (parabola
-    # covariance / spline bootstrap), which then weights the Arrhenius fit.
-    # Spline is the default: checked against synthetic sweeps with a known
-    # Et over repeated noise realizations, its Et errors matched the actual
-    # scatter (pull RMS ~0.9), while the 5-point parabola's (only 2 residual
-    # degrees of freedom per window) underestimated it ~2.5x (pull RMS ~2.8).
-    # It is the default for regions without Quick Analysis primitives: one peak
+    # Every method gives each window's Tpeak a 1-sigma error (parabola
+    # covariance / spline bootstrap / profile-fit covariance), which then
+    # weights the Arrhenius fit. Checked against synthetic sweeps with a known
+    # Et over repeated noise realizations, the spline's Et errors matched the
+    # actual scatter (pull RMS ~0.9), while the 5-point parabola's (only 2
+    # residual degrees of freedom per window) underestimated it ~2.5x (pull
+    # RMS ~2.8). The default is Pseudo-Voigt + constant, Dr. Kayi's v3.1
+    # default, so both programs give the same Et for the same data and
+    # settings; the peak-finder table in the results compares all of them.
+    # It is the method for regions without Quick Analysis primitives: one peak
     # per region and window.
-    dltsc.detailed_peakMethodVar = tk.StringVar(value=PEAK_METHOD_SPLINE)
+    dltsc.detailed_peakMethodVar = tk.StringVar(value=PEAK_METHOD_DEFAULT)
     tk.Label(ctrl, text='Default peak method (one peak per region):', bg=CTRL_BG, fg=TEXT_PRI,
              font=('Segoe UI', 9), anchor='w').pack(fill='x')
     peakMethodCombo = ttk.Combobox(ctrl, textvariable=dltsc.detailed_peakMethodVar, values=PEAK_METHOD_OPTIONS,
@@ -2260,6 +2630,12 @@ def construct_detailedAnalysisTab():
     peakMethodCombo.pack(fill='x', pady=2)
     peakMethodCombo.bind('<<ComboboxSelected>>', lambda e: _detailed_refresh_regions(_detailed_selected_region()))
     _detailed_refresh_regions(0)
+    dltsc.detailed_methodTableVar = tk.BooleanVar(value=True)
+    ttk.Checkbutton(ctrl, text='Compare all peak methods (results table)',
+                    variable=dltsc.detailed_methodTableVar).pack(anchor='w')
+    dltsc.detailed_stabilityVar = tk.BooleanVar(value=False)
+    ttk.Checkbutton(ctrl, text=f'Range-stability check of primitive regions (±{STABILITY_DELTA_K:g} K, slow)',
+                    variable=dltsc.detailed_stabilityVar).pack(anchor='w')
 
     # ── Multi-window parameters ───────────────────────────────────────────
     section('Multi-Window Parameters')
@@ -2272,6 +2648,12 @@ def construct_detailedAnalysisTab():
     row('t₁ min (ms)', lambda p, **k: spinbox(p, dltsc.detailed_t1MinVar, 1, 200, 1))
     row('t₁ max (ms)', lambda p, **k: spinbox(p, dltsc.detailed_t1MaxVar, 5, 450, 5))
     row('Ratio t₂/t₁', lambda p, **k: spinbox(p, dltsc.detailed_ratioVar, 2, 20, 0.5))
+    # v3.1's fill-end time: e_n = ln(τ2/τ1)/(τ2-τ1) and f(r) with τ = t - t_FE.
+    dltsc.detailed_tFeVar = tk.DoubleVar(value=dP.T_FE_STEP_FILES_MS)
+    row('Fill-end t_FE (ms)', lambda p, **k: spinbox(p, dltsc.detailed_tFeVar, 0.0, 20.0, 0.1, '%.3f'))
+    tk.Label(ctrl, text=f'  Set on Load: 0 for step files (cut at the fill end), {dP.T_FE_ZI_MS:g} ms for '
+                        f'ZI exports (v3.1\'s MFIA estimate).',
+             bg=CTRL_BG, fg=TEXT_MUT, font=('Segoe UI', 7, 'italic'), wraplength=250, justify='left').pack(anchor='w')
 
     # ── Standard 5 windows ────────────────────────────────────────────────
     section('Standard Windows (reference)')

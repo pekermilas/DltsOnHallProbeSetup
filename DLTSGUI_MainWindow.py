@@ -15,6 +15,7 @@ import runParamsTab as rpT
 import liveDataTab as ldT
 import dataAnalysisTab as daT
 import detailedAnalysisTab as deT
+import trapConcentrationTab as tcT
 
 
 #---------------------CLOSE: RETURN STAGE TO ROOM TEMPERATURE-------------------------#
@@ -212,6 +213,9 @@ if __name__ == '__main__':
 
     dltsc.detailedAnalysisTab = ttk.Frame(dltsc.tabControl)
     deT.construct_detailedAnalysisTab()
+
+    dltsc.trapConcentrationTab = ttk.Frame(dltsc.tabControl)
+    tcT.construct_trapConcentrationTab()
 
     dltsc.postprocessingTab = ttk.Frame(dltsc.tabControl)
     # ppT.construct_postprocessingTab()

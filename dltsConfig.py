@@ -20,6 +20,7 @@ runParamsTab = None
 livePlotTab = None
 dataAnalysisTab = None
 detailedAnalysisTab = None
+trapConcentrationTab = None
 postprocessingTab = None
 
 ##---------------------RUNTIME-------------------------
@@ -289,6 +290,11 @@ detailed_arrLabelsVar = None  # Display: the one set of labels each panel shows 
 detailed_specLabelsVar = None
 detailed_tmapLabelsVar = None
 detailed_rwmLabelsVar = None
+detailed_tFeVar = None        # fill-end time t_FE (ms): e_n and f(r) from the fill end (Dr. Kayi's v3.1)
+detailed_c0PrePulseVar = None # tk.BooleanVar: C0 = min(pre-pulse level, tail mean) for step files (v3.1)
+detailed_trapPresetVar = None # tk.StringVar: Z1/Z2, EH6/EH7 or Custom range -- fills T min / T max
+detailed_methodTableVar = None  # tk.BooleanVar: redo the analysis with every peak method (results table)
+detailed_stabilityVar = None  # tk.BooleanVar: range-stability scan of the primitive regions
 
 # Widgets referenced outside their construction function.
 detailed_loadButton = None
@@ -296,6 +302,71 @@ detailed_runButton = None
 detailed_loadInfoLabel = None
 detailed_statusLabel = None
 detailed_resultsText = None
+detailed_loadInfo = None      # _load_detailed_data_full's loadInfo of the loaded folder (fill pulses, f_osc,
+                               # capacitance mode, 2nd pulse, t_FE of its format)
+detailed_folder = None        # the loaded folder
+
+##---------------------TRAP CONCENTRATION TAB-------------------------
+# Nt with Dr. Kayi's v3.1 corrections (N_D(T), fill-pulse geometry g,
+# large-signal term) from the traps of the last Detailed / Quick Analysis run,
+# the fill-pulse scan analysis, and the sample comparison. Seeded in
+# construct_trapConcentrationTab().
+trapconc_sourceUpdated = None # callable(source) the analysis tabs call after a run, so Nt follows them
+trapconc_sourceVar = None     # tk.StringVar: 'Detailed Analysis' / 'Quick Analysis'
+trapconc_ndVar = None         # N_D from C-V (cm^-3)
+trapconc_geomOnVar = None     # tk.BooleanVar: fill-pulse geometry correction
+trapconc_vFillVar = None      # fill / reverse bias (V), set from AuxInput1 when the fill bias is consistent
+trapconc_vRevVar = None
+trapconc_vbiVar = None
+trapconc_diamVar = None       # device diameter (mm)
+trapconc_epsRVar = None
+trapconc_wfModeVar = None     # W_F source: Measured C_fill / C-V ratio / V_bi model
+trapconc_wfRatioVar = None
+trapconc_lsVar = None         # tk.BooleanVar: large-signal term Nt = N_D a (2 - a) / g
+trapconc_ndScaleVar = None    # tk.BooleanVar: N_D(T) = N_D (C0(T)/C0(T_ref))^2
+trapconc_tRefVar = None       # T_ref (K) of the C-V measurement
+trapconc_lastResults = None   # list of (trap, dP.trap_concentration result) of the last calculation
+trapconc_lastSource = None    # dict describing the source of that calculation (name, tFe, nd, C0, fill)
+trapconc_lastGeom = None      # geometry dict that calculation used
+trapconc_recalcJob = None     # pending Tk after() id of a debounced recalculation
+trapconc_figure = None
+trapconc_canvas = None
+trapconc_resultsText = None
+trapconc_statusLabel = None
+# Fill-pulse scan analysis
+trapconc_fsFolders = None     # list of scan folders (bias and/or width scans)
+trapconc_fsFolderLabel = None
+trapconc_fsEtVar = None       # Et (eV) used for λ
+trapconc_fsTVar = None        # scan temperature (K)
+trapconc_fsT1Var = None       # ΔC = C(t2) - C(t1) after the pulse (ms)
+trapconc_fsT2Var = None
+trapconc_fsResult = None
+trapconc_fsFigure = None
+trapconc_fsCanvas = None
+trapconc_fsText = None
+# Sample comparison
+trapconc_samples = None       # list of dict(name, data, temps, color)
+trapconc_sampleListbox = None
+trapconc_sampleNameVar = None # name for the next sample added ('' = folder name)
+trapconc_swT1Var = None       # single rate window t1 / t2 (ms) and their log10 slider positions
+trapconc_swT2Var = None
+trapconc_swS1Var = None
+trapconc_swS2Var = None
+trapconc_swLock = None
+trapconc_swInfoLabel = None
+trapconc_spNormVar = None     # display options
+trapconc_spLineVar = None
+trapconc_spFitVar = None
+trapconc_spPeaksVar = None
+trapconc_spTLoVar = None      # peak / fit range (K), '' = the Detailed Analysis T min / T max
+trapconc_spTHiVar = None
+trapconc_spFigure = None
+trapconc_spAx = None
+trapconc_spCanvas = None
+trapconc_spText = None
+trapconc_spJob = None
+trapconc_spCsv = None         # {sample name: (T (K), S)} of the last plot, for Export CSV
+trapconc_spLoadingBusy = None
 
 
 def init():
@@ -313,6 +384,7 @@ def init():
     global livePlotTab
     global dataAnalysisTab
     global detailedAnalysisTab
+    global trapConcentrationTab
     global postprocessingTab
 
     ##---------------------RUNTIME-------------------------
@@ -530,6 +602,25 @@ def init():
     global detailed_loadInfoLabel
     global detailed_statusLabel
     global detailed_resultsText
+    global detailed_tFeVar
+    global detailed_c0PrePulseVar
+    global detailed_trapPresetVar
+    global detailed_methodTableVar
+    global detailed_stabilityVar
+    global detailed_loadInfo
+    global detailed_folder
+    global trapconc_sourceUpdated
+    global trapconc_lastResults
+    global trapconc_lastSource
+    global trapconc_lastGeom
+    global trapconc_recalcJob
+    global trapconc_fsFolders
+    global trapconc_fsResult
+    global trapconc_samples
+    global trapconc_swLock
+    global trapconc_spJob
+    global trapconc_spCsv
+    global trapconc_spLoadingBusy
 
     z_params_vars = dict()
     z_params_for_push = dict()
@@ -590,6 +681,20 @@ def init():
     detailed_panelLegends = dict()
     detailed_linkCids = dict()
     detailed_linkBusy = False
+    detailed_loadInfo = dict()
+    detailed_folder = None
+    trapconc_sourceUpdated = None
+    trapconc_lastResults = list()
+    trapconc_lastSource = None
+    trapconc_lastGeom = None
+    trapconc_recalcJob = None
+    trapconc_fsFolders = list()
+    trapconc_fsResult = None
+    trapconc_samples = list()
+    trapconc_swLock = False
+    trapconc_spJob = None
+    trapconc_spCsv = dict()
+    trapconc_spLoadingBusy = False
 
 #-----------------------Global Functions--------------------------------#
 def log_to_textbox(message):

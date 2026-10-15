@@ -1,0 +1,3420 @@
+# -*- coding: utf-8 -*-
+"""
+DLTS Multiwindow Analysis  -  Interactive GUI App  v3.1
+========================================================
+Load your DLTS data (auto-detects format), tune every parameter
+with sliders / spinboxes, and get the Arrhenius result instantly.
+
+Supported data formats
+----------------------
+  • ZI MFIA (legacy)  – subfolders named ``{n?}{T}C{_NNN?}`` each
+    containing ``dev32271_imps_0_sample_param1_avg_00000.csv``
+    (columns: chunk ; timestamp ; value).
+  • JSON flat (new)   – flat directory with ``runParams.txt`` and
+    one JSON ``.txt`` file per temperature, named ``{n|p}{T}p{N}.txt``
+    (keys: tickStampImps, ImpedanceIm, …).  Capacitance is derived
+    from the parallel-model susceptance B:  C = B / (2π·f_osc).
+    Some exports (e.g. the 10 kHz irradiated-sample runs) store the
+    capacitance in farads directly; the loader detects this from the
+    magnitude of the values and shows the choice in the status line.
+
+Changes in v3.1
+---------------
+  - Removed the "Overlay τ(T) curve on map" and "Show Rate-Window Analysis map"
+    options (and their plotting code).
+  - All plot areas use a journal-style look: white background, inward ticks
+    on all four sides with minor ticks, no grid, frameless legends, clean
+    sans-serif text, thin lines and white-edged markers.
+
+Changes in v3.0  (improved Nₜ calculation, from the Run2 and fill-pulse scan analysis)
+-------------------------------------------------------------------------
+  - Nₜ = 2·N_D(T)·a/g with a = S_pk/f(r),  f(r) = r^(-1/(r-1))·(1-1/r),
+    r = (t2-t_FE)/(t1-t_FE)   (f = 0.947 for 5/490 ms).  Optional large-signal
+    term Nₜ = N_D·a·(2-a)/g (lower by a/2; off by default).
+  - W_F is now MEASURED in every temperature record: the capacitance at the end
+    of the fill pulse (C_fill, read from the AuxInput1 bias monitor) gives
+    W_F = ε·A/C_fill.  Fall-backs: C-V ratio, V_bi model.  Selectable in the
+    "W_F source" box.  W_F/W_R is temperature dependent (0.73 at 25 °C, 0.56 at
+    300-390 °C for 0 V fill), which the constant C-V ratio could not follow.
+  - N_D(T) = N_D·(C₀(T)/C₀(T_ref))²  (default on, T_ref = 25 °C): the baseline
+    capacitance rises ~40 % from 25 to 400 °C, so the net doping seen at the
+    EH6/7 temperature is higher than the room-temperature C-V value.
+  - λ uses E_C-E_F = kT·ln(N_c/N_D) with N_c = 1.7e19·(T/300)^1.5.
+  - New tool "Fill-pulse scan analysis...": loads ZI csv fill-bias / fill-width
+    scans, computes ΔC = C(5 ms) - C(490 ms), the apparent Nₜ vs. bias and the
+    saturation vs. width, and recommends the fill bias (below the forward-current
+    cliff) and width.
+  - Quality notes: geometry source, ±30 % model uncertainty, N_D(T) scaling,
+    fill width < 3 ms, fill bias >= 2.4 V, large-signal check.
+  - Eₜ and σₙ are unchanged.
+
+Changes in v2.9  (from the Run1 / Run2 irradiated analysis and C-V / C-f data)
+-------------------------------------------------------------------------
+  - Fill-pulse geometry correction for Nₜ.  With a fill bias that does not
+    reach the neutral region (e.g. 0 V on a PiN diode, W_F ≈ 4.9 µm) only
+    traps between W_F-λ and W_R-λ are filled, so the full-fill formula
+    Nₜ = 2·N_D·ΔC/C₀/f(r) underestimates Nₜ by 1/g with
+        g = [(W_R-λ)² - (W_F-λ)²] / W_R²      (uniform Nₜ, N_D)
+    W_R(T) = ε·A/C₀(T) from the measured baseline capacitance,
+    W_F = (W_F/W_R)·W_R with the ratio measured from C-V (default 0.762 =
+    4.86/6.38 µm), or optionally the uniform-doping model
+    W_F = W_R·sqrt((V_bi + V_fill)/(V_bi + V_rev)) (V_bi is NOT the effective
+    value fitted to a non-uniform profile; it should be ≲ 3 V in 4H-SiC),
+    λ = sqrt(2ε(E_F-E_t)/(q N_D)) evaluated at each peak temperature.
+    New inputs (Physical Constants): fill / reverse bias, V_bi (default 2.9 V), device diameter, ε_r.  Both the corrected and the
+    uncorrected Nₜ are reported.  Eₜ and σₙ are not affected.
+  - N_D should be the average of the C-V profile between W_F and W_R.
+
+Changes in v2.8  (from the 133208 pristine / 124600 irradiated analysis)
+-----------------------------------------------------------------------
+  - Loader auto-detects susceptance (C = B/ω) vs direct capacitance (F)
+    and reports f_osc, scaling mode and any second fill pulse
+  - Defaults: peak finder = Pseudo-Voigt, t_FE = 1.307 ms
+  - Report: peak-finder sensitivity table (all six finders) and a
+    "Checks" block (overlap/R², peak at range edge, Nt/N_D > 10 %,
+    second fill pulse, lock-in settling at low f_osc, N_D caveat)
+  - Peak Deconvolution: range-stability scan (±20 °C on both limits);
+    peaks whose Eₜ moves by more than 0.05 eV are flagged as not robust
+  - Deconvolution defaults 0 to 140 °C, 16 windows
+
+Changes in v2.7
+---------------
+  - Auto-detect data format (JSON flat vs ZI MFIA)
+  - New loader for JSON flat format (folder 133208 style)
+  - C₀ estimated from pre-pulse equilibrium points (first 2) ∩ tail
+
+Changes in v1.3
+---------------
+  - Draggable legends AND annotation now actually work (deferred
+    until after the matplotlib canvas is connected to tkinter)
+  - "Edit Labels & Legends" dialog: edit any axis title, x/y label,
+    legend entry text, and font sizes without re-running the analysis
+  - Minor gridlines removed from Arrhenius and Spectra panels for
+    a cleaner, more readable look
+
+Changes in v1.2
+---------------
+  - Arrhenius results box is now a draggable annotation
+  - Arrhenius panel legend + annotation are both draggable
+  - New Rate-Window Analysis map panel: Nₜ/N_D (log color) in
+    (1/kT, T²/eₙ) space with Arrhenius line and Z₁/₂ marker
+  - Layout adapts to which combination of panels is enabled
+
+Changes in v1.1
+---------------
+  - Draggable legends on all plot panels (drag with mouse)
+  - ΔC/C unicode label throughout (was dC/C)
+  - New 2D Transient Map panel: filled contour of ΔC/C₀(t,T)
+    with optional τ(T) = 1/eₙ(T) overlay from Arrhenius fit
+  - GridSpec-based layout adapts to which panels are enabled
+
+Requirements
+------------
+  pip install numpy pandas scipy matplotlib
+
+Run
+---
+  python DLTS_App.py
+"""
+
+import os
+import re
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
+
+import numpy as np
+import pandas as pd
+from scipy.stats import linregress
+from scipy.interpolate import griddata, UnivariateSpline
+from scipy.optimize import curve_fit
+from scipy.special import wofz
+from scipy.signal import find_peaks
+
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+import matplotlib.ticker as mticker
+import matplotlib.gridspec as mgridspec
+from matplotlib.colors import Normalize, LogNorm
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
+# ── Palette ───────────────────────────────────────────────────────────────────
+C0       = '#2a78d6'
+C1       = '#eb6834'
+SURFACE  = '#ffffff'
+TEXT_PRI = '#0b0b0b'
+TEXT_SEC = '#52514e'
+TEXT_MUT = '#898781'
+GRIDLINE = '#e1e0d9'
+BASELINE = '#c3c2b7'
+
+def _apply_plot_style():
+    """Journal-style look for every plot area: white, inward ticks on all four
+    sides with minor ticks, no grid, frameless legends, thin lines."""
+    from matplotlib import font_manager as fm
+    have = {f.name for f in fm.fontManager.ttflist}
+    fam = [f for f in ('Arial', 'Helvetica', 'Liberation Sans') if f in have]
+    matplotlib.rcParams.update({
+        'font.family': fam[:1] + ['DejaVu Sans'],   # DejaVu = glyph fallback
+        'axes.linewidth': 0.8, 'axes.unicode_minus': True,
+        'axes.edgecolor': 'black', 'axes.labelcolor': 'black',
+        'axes.grid': False, 'axes.facecolor': 'white',
+        'figure.facecolor': 'white', 'savefig.facecolor': 'white',
+        'xtick.direction': 'in', 'ytick.direction': 'in',
+        'xtick.top': True, 'ytick.right': True,
+        'xtick.minor.visible': True, 'ytick.minor.visible': True,
+        'xtick.major.width': 0.8, 'ytick.major.width': 0.8,
+        'xtick.minor.width': 0.6, 'ytick.minor.width': 0.6,
+        'xtick.color': 'black', 'ytick.color': 'black',
+        'legend.frameon': False, 'lines.linewidth': 1.2,
+        'pdf.fonttype': 42, 'svg.fonttype': 'none'})
+
+
+_apply_plot_style()
+
+# ── ZI grid defaults ──────────────────────────────────────────────────────────
+DEFAULT_GRID_OFF   = -0.001
+DEFAULT_GRID_DT    = 1.86667e-5
+DEFAULT_CHUNK_SIZE = 32768
+DEFAULT_RB_MS      = 500.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Analysis helpers  (pure functions, no GUI dependency)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Matches both old-style  "25C_001"  and new-style  "85C" / "n10C"
+_folder_re = re.compile(r'^(n?)(\d+)C(?:_\d+)?$', re.IGNORECASE)
+
+def folder_to_tempC(name):
+    m = _folder_re.match(name)
+    if not m:
+        return None
+    tc = float(m.group(2))
+    return -tc if m.group(1).lower() == 'n' else tc
+
+# Matches JSON-flat filenames:  "n100p0.txt" → -100°C,  "p150p0.txt" → +150°C
+_file_re = re.compile(r'^(n|p)(\d+)p\d+\.txt$', re.IGNORECASE)
+
+def file_to_tempC(name):
+    m = _file_re.match(name)
+    if not m:
+        return None
+    tc = float(m.group(2))
+    return -tc if m.group(1).lower() == 'n' else tc
+
+def detect_format(base):
+    """Return 'json_flat' or 'zi_mfia' based on directory contents."""
+    try:
+        entries = os.listdir(base)
+    except OSError:
+        return 'zi_mfia'
+    if 'runParams.txt' in entries:
+        return 'json_flat'
+    if any(_file_re.match(e) for e in entries):
+        return 'json_flat'
+    return 'zi_mfia'
+
+def cap_at(t_ms, cap, tv_ms):
+    return float(np.interp(tv_ms, t_ms, cap))
+
+
+def detect_second_pulse(data, temps, lo_frac=0.5, hi_frac=0.97):
+    """Time (ms) of a second fill pulse inside the record, or None.
+
+    The MFIA records (~612 ms) contain a second fill pulse at ~501 ms.
+    Rate windows must end before it, so t2 = 500 ms is unusable."""
+    if not temps:
+        return None
+    hits = []
+    for k in np.linspace(0, len(temps) - 1, 5).astype(int):
+        t, c, _ = data[temps[k]]
+        rb = t[-1]
+        m = (t >= lo_frac * rb) & (t <= hi_frac * rb)
+        if m.sum() < 20:
+            continue
+        g = np.abs(np.gradient(c[m], t[m]))
+        i = int(np.argmax(g))
+        if g[i] > 20.0 * (np.median(g) + 1e-12):
+            hits.append(float(t[m][i]))
+    return float(np.median(hits)) if len(hits) >= 3 else None
+
+def find_peak_parabolic(T_arr, S_arr, hw=2):
+    ip = int(np.argmax(S_arr))
+    lo, hi = max(ip - hw, 0), min(ip + hw + 1, len(T_arr))
+    T_c, S_c = T_arr[lo:hi], S_arr[lo:hi]
+    if len(T_c) < 3:
+        return float(T_arr[ip])
+    cf = np.polyfit(T_c, S_c, 2)
+    if cf[0] < 0:
+        Tp = -cf[1] / (2.0 * cf[0])
+        lo_b = T_arr[max(ip - hw, 0)]
+        hi_b = T_arr[min(ip + hw, len(T_arr) - 1)]
+        if lo_b <= Tp <= hi_b:
+            return float(Tp)
+    return float(T_arr[ip])
+
+
+PEAK_METHODS = ['Parabolic (3-5 pts)', 'Smoothing spline', 'Gaussian',
+                'Lorentzian', 'Pseudo-Voigt', 'Voigt']
+# Default finder: a fitted profile. The parabola on the top 3-5 points
+# overestimates Eₜ and σₙ for broad / asymmetric DLTS peaks.
+PEAK_METHOD_DEFAULT = 'Pseudo-Voigt'
+DEFAULT_T_FE_MS = 1.307          # fill-end offset estimated from the MFIA records
+
+# Filled by load_data(): f_osc, cap_mode, second_pulse (ms) for the last folder
+LOAD_INFO = {}
+
+def _g(x, w):                     # height-normalised Gaussian, FWHM w
+    return np.exp(-4.0 * np.log(2.0) * (x / w) ** 2)
+
+def _l(x, w):                     # height-normalised Lorentzian, FWHM w
+    return 1.0 / (1.0 + 4.0 * (x / w) ** 2)
+
+def _model_gauss(T, A, T0, w, c):  return A * _g(T - T0, w) + c
+def _model_lorentz(T, A, T0, w, c): return A * _l(T - T0, w) + c
+def _model_pvoigt(T, A, T0, w, eta, c):
+    x = T - T0
+    return A * (eta * _l(x, w) + (1.0 - eta) * _g(x, w)) + c
+def _model_voigt(T, A, T0, sg, gm, c):
+    z = ((T - T0) + 1j * gm) / (sg * np.sqrt(2.0))
+    z0 = (1j * gm) / (sg * np.sqrt(2.0))
+    return A * np.real(wofz(z)) / np.real(wofz(z0)) + c
+
+def fit_curve(T_arr, S_arr, method, npts=400):
+    """Apply the selected smoothing / curve fit to one DLTS spectrum.
+
+    Returns (Tf, Sf, Tp, Sp, ok): the fitted curve on a fine grid, the peak
+    temperature and peak height from that curve, and ok=False when the fit
+    failed (the 3-5 point parabola is then used instead)."""
+    T = np.asarray(T_arr, float); S = np.asarray(S_arr, float)
+    ip = int(np.argmax(S))
+    span = float(T.max() - T.min()) if len(T) else 0.0
+
+    def parabola():
+        hw = 2
+        lo, hi = max(ip - hw, 0), min(ip + hw + 1, len(T))
+        Tp = find_peak_parabolic(T, S)
+        if hi - lo >= 3:
+            cf = np.polyfit(T[lo:hi], S[lo:hi], 2)
+            Tf = np.linspace(T[lo], T[hi - 1], npts)
+            Sf = np.polyval(cf, Tf)
+            return Tf, Sf, Tp, float(np.polyval(cf, Tp))
+        return T[ip:ip + 1], S[ip:ip + 1], Tp, float(S[ip])
+
+    if method in (None, '') or method.startswith('Parabolic'):
+        return (*parabola(), True)
+    if len(T) < 6 or span <= 0:
+        return (*parabola(), False)
+
+    A0 = max(float(np.ptp(S)), 1e-12); c0 = float(S.min()); w0 = span / 5.0
+    Tf = np.linspace(T.min(), T.max(), npts)
+    try:
+        if method == 'Smoothing spline':
+            sm = len(T) * (0.03 * np.ptp(S)) ** 2
+            spl = UnivariateSpline(T, S, k=3, s=sm)
+            Sf = spl(Tf); j = int(np.argmax(Sf))
+            if j in (0, npts - 1):
+                return (*parabola(), False)
+            return Tf, Sf, float(Tf[j]), float(Sf[j]), True
+        if method == 'Gaussian':
+            f, p0 = _model_gauss, [A0, T[ip], w0, c0]
+            lo = [0, T.min(), span / 200, -np.inf]; hi = [np.inf, T.max(), span * 2, np.inf]
+        elif method == 'Lorentzian':
+            f, p0 = _model_lorentz, [A0, T[ip], w0, c0]
+            lo = [0, T.min(), span / 200, -np.inf]; hi = [np.inf, T.max(), span * 2, np.inf]
+        elif method == 'Pseudo-Voigt':
+            f, p0 = _model_pvoigt, [A0, T[ip], w0, 0.5, c0]
+            lo = [0, T.min(), span / 200, 0.0, -np.inf]; hi = [np.inf, T.max(), span * 2, 1.0, np.inf]
+        elif method == 'Voigt':
+            f, p0 = _model_voigt, [A0, T[ip], w0 / 2.4, w0 / 2.4, c0]
+            lo = [0, T.min(), span / 400, span / 400, -np.inf]; hi = [np.inf, T.max(), span, span, np.inf]
+        else:
+            return (*parabola(), False)
+        popt, _ = curve_fit(f, T, S, p0=p0, bounds=(lo, hi), maxfev=20000)
+        T0 = float(popt[1])
+        if not (T.min() < T0 < T.max()):
+            return (*parabola(), False)
+        return Tf, f(Tf, *popt), T0, float(f(T0, *popt)), True
+    except Exception:
+        return (*parabola(), False)
+
+def find_peak_fit(T_arr, S_arr, method):
+    _, _, Tp, Sp, ok = fit_curve(T_arr, S_arr, method, npts=50)
+    return Tp, Sp, ok
+
+def locate_peak(T_arr, S_arr, method):
+    """Peak temperature and height by the selected method (with fallback)."""
+    _, _, Tp, Sp, ok = fit_curve(T_arr, S_arr, method, npts=50)
+    return Tp, Sp, ok
+
+
+TRAP_PRESETS = {'Z1/Z2':   (250.0, 430.0),     # peak-search range in K
+                'EH6/EH7': (540.0, 730.0)}
+TRAP_CHOICES = ['Z1/Z2', 'EH6/EH7', 'Custom range']
+
+# ── Fill-pulse geometry (set by the GUI before each analysis) ───────────────
+GEOM = dict(on=False, v_fill=0.0, v_rev=-5.0, vbi=2.9, diam_mm=6.5, eps_r=9.7,
+            wf_mode='cfill', wf_ratio=0.762, T=None, C0=None, CF=None, ls=False,
+            nd_scale=True, t_ref=25.0)
+# Measured fill-pulse information of the last loaded folder, keyed by T (°C):
+# dict(ok, v_rev, v_fill, c_fill (pF), width_ms, t_end (ms), in_record, note)
+FILL_INFO = {}
+_Q = 1.602176634e-19
+_KB_EV = 8.617333e-5
+WF_MODES = {'Measured C_fill': 'cfill', 'C-V ratio': 'ratio', 'V_bi model': 'vbi'}
+
+
+def fill_record_info(t_ms, cap_pF, aux_V, tail=(50.0, 450.0), t_first_max=30.0, relaxed=False):
+    """Fill-pulse information from ONE temperature record (v3.0).
+
+    Needs the fill-bias monitor channel (AuxInput1) that the MFIA exports next
+    to the capacitance.  Returns dict with
+      v_rev, v_fill     bias before / during the first pulse (V)
+      t_end, width_ms   end of the plateau and pulse width (width is NaN when
+                        the record already starts inside the pulse)
+      c_fill            capacitance at the END of the pulse (pF): median of
+                        the last ~0.1 ms of the plateau (the lock-in has
+                        settled, the edge samples are excluded)
+      ok                True when c_fill is usable (pulse >= 0.3 ms)
+    C_fill gives the depletion width during the fill pulse,
+    W_F = eps*A/C_fill, measured at the DLTS temperature itself.
+    """
+    out = dict(ok=False, v_rev=np.nan, v_fill=np.nan, c_fill=np.nan, width_ms=np.nan,
+               t_end=np.nan, in_record=False, note='')
+    try:
+        t = np.asarray(t_ms, float); c = np.asarray(cap_pF, float); v = np.asarray(aux_V, float)
+    except Exception:
+        return out
+    n = min(len(t), len(c), len(v))
+    if n < 50:
+        return out
+    t, c, v = t[:n], c[:n], v[:n]
+    m_tail = (t >= tail[0]) & (t <= min(tail[1], 0.8 * t[-1]))
+    if m_tail.sum() < 10:
+        return out
+    v_rev = float(np.median(v[m_tail])); out['v_rev'] = v_rev
+    dev = np.abs(v - v_rev)
+    early = np.where((dev > 0.5) & (t < t_first_max))[0]
+    if len(early) < (1 if relaxed else 3):
+        out['note'] = 'no fill pulse found in the bias monitor'
+        return out
+    v_fill = float(np.median(v[early])); out['v_fill'] = v_fill
+    plat = early[np.abs(v[early] - v_fill) < 0.1]
+    if len(plat) < (1 if relaxed else 2):
+        out['note'] = 'fill plateau not resolved'
+        return out
+    dt = float(np.median(np.diff(t[:200])))
+    t_end = float(t[plat[-1]] + 0.5 * dt); out['t_end'] = t_end
+    started = dev[0] < 0.9 * abs(v_fill - v_rev)       # pulse starts inside the record
+    out['in_record'] = bool(started)
+    if started:
+        out['width_ms'] = float(t_end - t[early[0]])
+    win = (t >= t_end - 0.15) & (t <= t_end - 0.04)
+    if win.sum() >= 2:
+        cf = float(np.median(c[win]))
+        w = out['width_ms']
+        if np.isfinite(cf) and cf > 0 and (not np.isfinite(w) or w >= 0.3):
+            out['c_fill'] = cf; out['ok'] = True
+        elif np.isfinite(w) and w < 0.3:
+            out['note'] = f'pulse {w:.2f} ms: lock-in not settled, C_fill not used'
+    return out
+
+
+def fill_summary():
+    """Median fill bias / reverse bias / width of the loaded folder (or None)."""
+    ok = [d for d in FILL_INFO.values() if d and np.isfinite(d.get('v_fill', np.nan))]
+    if not ok:
+        return None
+    ws = [d['width_ms'] for d in ok if np.isfinite(d.get('width_ms', np.nan))]
+    return dict(v_fill=float(np.median([d['v_fill'] for d in ok])),
+                v_rev=float(np.median([d['v_rev'] for d in ok])),
+                v_fill_sd=float(np.std([d['v_fill'] for d in ok])),
+                width_ms=float(np.median(ws)) if ws else None,
+                n=len(ok), n_cfill=sum(1 for d in ok if d.get('ok')))
+
+
+def geom_arrays(data, temps):
+    """T (°C, sorted), baseline capacitance C₀(T) and fill-pulse capacitance
+    C_fill(T) in pF (NaN where the record has no usable fill information)."""
+    ts = sorted(temps)
+    T = np.array(ts, float)
+    C0 = np.array([float(data[t][2]) for t in ts])
+    CF = np.array([float(FILL_INFO[t]['c_fill']) if (t in FILL_INFO and FILL_INFO[t].get('ok'))
+                   else np.nan for t in ts])
+    # plausibility: with the fill bias applied the capacitance must exceed C0 (W_F < W_R) and
+    # stay within a physical factor.  Under forward bias (fill > 0 V) the parallel-model C is
+    # dominated by conductance at high T (C_fill collapses) -> reject those records.
+    with np.errstate(invalid='ignore'):
+        ratio = C0 / CF
+        CF = np.where((ratio >= 0.20) & (ratio <= 0.90), CF, np.nan)
+    return T, C0, CF
+
+
+def fill_geometry_factor(T_K, Et, nd):
+    """Fraction g of the depletion region that is filled and then emits.
+
+        g = [ (W_R-λ)² - (W_F-λ)² ] / W_R²          (uniform Nₜ and N_D)
+
+      W_R = ε·A / C₀(T)            baseline (reverse-bias) capacitance at T
+      W_F = ε·A / C_fill(T)        measured at the end of the fill pulse at T
+            ('C-V ratio' / 'V_bi model' are fall-backs when the record has no
+            usable fill information)
+      λ   = sqrt(2 ε (E_F - Eₜ) / (q N_D)),  E_C - E_F = kT ln(N_c/N_D)
+
+    Returns (g, info); g = 1 and info = None when the correction is off.
+    """
+    G = GEOM
+    if not G['on'] or G['T'] is None or len(G['T']) < 2:
+        return 1.0, None
+    eps = G['eps_r'] * 8.8541878e-14                          # F/cm
+    area = np.pi * (G['diam_mm'] / 20.0) ** 2                 # cm²
+    Tc = T_K - 273.15
+    c0 = float(np.interp(Tc, G['T'], G['C0'])) * 1e-12
+    W_R = eps * area / c0
+    mode = G.get('wf_mode', 'cfill'); src = None; cf = np.nan; W_F = None
+    if mode == 'cfill':
+        CF = G.get('CF')
+        if CF is not None:
+            ok = np.isfinite(CF)
+            if ok.any() and np.min(np.abs(G['T'][ok] - Tc)) <= 25.0:
+                cf = float(np.interp(Tc, G['T'][ok], CF[ok]))
+                if np.isfinite(cf) and cf > 0:
+                    W_F = eps * area / (cf * 1e-12)
+                    src = 'measured C_fill'
+                    if W_F > W_R:                              # no narrower than W_R
+                        W_F = W_R; src = 'measured C_fill (W_F capped at W_R)'
+        if W_F is None:
+            mode = 'ratio'; src = 'C-V ratio (no usable C_fill at this T)'
+            cf = np.nan
+    if mode == 'ratio':
+        W_F = W_R * G['wf_ratio']; src = src or 'C-V ratio'
+    elif mode == 'vbi':
+        vf, vr = -G['v_fill'], -G['v_rev']
+        W_F = W_R * np.sqrt(max(G['vbi'] + vf, 1e-6) / (G['vbi'] + vr)); src = 'V_bi model'
+    Nc = 1.7e19 * (T_K / 300.0) ** 1.5
+    dEc = _KB_EV * T_K * np.log(max(Nc / nd, 1.0))            # E_C - E_F (eV)
+    dE = max(float(Et) - dEc, 0.0)
+    lam = np.sqrt(2.0 * eps * dE / (_Q * nd))
+    wr = W_R - lam
+    wf = max(W_F - lam, 0.0)
+    g_raw = (wr ** 2 - wf ** 2) / W_R ** 2 if wr > 0 else 0.0
+    g = max(g_raw, 0.05)
+    return float(g), dict(W_R=W_R * 1e4, W_F=W_F * 1e4, lam=lam * 1e4, g=g,
+                          C0=c0 * 1e12, C_fill=cf, src=src, clipped=bool(g_raw < 0.05))
+
+
+def nd_at(T_K, nd):
+    """Net doping seen at the DLTS temperature.
+
+    N_D from C-V is a room-temperature value.  At the DLTS temperature the space
+    charge of the depleted layer changes (deep levels emit, e.g. C₀ of the
+    irradiated sample rises by 40 % from 25 to 400 °C).  In the depletion
+    approximation C₀ = εA/W_R with W_R² ∝ 1/N_eff, so
+        N_D(T) = N_D · (C₀(T) / C₀(T_ref))²        (V_bi and ε change by < 3 %)
+    which is the same as repeating the C-V at the DLTS temperature.  T_ref is the
+    temperature of the C-V measurement (default 25 °C).  Off -> N_D constant.
+    """
+    G = GEOM
+    if not G.get('nd_scale') or G.get('T') is None or len(G['T']) < 2:
+        return float(nd)
+    c_t = float(np.interp(T_K - 273.15, G['T'], G['C0']))
+    c_r = float(np.interp(G.get('t_ref', 25.0), G['T'], G['C0']))
+    return float(nd) * (c_t / c_r) ** 2
+
+
+def _nt_core(a, nd, g):
+    """Nₜ from the amplitude a = S_pk / f(r) = ΔC∞ / C₀.
+
+    small signal : Nₜ = 2 N_D a / g
+    large signal : Nₜ = N_D a (2 - a) / g      (exact for a uniform profile,
+                    from C ∝ sqrt(N_eff);  lowers Nₜ by a/2, e.g. 5 % at a = 0.1)
+    """
+    if GEOM.get('ls') and a < 1.0:
+        return nd * a * (2.0 - a) / g
+    return 2.0 * nd * a / g
+
+
+def trap_concentration(res, nd, t_fe_ms=0.0):
+    """Trap concentration of the trap whose peaks were found in `res`
+    (i.e. only the temperature range selected for the peak search).
+
+        N_t = 2 * N_D * (S_pk / f(r)) / g,   f(r) = r**(-1/(r-1)) * (1 - 1/r)
+
+    S_pk is the picked peak height of each rate window; r is that window's
+    own t2/t1 ratio, measured from fill end when t_FE > 0 (r = tau2/tau1).
+    g is the fill-geometry factor evaluated at that window's peak temperature
+    (see fill_geometry_factor).
+    """
+    if res is None or not res.get('detail'):
+        return None
+    nt, fr, sp, ga, gi, nds = [], [], [], [], [], []
+    for t1, t2, en, tp, s_pk in res['detail']:
+        if t_fe_ms > 0:
+            r = (t2 - t_fe_ms) / (t1 - t_fe_ms)
+        else:
+            r = t2 / t1
+        f = r ** (-1.0 / (r - 1.0)) * (1.0 - 1.0 / r)
+        nd_t = nd_at(tp + 273.15, nd); nds.append(nd_t)
+        g, info = fill_geometry_factor(tp + 273.15, res.get('Et', 0.0), nd_t)
+        nt.append(_nt_core(s_pk / f, nd_t, g)); fr.append(f); sp.append(s_pk)
+        ga.append(g); gi.append(info)
+    nt = np.array(nt); ga = np.array(ga); nds = np.array(nds)
+    raw = 2.0 * nds * np.array(sp) / np.array(fr)
+    mid = int(np.argsort(ga)[len(ga) // 2])
+    return dict(nt_arr=nt, f_arr=np.array(fr), sp_arr=np.array(sp),
+                g_arr=ga, geom=gi[mid], Nt_raw=float(np.median(raw)),
+                Nt=float(np.median(nt)),
+                Nt_sd=float(np.std(nt, ddof=1)) if len(nt) > 1 else 0.0,
+                frac=float(np.median(nt)) / float(np.median(nds)), nd=nd,
+                nd_med=float(np.median(nds)), nd_arr=nds,
+                a_med=float(np.median(np.array(sp) / np.array(fr))))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Fill-pulse scan analysis (bias and width scans at one temperature)  v3.0
+# ─────────────────────────────────────────────────────────────────────────────
+_FS_NAME = re.compile(r'^FP([0-9p.]+)ms(-?[0-9p.]+)V', re.I)
+
+
+def _fs_num(s):
+    return float(s.replace('p', '.'))
+
+
+def load_fill_scan(folder):
+    """Load a ZI-MFIA csv fill-pulse scan folder (one chunk per setting, the
+    setting is coded in the history name, e.g. FP1ms1p5V = 1 ms at +1.5 V).
+    Returns a list of dict(name, width_set, v_set, t_ms, C_pF, V, reps)."""
+    import glob
+    base = lambda f: os.path.basename(f).lower()
+    cap_f = [f for f in glob.glob(os.path.join(folder, '*param1_avg*.csv')) if 'header' not in base(f)]
+    hdr_f = glob.glob(os.path.join(folder, '*param1_avg_header*.csv'))
+    aux_f = [f for f in glob.glob(os.path.join(folder, '*auxin0_avg*.csv')) if 'header' not in base(f)]
+    if not cap_f or not hdr_f or not aux_f:
+        raise ValueError('Folder needs the *param1_avg*, *param1_avg_header* and '
+                         '*auxin0_avg* csv files of the MFIA export.')
+    hdr = pd.read_csv(hdr_f[0], sep=';')
+    cap = pd.read_csv(cap_f[0], sep=';'); aux = pd.read_csv(aux_f[0], sep=';')
+    out = []
+    for _, row in hdr.iterrows():
+        nm = str(row.get('history_name', ''))
+        m = _FS_NAME.match(nm)
+        if not m:
+            continue
+        ch = int(row['chunk_number'])
+        c = cap[cap['chunk'] == ch]; a = aux[aux['chunk'] == ch]
+        n = min(len(c), len(a))
+        if n < 100:
+            continue
+        ts = c['timestamp'].values[:n].astype(float)
+        dt = float(row.get('grid_col_delta', 0) or 0) * 1e3
+        t_ms = np.arange(n) * dt if dt > 0 else (ts - ts[0]) / 60e6 * 1e3
+        out.append(dict(name=nm.split('_')[0], width_set=_fs_num(m.group(1)),
+                        v_set=_fs_num(m.group(2)), t_ms=t_ms,
+                        C_pF=c['value'].values[:n].astype(float) * 1e12,
+                        V=a['value'].values[:n].astype(float),
+                        reps=int(row.get('grid_repetitions', 0) or 0)))
+    if not out:
+        raise ValueError('No FP{width}ms{bias}V history names found in the header file.')
+    return out
+
+
+def analyze_fill_scan(rows, nd, diam_mm=6.5, eps_r=9.7, Et=0.63, T_C=25.0,
+                      t1=5.0, t2=490.0, t_fe_off=0.307, large_signal=False):
+    """ΔC = C(t2) - C(t1) (times AFTER the fill pulse) for every setting, then
+    the geometry factor from the measured C_fill, the apparent Nₜ, and the
+    recommended fill bias / width.
+
+    Recommendation rules (derived from the 25 °C Run2 scans):
+      bias : lowest bias whose ΔC is >= 97 % of the maximum and at least
+             0.5 V below the first bias where ΔC drops below 97 % of the
+             maximum again (hole injection / series-resistance cliff)
+      width: shortest pulse whose ΔC is >= 99 % of the longest pulse.
+    """
+    eps = eps_r * 8.8541878e-14; area = np.pi * (diam_mm / 20.0) ** 2
+    Tk = T_C + 273.15
+    Nc = 1.7e19 * (Tk / 300.0) ** 1.5
+    dEc = _KB_EV * Tk * np.log(max(Nc / nd, 1.0))
+    lam = np.sqrt(2.0 * eps * max(Et - dEc, 0.0) / (_Q * nd))
+    r = (t2 - t_fe_off) / (t1 - t_fe_off)
+    f = r ** (-1.0 / (r - 1.0)) * (1.0 - 1.0 / r)
+    recs = []
+    for d in rows:
+        ri = fill_record_info(d['t_ms'], d['C_pF'], d['V'])
+        if not np.isfinite(ri['t_end']):               # very short pulses (< 3 samples)
+            ri = fill_record_info(d['t_ms'], d['C_pF'], d['V'], relaxed=True)
+        if not np.isfinite(ri['t_end']):
+            continue
+        t, C, V = d['t_ms'], d['C_pF'], d['V']
+        dev = np.abs(V - ri['v_rev'])
+        late = np.where((dev > 0.5) & (t > 100.0))[0]
+        t_sec = float(t[late[0]]) if len(late) else float(t[-1])
+        te = ri['t_end']
+        def seg(a, b):
+            b = min(b, t_sec - 3.0)
+            m = (t >= a) & (t <= b)
+            return (float(C[m].mean()), float(C[m].std(ddof=1) / np.sqrt(m.sum()))) if m.sum() >= 3 else (np.nan, np.nan)
+        c1, e1 = seg(te + t1 - 0.5, te + t1 + 0.5)
+        c2, e2 = seg(te + t2 - 6.0, te + t2 + 2.0)
+        mr = (t >= te + 300.0) & (t <= t_sec - 5.0)
+        Cr = float(np.median(C[mr])) if mr.sum() > 10 else np.nan
+        dC = c2 - c1
+        S = dC / Cr
+        WR = eps * area / (Cr * 1e-12) * 1e4
+        WF = eps * area / (ri['c_fill'] * 1e-12) * 1e4 if ri['ok'] else np.nan
+        recs.append(dict(name=d['name'], width=d['width_set'], bias=d['v_set'], dC=dC,
+                         err=float(np.hypot(e1, e2)), S=S, Cr=Cr, WR=WR, WF=WF,
+                         C_fill=ri['c_fill'], v_meas=ri['v_fill'], flag=''))
+    if not recs:
+        raise ValueError('No usable records.')
+    df = pd.DataFrame(recs)
+    nb, nw = df.bias.nunique(), df.width.nunique()
+    out = dict(lam=lam * 1e4, f=f, r=r, Tc=T_C, t1=t1, t2=t2, Et=Et, nd=nd, bias=None, width=None,
+               rec_bias=None, rec_width=None, notes=[])
+    if nb > 1:
+        w0 = df.width.mode().iloc[0]
+        b = df[df.width == w0].sort_values('bias').reset_index(drop=True)
+        ref = b[np.isclose(b.bias, 0.0)]
+        b['rel0'] = b.dC / ref.dC.iloc[0] if len(ref) else np.nan
+        ipk = int(b.dC.idxmax()); dpk = float(b.dC.max())
+        cliff = b[(b.index > ipk) & (b.dC < 0.97 * dpk)]
+        v_cliff = float(cliff.bias.iloc[0]) if len(cliff) else np.nan
+        if len(cliff):
+            b.loc[b.index >= cliff.index[0], 'flag'] = 'past cliff'
+        g = []
+        for _, x in b.iterrows():
+            if x.flag or not np.isfinite(x.WF):
+                g.append(np.nan); continue
+            wr = x.WR - lam * 1e4; wf = max(x.WF - lam * 1e4, 0.0)
+            g.append(max((wr ** 2 - wf ** 2) / x.WR ** 2, 0.05))
+        b['g'] = g
+        a = b.S / f
+        b['Nt'] = (nd * a * (2 - a) if large_signal else 2 * nd * a) / b.g
+        good = b[b.dC >= 0.97 * dpk]
+        if np.isfinite(v_cliff):
+            good = good[good.bias <= v_cliff - 0.5]
+        out['rec_bias'] = float(good.bias.min()) if len(good) else float(b.bias.iloc[ipk])
+        out['bias'] = b; out['width_scan_w'] = float(w0); out['v_cliff'] = v_cliff
+    if nw > 1:
+        v0 = df.bias.mode().iloc[0]
+        w = df[np.isclose(df.bias, v0)].sort_values('width').reset_index(drop=True)
+        w['frac'] = w.dC / w.dC.iloc[-1]
+        ok = w[w.frac >= 0.99]
+        out['rec_width'] = float(ok.width.iloc[0]) if len(ok) else float(w.width.iloc[-1])
+        out['width'] = w; out['bias_of_width_scan'] = float(v0)
+    b = out['bias']
+    if b is not None and b.Nt.notna().sum() >= 3:
+        nt = b.Nt.dropna()
+        out['notes'].append(
+            f'Apparent Nₜ varies from {nt.min():.2e} to {nt.max():.2e} cm⁻³ across the fill biases '
+            f'({100 * (nt.max() - nt.min()) / nt.mean():.0f} % of the mean): for a uniform Nₜ and a correct g it '
+            f'would be flat.  Quote Nₜ with about ±30 % model uncertainty and use the same fill '
+            f'bias when comparing samples.')
+    return out
+
+
+def fill_scan_report(res):
+    L = [f'Fill-pulse scan analysis  (ΔC = C({res["t1"]:g} ms) - C({res["t2"]:g} ms) after the pulse, '
+         f'T = {res["Tc"]:g} °C)', '',
+         f'  N_D = {res["nd"]:.2e} cm⁻³, E_t = {res["Et"]:.3f} eV -> λ = {res["lam"]:.2f} µm,  '
+         f'f(r) = {res["f"]:.4f} (r = {res["r"]:.1f})', '']
+    b, w = res['bias'], res['width']
+    if b is not None:
+        L += [f'  Fill-BIAS scan  ({res["width_scan_w"]:g} ms pulse)',
+              f'  {"V_fill":>7} {"ΔC(pF)":>8} {"±(pF)":>6} {"rel.0V":>7} {"W_F(µm)":>8} {"g":>6} {"Nt(cm-3)":>10}  flag']
+        for _, x in b.iterrows():
+            L.append(f'  {x.bias:7.2f} {x.dC:8.2f} {x.err:6.2f} {x.rel0:7.3f} {x.WF:8.2f} '
+                     f'{(x.g if np.isfinite(x.g) else np.nan):6.3f} {x.Nt:10.2e}  {x.flag}')
+        L += ['', f'  Recommended fill bias: {res["rec_bias"]:+.2f} V'
+                  + (f'   (cliff at {res["v_cliff"]:+.1f} V)' if np.isfinite(res.get("v_cliff", np.nan)) else ''), '']
+    if w is not None:
+        L += [f'  Fill-WIDTH scan  ({res["bias_of_width_scan"]:g} V fill)',
+              f'  {"width(ms)":>9} {"ΔC(pF)":>8} {"±(pF)":>6} {"% of longest":>13}']
+        for _, x in w.iterrows():
+            L.append(f'  {x.width:9.3f} {x.dC:8.2f} {x.err:6.2f} {100 * x.frac:13.1f}')
+        L += ['', f'  Recommended fill width: {res["rec_width"]:g} ms  (>= 99 % of the longest pulse)', '']
+    L += ['  ' + n for n in res['notes']]
+    L += ['', '  Check at the EH₆/₇ temperature as well: the forward-current cliff moves to a lower bias at high T.']
+    return '\n'.join(L)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Multi-peak deconvolution
+# ─────────────────────────────────────────────────────────────────────────────
+DEC_SHAPES = ['Gaussian', 'Lorentzian', 'Pseudo-Voigt', 'Voigt']
+
+def _peak_k(shape):
+    return 3 if shape in ('Gaussian', 'Lorentzian') else 4
+
+def _prof(shape, x, w, extra):
+    """Height-normalised line shape at offset x from the centre."""
+    if shape == 'Gaussian':
+        return _g(x, w)
+    if shape == 'Lorentzian':
+        return _l(x, w)
+    if shape == 'Pseudo-Voigt':
+        eta = extra[0]
+        return eta * _l(x, w) + (1.0 - eta) * _g(x, w)
+    sg, gm = w, extra[0]                         # Voigt
+    z  = (x + 1j * gm) / (sg * np.sqrt(2.0))
+    z0 = (1j * gm) / (sg * np.sqrt(2.0))
+    return np.real(wofz(z)) / np.real(wofz(z0))
+
+def _multi_model(T, shape, *p):
+    k = _peak_k(shape); n = (len(p) - 1) // k
+    y = np.full(np.shape(T), p[-1], float)
+    for i in range(n):
+        q = p[i * k:(i + 1) * k]
+        y = y + q[0] * _prof(shape, T - q[1], q[2], q[3:])
+    return y
+
+def auto_centers(T, S, n):
+    """Starting peak positions: prominent maxima, then shoulders."""
+    S = np.asarray(S, float)
+    Ss = np.convolve(np.pad(S, 1, mode='edge'), np.ones(3) / 3, mode='valid')
+    span = T.max() - T.min(); ptp = max(np.ptp(S), 1e-12)
+    pk, pr = find_peaks(Ss, prominence=0.03 * ptp)
+    order = np.argsort(pr['prominences'])[::-1][:n]
+    cs = [float(T[pk[i]]) for i in order]
+    ia = float(T[int(np.argmax(S))]); step = 0.10 * span; j = 1
+    while len(cs) < n:
+        for sgn in (-1, 1):
+            c = float(np.clip(ia + sgn * j * step, T.min(), T.max()))
+            if all(abs(c - x) > 0.04 * span for x in cs) and len(cs) < n:
+                cs.append(c)
+        j += 1
+        if j > 12:
+            break
+    return sorted(cs)[:n]
+
+def fit_multi_peak(T, S, shape, centers, widths=None, amps=None, max_shift=None):
+    """Fit n peaks + constant baseline to one DLTS spectrum."""
+    T = np.asarray(T, float); S = np.asarray(S, float)
+    span = float(T.max() - T.min()); n = len(centers); k = _peak_k(shape)
+    ms = max_shift if max_shift else 0.25 * span
+    ptp = max(float(np.ptp(S)), 1e-12)
+    p0, lo, hi = [], [], []
+    for i, c in enumerate(centers):
+        c = float(np.clip(c, T.min(), T.max()))
+        A0 = amps[i] if amps else max(float(np.interp(c, T, S)) - float(S.min()), 0.1 * ptp)
+        w0 = widths[i] if widths else span / (3.0 * n)
+        A0 = float(np.clip(A0, 1e-9, 4.9 * ptp))
+        t_lo, t_hi = max(T.min(), c - ms), min(T.max(), c + ms)
+        if shape == 'Voigt':
+            p0 += [A0, c, w0 / 2.4, w0 / 2.4]
+            lo  += [0, t_lo, span / 400, span / 400]; hi += [5 * ptp, t_hi, span, span]
+        elif shape == 'Pseudo-Voigt':
+            p0 += [A0, c, w0, 0.5]
+            lo  += [0, t_lo, span / 150, 0.0]; hi += [5 * ptp, t_hi, span, 1.0]
+        else:
+            p0 += [A0, c, w0]
+            lo  += [0, t_lo, span / 150]; hi += [5 * ptp, t_hi, span]
+    p0.append(float(S.min())); lo.append(float(S.min()) - ptp); hi.append(float(S.max()))
+    try:
+        popt, _ = curve_fit(lambda x, *p: _multi_model(x, shape, *p), T, S,
+                            p0=p0, bounds=(lo, hi), maxfev=40000)
+    except Exception:
+        return dict(ok=False)
+    peaks = [dict(A=float(popt[i * k]), T0=float(popt[i * k + 1]),
+                  w=float(popt[i * k + 2]), extra=[float(v) for v in popt[i * k + 3:(i + 1) * k]])
+             for i in range(n)]
+    peaks.sort(key=lambda d: d['T0'])
+    p = []
+    for d in peaks:
+        p += [d['A'], d['T0'], d['w']] + d['extra']
+    p.append(float(popt[-1]))
+    res = S - _multi_model(T, shape, *p)
+    return dict(ok=True, peaks=peaks, c0=float(popt[-1]), p=p, shape=shape,
+                rms=float(np.sqrt(np.mean(res ** 2))))
+
+def fit_components(fit, Tf):
+    """Total curve and the individual peak curves (baseline excluded)."""
+    shape = fit['shape']; comps = []
+    for d in fit['peaks']:
+        comps.append(d['A'] * _prof(shape, Tf - d['T0'], d['w'], d['extra']))
+    total = fit['c0'] + (np.sum(comps, axis=0) if comps else 0.0)
+    return total, comps
+
+def deconvolve_windows(data, temps, windows, lo_c, hi_c, shape, n,
+                       centers0=None, t_fe=0.0, start_idx=0):
+    """Deconvolute the DLTS spectrum of every rate window into n peaks.
+
+    Tracking starts at window `start_idx` (the one the user is looking at /
+    picked centres on) and proceeds outward in both directions, each fit
+    starting from its neighbour's result so peaks keep their identity."""
+    T = np.array(temps, float); m = (T >= lo_c) & (T <= hi_c); Tm = T[m]
+    k = _peak_k(shape)
+    if m.sum() < n * k + 3:
+        raise ValueError(f'Only {int(m.sum())} temperatures in {lo_c:.0f} to {hi_c:.0f} °C: '
+                         f'too few to fit {n} {shape} peak(s). Widen the range or use fewer peaks.')
+    spectra = []
+    for (t1, t2) in windows:
+        S = np.array([(cap_at(data[x][0], data[x][1], t2) - cap_at(data[x][0], data[x][1], t1))
+                      / data[x][2] for x in temps])[m]
+        sgn = -1.0 if np.max(S) < abs(np.min(S)) else 1.0
+        spectra.append(sgn * S)
+    nw = len(windows); fits = [None] * nw
+    start_idx = int(np.clip(start_idx, 0, nw - 1))
+    span = float(Tm.max() - Tm.min())
+
+    def run(i, prev):
+        if prev is None:
+            cs = list(centers0) if centers0 else auto_centers(Tm, spectra[i], n)
+            return fit_multi_peak(Tm, spectra[i], shape, cs)
+        pk = prev['peaks']
+        return fit_multi_peak(Tm, spectra[i], shape, [d['T0'] for d in pk],
+                              widths=[d['w'] for d in pk], amps=[d['A'] for d in pk],
+                              max_shift=0.12 * span)
+    fits[start_idx] = run(start_idx, None)
+    for order in (range(start_idx + 1, nw), range(start_idx - 1, -1, -1)):
+        prev = fits[start_idx] if fits[start_idx]['ok'] else None
+        for i in order:
+            fits[i] = run(i, prev)
+            if fits[i]['ok']:
+                prev = fits[i]
+    ens = []
+    for (t1, t2) in windows:
+        if t_fe > 0 and t1 > t_fe:
+            a, b = t1 - t_fe, t2 - t_fe
+            ens.append(np.log(b / a) / ((b - a) * 1e-3))
+        else:
+            ens.append(np.log(t2 / t1) / ((t2 - t1) * 1e-3))
+    return dict(T=Tm, spectra=spectra, fits=fits, windows=list(windows),
+                en=np.array(ens), shape=shape, n=n, lo=lo_c, hi=hi_c, t_fe=t_fe)
+
+def component_arrhenius(dec, ci, gamma, nd, min_frac=0.05):
+    """Arrhenius analysis (Eₜ, σₙ, Nₜ) of ONE deconvoluted peak ci."""
+    rows = []
+    for i, f in enumerate(dec['fits']):
+        if f and f['ok'] and ci < len(f['peaks']):
+            d = f['peaks'][ci]
+            rows.append((i, dec['en'][i], d['T0'] + 273.15, d['A']))
+    if not rows:
+        return None
+    Amax = max(r[3] for r in rows)
+    rows = [r for r in rows if r[3] >= min_frac * Amax]
+    if len(rows) < 3:
+        return None
+    idx = np.array([r[0] for r in rows]); en = np.array([r[1] for r in rows])
+    Tp = np.array([r[2] for r in rows]); A = np.array([r[3] for r in rows])
+    x = 1000.0 / Tp; y = np.log(en / Tp ** 2)
+    sl, ic, r, _, se = linregress(x, y)
+    kB = 8.617333e-5
+    nt, ga, fr, nds = [], [], [], []
+    Et_fit = -sl * 1000.0 * kB
+    for k, i in enumerate(idx):
+        t1, t2 = dec['windows'][i]; fe = dec['t_fe']
+        rr = ((t2 - fe) / (t1 - fe)) if (fe > 0 and t1 > fe) else t2 / t1
+        nd_t = nd_at(Tp[k], nd); nds.append(nd_t)
+        g, _ = fill_geometry_factor(Tp[k], Et_fit, nd_t)
+        f_r = rr ** (-1.0 / (rr - 1.0)) * (1.0 - 1.0 / rr)
+        nt.append(_nt_core(A[k] / f_r, nd_t, g))
+        fr.append(f_r)
+        ga.append(g)
+    nt = np.array(nt); ga = np.array(ga)
+    return dict(idx=idx, en=en, Tp=Tp, A=A, x=x, y=y, slope=sl, intercept=ic,
+                Et=-sl * 1000.0 * kB, Et_se=se * 1000.0 * kB,
+                sigma=float(np.exp(ic) / gamma), R2=r ** 2, N=len(idx),
+                nt_arr=nt, Nt=float(np.median(nt)), g_arr=ga,
+                Nt_raw=float(np.median(2.0 * np.array(nds) * A / np.array(fr))), nd_med=float(np.median(nds)),
+                Nt_sd=float(np.std(nt, ddof=1)) if len(nt) > 1 else 0.0)
+
+def dec_stability(data, temps, windows, lo_c, hi_c, shape, n, centers0, t_fe,
+                  start_idx, gamma, nd, delta=20.0):
+    """Re-run the deconvolution with the T limits moved by ±delta °C and
+    return, per peak, (min Eₜ, max Eₜ, number of usable ranges).
+
+    A limit is only moved inward if every fitted peak centre of the base fit
+    stays at least 15 °C inside it (otherwise the test would simply cut the
+    peak off).  Ranges whose Arrhenius line is poor (R² < 0.95) are ignored.
+    A spread > 0.05 eV means the split is not robust (merged peaks are model
+    dependent)."""
+    try:
+        base = deconvolve_windows(data, temps, windows, lo_c, hi_c, shape, n,
+                                  centers0, t_fe, start_idx)
+    except Exception:
+        return [None] * n
+    t0s = [p['T0'] for f in base['fits'] if f and f['ok'] for p in f['peaks']]
+    t_min, t_max = (min(t0s), max(t0s)) if t0s else (lo_c, hi_c)
+    los = [lo_c - delta, lo_c] + ([lo_c + delta] if lo_c + delta <= t_min - 15 else [])
+    his = [hi_c + delta, hi_c] + ([hi_c - delta] if hi_c - delta >= t_max + 15 else [])
+    ets = [[] for _ in range(n)]
+    for lo in los:
+        for hi in his:
+            try:
+                d = (base if (lo, hi) == (lo_c, hi_c) else
+                     deconvolve_windows(data, temps, windows, lo, hi, shape, n,
+                                        centers0, t_fe, start_idx))
+            except Exception:
+                continue
+            for ci in range(n):
+                r = component_arrhenius(d, ci, gamma, nd)
+                if r is not None and r['R2'] >= 0.95 and r['N'] >= 8:
+                    ets[ci].append(r['Et'])
+    return [(min(e), max(e), len(e)) if e else None for e in ets]
+
+
+def load_data_json(base, cinf_lo, cinf_hi):
+    """Load JSON-flat DLTS data (new format: one .txt file per temperature).
+
+    Each file is a JSON object with keys:
+      ``tickStampImps``  – time stamps in seconds (uniform grid)
+      ``ImpedanceIm``    – parallel-model susceptance B in siemens
+
+    Capacitance (pF) = B / (2π·f_osc) × 10¹²      (susceptance export)
+    Capacitance (pF) = value × 10¹²                (direct-capacitance export,
+    auto-detected: B/ω would be < 1 pF while the raw value in farads is
+    5 pF - 100 nF)
+
+    C₀ is estimated as the minimum of:
+      • mean of the first 2 points (pre-pulse equilibrium)
+      • mean of the tail window defined by cinf_lo … cinf_hi fractions
+        of the total transient duration
+    This is robust at all temperatures: at low T the tail may not have
+    fully decayed, so the pre-pulse points give a better C₀.  (v3.0: the
+    pre-pulse points are used only if the bias monitor shows the reverse bias
+    there, and the tail window is cut before the 2nd fill pulse.)
+    """
+    import json as _json
+
+    # --- Read oscillation frequency from runParams.txt (default 100 kHz) ---
+    f_osc = 100_000.0
+    rp_path = os.path.join(base, 'runParams.txt')
+    if os.path.isfile(rp_path):
+        try:
+            with open(rp_path, encoding='utf-8') as fh:
+                rp = _json.load(fh)
+            f_osc = float(rp.get('Oscillation Frequency', f_osc))
+        except Exception:
+            pass
+    omega = 2.0 * np.pi * f_osc
+
+    cap_mode = None            # decided from the first valid file
+    data = {}
+    FILL_INFO.clear()
+    for entry in sorted(os.listdir(base)):
+        tc = file_to_tempC(entry)
+        if tc is None:
+            continue
+        fp = os.path.join(base, entry)
+        try:
+            with open(fp, encoding='utf-8') as fh:
+                d = _json.load(fh)
+        except Exception:
+            continue
+        if 'tickStampImps' not in d or 'ImpedanceIm' not in d:
+            continue
+        t_ms = np.array(d['tickStampImps'], dtype=float) * 1e3   # s → ms
+        im   = np.array(d['ImpedanceIm'],   dtype=float)
+        if cap_mode is None:
+            med = float(np.nanmedian(np.abs(im)))
+            c_susc, c_dir = med / omega * 1e12, med * 1e12
+            cap_mode = ('direct' if (c_susc < 1.0 and 5.0 <= c_dir <= 1e5)
+                        else 'susceptance')
+        cap = im * 1e12 if cap_mode == 'direct' else im / omega * 1e12   # pF
+        if len(t_ms) < 10:
+            continue
+        # C₀ from pre-pulse points (first 2, before fill pulse rises)
+        c0_pre = float(np.mean(cap[:2]))
+        # C₀ from equilibrium tail
+        rb = t_ms[-1]
+        lo_t, hi_t = cinf_lo * rb, cinf_hi * rb
+        # the tail window must end before the 2nd fill pulse (otherwise the pulse samples
+        # corrupt C0, e.g. Run3: pulse at 1001 ms in a 1223 ms record)
+        if 'AuxInput1' in d:
+            try:
+                v_ = np.array(d['AuxInput1'], dtype=float)
+                vr_ = float(np.median(v_[(t_ms > 0.5 * rb)]))
+                late = np.where((t_ms > 20.0) & (np.abs(v_ - vr_) > 0.5))[0]
+                if late.size:
+                    t_p2 = float(t_ms[late[0]])
+                    if hi_t > t_p2 - 5.0:
+                        hi_t = t_p2 - 5.0
+                        lo_t = min(lo_t, 0.8 * hi_t)
+            except Exception:
+                pass
+        mi = (t_ms >= lo_t) & (t_ms <= hi_t)
+        c0_tail = float(np.nanmean(cap[mi])) if mi.any() else float(np.nanmean(cap[-100:]))
+        # Take the lower value — equilibrium C₀ is always below the pulse peak
+        pre_ok = True                      # first points must be at the reverse bias, not inside the fill pulse
+        if 'AuxInput1' in d:
+            try:
+                v_ = np.array(d['AuxInput1'], dtype=float)
+                pre_ok = abs(float(np.mean(v_[:2])) - float(np.median(v_[t_ms > 0.5 * rb]))) < 0.5
+            except Exception:
+                pass
+        c_inf = min(c0_pre, c0_tail) if pre_ok else c0_tail
+        if c_inf <= 0:
+            c_inf = max(c0_pre, c0_tail)
+        data[tc] = (t_ms, cap, c_inf)
+        if 'AuxInput1' in d:                  # fill-bias monitor -> measured C_fill, V_fill, V_rev
+            try:
+                FILL_INFO[tc] = fill_record_info(t_ms, cap, np.array(d['AuxInput1'], dtype=float))
+            except Exception:
+                pass
+    temps_sorted = sorted(data.keys())
+    LOAD_INFO.update(f_osc=f_osc, cap_mode=cap_mode or 'susceptance',
+                     second_pulse=detect_second_pulse(data, temps_sorted),
+                     fill=fill_summary())
+    return data, temps_sorted
+
+
+def load_data(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo, cinf_hi):
+    """Load all temperature data.  Auto-detects format.
+
+    Returns (data_dict, temps_list) where
+      data_dict[T_°C] = (t_ms_array, cap_pF_array, c_inf_pF)
+    """
+    fmt = detect_format(base)
+    LOAD_INFO.clear(); FILL_INFO.clear()
+    if fmt == 'json_flat':
+        return load_data_json(base, cinf_lo, cinf_hi)
+    LOAD_INFO.update(f_osc=None, cap_mode='ZI file (C in F)', second_pulse=None)
+
+    # ── ZI MFIA legacy format: subfolders + CSV files ────────────────────────
+    t_ax = grid_off + np.arange(chunk_size) * grid_dt
+    data = {}
+    for entry in sorted(os.listdir(base)):
+        sub = os.path.join(base, entry)
+        if not os.path.isdir(sub):
+            continue
+        tc = folder_to_tempC(entry)
+        if tc is None:
+            continue
+        fp = os.path.join(sub, 'dev32271_imps_0_sample_param1_avg_00000.csv')
+        if not os.path.isfile(fp):
+            continue
+        df = pd.read_csv(fp, sep=';', header=0,
+                         names=['chunk', 'timestamp', 'value'])
+        rows = df[df['chunk'] == 0]
+        if len(rows) < 100:
+            continue
+        cap  = rows['value'].values * 1e12
+        t_ms = t_ax[:len(rows)] * 1e3
+        mi   = (t_ms >= cinf_lo * rb_ms) & (t_ms <= cinf_hi * rb_ms)
+        c_inf = float(np.nanmean(cap[mi])) if mi.any() else float(np.nanmean(cap))
+        data[tc] = (t_ms, cap, c_inf)
+    return data, sorted(data.keys())
+
+def peak_method_table(windows, temps, data, gamma, t_lo, t_hi, t_fe_ms, nd):
+    """Eₜ, σₙ, R², Nₜ for the same windows / T range with every peak finder."""
+    rows = []
+    for m in PEAK_METHODS:
+        try:
+            r = compute_arrhenius(windows, temps, data, gamma, t_lo, t_hi,
+                                  t_fe_ms=t_fe_ms, peak_method=m)
+        except Exception:
+            r = None
+        if r is None:
+            rows.append((m, None))
+            continue
+        tc = trap_concentration(r, nd, t_fe_ms)
+        rows.append((m, dict(Et=r['Et'], se=r['Et_se'], sigma=r['sigma'],
+                             R2=r['R2'], Nt=tc['Nt'], n_fb=r['n_fallback'])))
+    return rows
+
+
+def quality_notes(res, windows, t_lo, t_hi, t_fe_ms, tc, method_rows, info):
+    """Plain-language checks distilled from the 133208 / 124600 analysis."""
+    notes = []
+    d = {m: v for m, v in method_rows if v}
+    sym = [d[m]['Et'] for m in ('Gaussian', 'Pseudo-Voigt', 'Voigt') if m in d]
+    par = d.get(PEAK_METHODS[0])
+    if len(sym) >= 2 and (max(sym) - min(sym)) > 0.03:
+        notes.append(f'Gaussian / Pseudo-Voigt / Voigt disagree by '
+                     f'{max(sym) - min(sym):.3f} eV: the result depends on the line '
+                     f'shape, quote it as a range.')
+    if par and sym and abs(par['Et'] - float(np.median(sym))) > 0.05:
+        notes.append(f'Parabolic peak top gives Eₜ = {par["Et"]:.3f} eV vs '
+                     f'{float(np.median(sym)):.3f} eV from the fitted profiles. '
+                     f'DLTS peaks are asymmetric; the parabola biases Eₜ and σₙ. '
+                     f'Use a fitted profile.')
+    if res['R2'] < 0.995:
+        notes.append(f'Arrhenius R² = {res["R2"]:.4f} (< 0.995): the peak is probably '
+                     f'overlapped by a neighbouring trap. Use the Peak Deconvolution '
+                     f'tab and check its range stability before quoting Eₜ.')
+    tps = [x[3] + 273.15 for x in res['detail']]
+    n_edge = sum(1 for tp in tps if tp < t_lo + 3 or tp > t_hi - 3)
+    if n_edge:
+        notes.append(f'{n_edge} window peak(s) lie within 3 K of the search-range limit: '
+                     f'widen the range or the peak is cut off.')
+    if tc and tc.get('frac', 0) > 0.10:
+        notes.append(f'Nₜ/N_D = {tc["frac"] * 100:.0f} % (> 10 %): the small-signal formula '
+                     f'Nₜ = 2·N_D·ΔC/C₀/f(r) is no longer accurate.')
+    sp = info.get('second_pulse')
+    if sp:
+        late = [w for w in windows if w[1] > sp - 3.0]
+        if late:
+            notes.append(f'A second fill pulse sits at ~{sp:.0f} ms in the record; '
+                         f'{len(late)} window(s) have t₂ within 3 ms of it or beyond. '
+                         f'Keep t₂ below ~{sp - 5:.0f} ms.')
+    fo = info.get('f_osc')
+    if fo and fo <= 20e3 and windows:
+        t1m = min(w[0] for w in windows) - t_fe_ms
+        if t1m < 4.0:
+            notes.append(f'Test frequency is {fo / 1e3:g} kHz: the lock-in needs about '
+                         f'3 ms to settle after the fill pulse (τ₁ = {t1m:.1f} ms here). '
+                         f'Use t₁ ≥ 5 ms.')
+    en = [x[2] for x in res['detail']]
+    if en and max(en) / min(en) < 30:
+        notes.append(f'Emission rates span only {max(en) / min(en):.0f}x: Eₜ and σₙ are '
+                     f'strongly correlated and the ± shown is statistical only.')
+    fs = info.get('fill')
+    if GEOM['on']:
+        gi = tc.get('geom') if tc else None
+        if gi:
+            cf_txt = (f', C_fill = {gi["C_fill"]:.0f} pF' if np.isfinite(gi.get('C_fill', np.nan)) else '')
+            notes.append(f'Nₜ includes the fill-pulse geometry correction (fill {GEOM["v_fill"]:g} V, '
+                         f'reverse {GEOM["v_rev"]:g} V): W_R ≈ {gi["W_R"]:.2f} µm (C₀ = {gi["C0"]:.0f} pF), '
+                         f'W_F ≈ {gi["W_F"]:.2f} µm [{gi["src"]}{cf_txt}], λ ≈ {gi["lam"]:.2f} µm, '
+                         f'g = {gi["g"]:.2f}. It assumes uniform Nₜ and N_D; without it Nₜ would be '
+                         f'{tc["Nt_raw"]:.2e} cm⁻³.')
+            if gi.get('clipped'):
+                notes.append('g hit its lower limit (0.05): W_R-λ is very small, Nₜ is not reliable here.')
+        notes.append('Model uncertainty of the corrected Nₜ is about ±30 %: in the 25 °C fill-bias scan the '
+                     'apparent Nₜ changed by ±25 % between -2 V and +2 V fill bias (Nₜ not uniform in depth '
+                     'and/or λ underestimated). Quote Nₜ with the fill bias and width used.')
+    elif GEOM['v_fill'] != GEOM['v_rev']:
+        notes.append('Fill-pulse geometry correction is OFF: if the fill bias does not reach '
+                     'the neutral region (e.g. 0 V on a PiN diode) Nₜ is underestimated by '
+                     'about 1/g ≈ 2-4.')
+    if GEOM.get('nd_scale') and tc and tc.get('nd_med'):
+        ratio = tc['nd_med'] / tc['nd']
+        if abs(ratio - 1.0) > 0.05:
+            notes.append(f'N_D scaled with C₀(T)² to the peak temperature: N_D(T) = {tc["nd_med"]:.2e} cm⁻³ '
+                         f'(×{ratio:.2f} of the C-V value at {GEOM.get("t_ref", 25.0):g} °C). '
+                         f'Nₜ is proportional to it; untick "N_D(T)" to use the constant C-V value.')
+    if fs:
+        if fs.get('width_ms') is not None and fs['width_ms'] < 3.0:
+            notes.append(f'Fill pulse is {fs["width_ms"]:.2g} ms: the slow-capture part of the transient is not '
+                         f'saturated (1 ms gives ~97.6 % and 3 ms ~99 % of the 10 ms amplitude at 25 °C). '
+                         f'Use >= 3 ms for the Nₜ measurement.')
+        if fs['v_fill'] >= 2.4:
+            notes.append(f'Fill bias +{fs["v_fill"]:.1f} V: in the 25 °C scan the amplitude fell above +2 V '
+                         f'(hole injection / series resistance). Use <= +1.5 V and check at the EH₆/₇ temperature.')
+    if GEOM['on'] and tc and tc.get('a_med', 0) > 0.05:
+        notes.append(f'Large-signal check: amplitude a = ΔC/C₀ = {tc["a_med"]:.2f}; the exact uniform-profile relation '
+                     f'Nₜ = N_D·a·(2-a)/g is {tc["a_med"] / 2 * 100:.0f} % lower than the small-signal '
+                     f'2·N_D·a/g ' + ('(applied).' if GEOM.get('ls') else '(not applied; tick "Large-signal term").'))
+    notes.append('N_D should be the average of the C-V profile between W_F and W_R at the '
+                 'DLTS biases for each sample. When Nₜ/N_D is not small, or the layer is '
+                 'nearly fully depleted, Nₜ from ΔC/C₀ is order-of-magnitude only.')
+    return notes
+
+
+def compute_arrhenius(windows, temps, data, gamma, t_peak_lo, t_peak_hi,
+                      peak_min_frac=0.05, t_fe_ms=0.0,
+                      peak_method='Parabolic (3-5 pts)'):
+    """Compute Arrhenius parameters from DLTS rate windows.
+
+    t_fe_ms  – fill-end time in ms (time at which the decay starts).
+               When > 0, eₙ is computed from times relative to fill-end
+               so that the rate-window formula is physically correct:
+               eₙ = ln(τ₂/τ₁) / (τ₂ − τ₁) where τᵢ = tᵢ − t_fe_ms.
+               Leave at 0 to use raw absolute times (legacy behaviour).
+
+    peak_min_frac – a window is accepted only when its peak amplitude
+                    (within the masked temperature range) exceeds this
+                    fraction of the in-range maximum.  Using the in-range
+                    max instead of the global max prevents the stronger
+                    Z1/Z2 trap from suppressing EH6/EH7 windows.
+    """
+    T_K  = np.array([tc + 273.15 for tc in temps])
+    mask = (T_K >= t_peak_lo) & (T_K <= t_peak_hi)
+    T_m  = T_K[mask]
+
+    en_list, Tp_list, Sp_list = [], [], []
+    rows_detail = []
+    n_fallback = 0
+
+    # Collect all in-range signals first so the filter threshold uses the
+    # in-range max, not the global max (avoids suppressing the weaker trap).
+    all_Sm = []
+    for (t1, t2) in windows:
+        S_full = np.array([
+            (cap_at(data[tc][0], data[tc][1], t2)
+             - cap_at(data[tc][0], data[tc][1], t1))
+            / data[tc][2]
+            for tc in temps
+        ])
+        S_m = S_full[mask]
+        if len(S_m) and np.max(S_m) < abs(np.min(S_m)):
+            S_m = -S_m
+        all_Sm.append(S_m)
+    range_max = max((np.max(np.abs(sm)) for sm in all_Sm if len(sm)), default=1.0)
+
+    for idx, (t1, t2) in enumerate(windows):
+        S_m = all_Sm[idx]
+        if len(S_m) == 0:
+            continue
+        peak_val = np.max(S_m)
+        if peak_val <= peak_min_frac * range_max:
+            continue
+        Tp, peak_val, fit_ok = locate_peak(T_m, S_m, peak_method)
+        n_fallback += 0 if fit_ok else 1
+        # Emission rate: use fill-end-relative times when t_fe_ms is set
+        if t_fe_ms > 0.0:
+            tau1 = t1 - t_fe_ms
+            tau2 = t2 - t_fe_ms
+            if tau1 <= 0 or tau2 <= tau1:
+                continue        # window falls inside/before fill pulse
+            en = np.log(tau2 / tau1) / ((tau2 - tau1) * 1e-3)
+        else:
+            en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+        en_list.append(en); Tp_list.append(Tp); Sp_list.append(peak_val)
+        rows_detail.append((t1, t2, en, Tp - 273.15, peak_val))
+
+    en_arr = np.array(en_list)
+    Tp_arr = np.array(Tp_list)
+    Sp_arr = np.array(Sp_list)
+    if len(en_arr) < 2:
+        return None
+
+    x = 1000.0 / Tp_arr
+    y = np.log(en_arr / Tp_arr**2)
+    sl, ic, r, _, se = linregress(x, y)
+    kB    = 8.617333e-5
+    Et    = -sl * 1000.0 * kB
+    Et_se = se  * 1000.0 * kB
+    sigma = np.exp(ic) / gamma
+    R2    = r**2
+    return dict(en_arr=en_arr, Tp_arr=Tp_arr, Sp_arr=Sp_arr,
+                Et=Et, Et_se=Et_se, sigma=sigma, R2=R2, N=len(en_arr),
+                slope=sl, intercept=ic, x=x, y=y, detail=rows_detail,
+                peak_method=peak_method, n_fallback=n_fallback)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Main application class
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DLTSApp:
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title('DLTS Multiwindow Analysis')
+        self.root.configure(bg='#f0f0f0')
+        try:
+            self.root.state('zoomed')
+        except Exception:
+            self.root.attributes('-zoomed', True)
+
+        self.data  = {}
+        self.temps = []
+        self._fig  = None
+        self._canvas = None
+
+        self._build_ui()
+
+    # ── UI construction ───────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        # Top banner
+        banner = tk.Frame(self.root, bg='#1a3a5c', height=48)
+        banner.pack(side='top', fill='x')
+        banner.pack_propagate(False)
+        tk.Label(banner,
+                 text='DLTS Multiwindow Analysis',
+                 bg='#1a3a5c', fg='white',
+                 font=('Segoe UI', 16, 'bold')).pack(side='left', padx=18, pady=8)
+        tk.Label(banner,
+                 text='SiC PiN Diode Deep Level Transient Spectroscopy',
+                 bg='#1a3a5c', fg='#8fb4d8',
+                 font=('Segoe UI', 10)).pack(side='left', padx=4)
+
+        # Main paned window
+        paned = ttk.PanedWindow(self.root, orient='horizontal')
+        paned.pack(fill='both', expand=True)
+
+        # Left control panel (scrollable)
+        ctrl_outer = tk.Frame(paned, bg='#f0f0f0', width=380)
+        ctrl_outer.pack_propagate(False)
+        paned.add(ctrl_outer, weight=0)
+
+        canvas_ctrl = tk.Canvas(ctrl_outer, bg='#f0f0f0',
+                                highlightthickness=0, width=300)
+        vscroll = ttk.Scrollbar(ctrl_outer, orient='vertical',
+                                command=canvas_ctrl.yview)
+        canvas_ctrl.configure(yscrollcommand=vscroll.set)
+        vscroll.pack(side='right', fill='y')
+        canvas_ctrl.pack(side='left', fill='both', expand=True)
+
+        self.ctrl = tk.Frame(canvas_ctrl, bg='#f0f0f0', padx=10, pady=8)
+        ctrl_win = canvas_ctrl.create_window((0, 0), window=self.ctrl, anchor='nw')
+        self.ctrl.bind('<Configure>',
+            lambda e: canvas_ctrl.configure(
+                scrollregion=canvas_ctrl.bbox('all')))
+
+        def _fit_ctrl(e):
+            # the controls always take the width of the panel (no clipped buttons /
+            # entries) and the long status text wraps instead of widening the panel
+            canvas_ctrl.itemconfigure(ctrl_win, width=e.width)
+            try:
+                self.load_info.configure(wraplength=max(120, e.width - 40))
+            except Exception:
+                pass
+        canvas_ctrl.bind('<Configure>', _fit_ctrl)
+        self._paned, self._ctrl_outer, self._canvas_ctrl = paned, ctrl_outer, canvas_ctrl
+        canvas_ctrl.bind('<Enter>',
+            lambda e: canvas_ctrl.bind_all('<MouseWheel>',
+                lambda ev: canvas_ctrl.yview_scroll(
+                    int(-1 * (ev.delta / 120)), 'units')))
+        canvas_ctrl.bind('<Leave>',
+            lambda e: canvas_ctrl.unbind_all('<MouseWheel>'))
+
+        # Right panel (figure top, results log bottom)
+        right_nb = ttk.Notebook(paned)
+        paned.add(right_nb, weight=1)
+
+        def _init_sash():
+            # initial left-panel width: fits the controls at the current screen
+            # scaling (DPI), but never more than 42 % of the window
+            try:
+                self.root.update_idletasks()
+                sc = max(1.0, self.root.winfo_fpixels('1i') / 96.0)
+                want = int(430 * sc)
+                total = max(self.root.winfo_width(), self.root.winfo_screenwidth() // 2)
+                w = max(300, min(want, int(0.42 * total)))
+                paned.sashpos(0, w)
+            except Exception:
+                pass
+        self.root.after(150, _init_sash)
+        right = tk.Frame(right_nb, bg='#f0f0f0')
+        right_nb.add(right, text='  Multiwindow Analysis  ')
+        self.sample_tab = tk.Frame(right_nb, bg='#f0f0f0')
+        right_nb.add(self.sample_tab, text='  Sample Comparison  ')
+        self.samples = []
+        self._sample_job = None
+        self._build_sample_tab()
+        self.dec_tab = tk.Frame(right_nb, bg='#f0f0f0')
+        right_nb.add(self.dec_tab, text='  Peak Deconvolution  ')
+        self.dec = None
+        self._build_dec_tab()
+
+        self.fig_frame = tk.Frame(right, bg='#f0f0f0')
+        self.fig_frame.pack(fill='both', expand=True)
+
+        results_frame = tk.LabelFrame(right, text=' Results ',
+                                      bg='#f0f0f0', fg=TEXT_SEC,
+                                      font=('Consolas', 9))
+        results_frame.pack(fill='x', padx=6, pady=(0, 4))
+        self.results_text = tk.scrolledtext.ScrolledText(
+            results_frame, height=8, font=('Consolas', 9),
+            bg='#1e1e2e', fg='#cdd6f4', insertbackground='white',
+            state='disabled', wrap='word', relief='flat')
+        self.results_text.pack(fill='both', expand=True, padx=4, pady=4)
+
+        # Status bar
+        self.status_var = tk.StringVar(value='Load a data folder to begin.')
+        tk.Label(self.root, textvariable=self.status_var,
+                 anchor='w', bg='#1a3a5c', fg='#8fb4d8',
+                 font=('Segoe UI', 9), padx=10).pack(side='bottom', fill='x')
+
+        self._build_controls()
+
+    def _section(self, title):
+        tk.Frame(self.ctrl, bg='#1a3a5c', height=2).pack(fill='x', pady=(10, 2))
+        tk.Label(self.ctrl, text=title.upper(),
+                 bg='#f0f0f0', fg='#1a3a5c',
+                 font=('Segoe UI', 8, 'bold')).pack(anchor='w')
+
+    def _row(self, label, widget_factory, **kw):
+        f = tk.Frame(self.ctrl, bg='#f0f0f0')
+        f.pack(fill='x', pady=2)
+        tk.Label(f, text=label, bg='#f0f0f0', fg=TEXT_PRI,
+                 font=('Segoe UI', 9), width=18, anchor='w').pack(side='left')
+        w = widget_factory(f, **kw)
+        w.pack(side='left', fill='x', expand=True)
+        return w
+
+    def _spinbox(self, parent, var, lo, hi, inc, fmt='%g', width=9):
+        return ttk.Spinbox(parent, textvariable=var,
+                           from_=lo, to=hi, increment=inc,
+                           format=fmt, width=width, font=('Segoe UI', 9))
+
+    def _build_controls(self):
+        p = self.ctrl
+
+        # ── Data ──────────────────────────────────────────────────────────────
+        self._section('Data')
+        self.base_var = tk.StringVar(value='')
+        tk.Label(p, text='Data folder:', bg='#f0f0f0', fg=TEXT_PRI,
+                 font=('Segoe UI', 9), anchor='w').pack(fill='x')
+        f_path = tk.Frame(p, bg='#f0f0f0')
+        f_path.pack(fill='x', pady=2)
+        tk.Entry(f_path, textvariable=self.base_var,
+                 font=('Segoe UI', 8), relief='solid',
+                 fg=TEXT_SEC).pack(side='left', fill='x', expand=True)
+        ttk.Button(f_path, text='Browse',
+                   command=self._browse).pack(side='left', padx=(4, 0))
+
+        self.load_btn = ttk.Button(p, text='Load Data', command=self._load_data)
+        self.load_btn.pack(fill='x', pady=(4, 0))
+        self.load_info = tk.Label(p, text='No data loaded.',
+                                  bg='#f0f0f0', fg=TEXT_MUT,
+                                  font=('Segoe UI', 8), anchor='w')
+        self.load_info.pack(fill='x')
+
+        # ── ZI MFIA Grid (legacy format only) ────────────────────────────────
+        self._section('ZI MFIA Grid  (legacy format)')
+        self.grid_off_var   = tk.DoubleVar(value=DEFAULT_GRID_OFF)
+        self.grid_dt_var    = tk.DoubleVar(value=DEFAULT_GRID_DT)
+        self.chunk_size_var = tk.IntVar(value=DEFAULT_CHUNK_SIZE)
+        self.rb_ms_var      = tk.DoubleVar(value=DEFAULT_RB_MS)
+
+        self._row('Grid offset (s)',
+                  lambda p, **k: self._spinbox(p, self.grid_off_var,
+                                               -0.01, 0, 0.0001, '%.6f'))
+        self._row('Grid dt (s)',
+                  lambda p, **k: self._spinbox(p, self.grid_dt_var,
+                                               1e-6, 1e-3, 1e-6, '%.2e'))
+        self._row('Chunk size',
+                  lambda p, **k: self._spinbox(p, self.chunk_size_var,
+                                               1024, 131072, 1024, '%d'))
+        self._row('RB duration (ms)',
+                  lambda p, **k: self._spinbox(p, self.rb_ms_var,
+                                               10, 2000, 10))
+
+        # ── C₀ Estimation ─────────────────────────────────────────────────────
+        self._section('C₀ Estimation Window')
+        self.cinf_lo_var = tk.DoubleVar(value=0.40)
+        self.cinf_hi_var = tk.DoubleVar(value=0.90)
+
+        self._row('Start  (frac RB)',
+                  lambda p, **k: self._spinbox(p, self.cinf_lo_var,
+                                               0.1, 0.8, 0.05, '%.2f'))
+        self._row('End    (frac RB)',
+                  lambda p, **k: self._spinbox(p, self.cinf_hi_var,
+                                               0.3, 0.99, 0.05, '%.2f'))
+
+        # ── Physical constants ────────────────────────────────────────────────
+        self._section('Physical Constants (4H-SiC)')
+        self.gamma_var = tk.DoubleVar(value=1.66e21)
+        self.nd_var    = tk.DoubleVar(value=3.2e14)
+
+        self._row('γ (cm⁻²s⁻¹K⁻²)',
+                  lambda p, **k: self._spinbox(p, self.gamma_var,
+                                               1e20, 1e22, 1e20, '%.2e'))
+        self._row('N_D (cm⁻³)',
+                  lambda p, **k: self._spinbox(p, self.nd_var,
+                                               1e12, 1e17, 1e13, '%.2e'))
+        self.geom_on_var = tk.BooleanVar(value=True)
+        self.vfill_var = tk.DoubleVar(value=0.0)
+        self.vrev_var = tk.DoubleVar(value=-5.0)
+        self.vbi_var = tk.DoubleVar(value=2.9)
+        self.wfmode_var = tk.StringVar(value='Measured C_fill')
+        self.ls_var = tk.BooleanVar(value=False)
+        self.ndscale_var = tk.BooleanVar(value=True)
+        self.tref_var = tk.DoubleVar(value=25.0)
+        self.wfratio_var = tk.DoubleVar(value=0.762)
+        self.diam_var = tk.DoubleVar(value=6.5)
+        self.epsr_var = tk.DoubleVar(value=9.7)
+        ttk.Checkbutton(p, text='Fill-pulse geometry correction for Nₜ',
+                        variable=self.geom_on_var).pack(anchor='w', padx=4, pady=(4, 0))
+        self._row('Fill bias (V)', lambda p, **k: self._spinbox(p, self.vfill_var, -50, 10, 0.5, '%g'))
+        self._row('Reverse bias (V)', lambda p, **k: self._spinbox(p, self.vrev_var, -100, 0, 0.5, '%g'))
+        ttk.Checkbutton(p, text='Large-signal term  Nₜ = N_D·a·(2-a)/g',
+                        variable=self.ls_var).pack(anchor='w', padx=4, pady=(0, 2))
+        ttk.Checkbutton(p, text='N_D(T) = N_D·(C₀(T)/C₀(T_ref))²',
+                        variable=self.ndscale_var).pack(anchor='w', padx=4, pady=(0, 2))
+        self._row('N_D reference T (°C)', lambda p, **k: self._spinbox(p, self.tref_var, -200, 500, 5, '%g'))
+        self._row('W_F source', lambda p, **k: ttk.Combobox(p, textvariable=self.wfmode_var,
+                  values=list(WF_MODES), state='readonly', width=14))
+        self._row('W_F/W_R (C-V)', lambda p, **k: self._spinbox(p, self.wfratio_var, 0.05, 1.0, 0.01, '%.3f'))
+        self._row('V_bi (V)', lambda p, **k: self._spinbox(p, self.vbi_var, 0.5, 50, 0.1, '%g'))
+        self._row('Diameter (mm)', lambda p, **k: self._spinbox(p, self.diam_var, 0.1, 50, 0.1, '%g'))
+        self._row('ε_r', lambda p, **k: self._spinbox(p, self.epsr_var, 5, 15, 0.1, '%g'))
+        tk.Label(p, text='  Measured C_fill: W_F = ε·A/C_fill(T), C_fill read at the end of the fill pulse in\n'
+                         '  every record (needs the AuxInput1 monitor); falls back to the C-V ratio.\n'
+                         '  C-V ratio: W_F = (W_F/W_R)·W_R (0.762 for 0 V fill, 0.55 for +1.5 V, 25 °C).\n'
+                         '  V_bi model: W_F = W_R·sqrt((V_bi+|V_fill|)/(V_bi+|V_rev|)), uniform doping.\n'
+                         '  W_R = ε·A/C₀(T); λ = sqrt(2ε(E_F-Eₜ)/(q·N_D)) at each peak temperature.',
+                 bg='#f0f0f0', fg=TEXT_MUT, justify='left',
+                 font=('Segoe UI', 7, 'italic')).pack(anchor='w', padx=4)
+        tk.Label(p, text='  Estimate. Use C-V at the DLTS bias for each sample; not\n'
+                         '  reliable for strongly compensated / fully depleted layers.',
+                 bg='#f0f0f0', fg=TEXT_MUT, justify='left',
+                 font=('Segoe UI', 7, 'italic')).pack(anchor='w', padx=4)
+
+        # ── Peak search range — Trap 1 ────────────────────────────────────────
+        self._section('Trap & Peak Search Range')
+        self.tpeak_lo_var = tk.DoubleVar(value=250.0)
+        self.tpeak_hi_var = tk.DoubleVar(value=430.0)
+
+        self.trap_sel_var = tk.StringVar(value=TRAP_CHOICES[0])
+        self.tpeak_lo_var.set(TRAP_PRESETS['Z1/Z2'][0])
+        self.tpeak_hi_var.set(TRAP_PRESETS['Z1/Z2'][1])
+
+        def _on_trap(_e=None):
+            nm = self.trap_sel_var.get()
+            if nm in TRAP_PRESETS:
+                self.tpeak_lo_var.set(TRAP_PRESETS[nm][0])
+                self.tpeak_hi_var.set(TRAP_PRESETS[nm][1])
+        cbx = self._row('Trap',
+                        lambda p, **k: ttk.Combobox(p, textvariable=self.trap_sel_var,
+                                                    values=TRAP_CHOICES, state='readonly',
+                                                    width=18, font=('Segoe UI', 9)))
+        cbx.bind('<<ComboboxSelected>>', _on_trap)
+        tk.Label(p, text='  Preset fills the T range below; edit it for a custom trap.\n'
+                         '  Eₜ, σₙ and Nₜ are calculated for this range only.',
+                 bg='#f0f0f0', fg=TEXT_MUT, justify='left',
+                 font=('Segoe UI', 7, 'italic')).pack(anchor='w', padx=4)
+
+        self._row('T min (K)',
+                  lambda p, **k: self._spinbox(p, self.tpeak_lo_var,
+                                               100, 800, 5))
+        self._row('T max (K)',
+                  lambda p, **k: self._spinbox(p, self.tpeak_hi_var,
+                                               150, 900, 5))
+
+        self.peak_method_var = tk.StringVar(value=PEAK_METHOD_DEFAULT)
+        self._row('Peak finder',
+                  lambda p, **k: ttk.Combobox(p, textvariable=self.peak_method_var,
+                                              values=PEAK_METHODS, state='readonly',
+                                              width=18, font=('Segoe UI', 9)))
+        tk.Label(p, text='  Curve fit of each window\'s DLTS peak → Tpeak',
+                 bg='#f0f0f0', fg=TEXT_MUT,
+                 font=('Segoe UI', 7, 'italic')).pack(anchor='w', padx=4)
+
+        # Fill-end time (start of emission window)
+        self.t_fe_ms_var = tk.DoubleVar(value=DEFAULT_T_FE_MS)
+        self._row('Fill-end t_FE (ms)',
+                  lambda p, **k: self._spinbox(p, self.t_fe_ms_var,
+                                               0.0, 20.0, 0.1, '%.2f'))
+        tk.Label(p, text='  (0 = no offset/legacy; 1.307 ms estimated for MFIA records)',
+                 bg='#f0f0f0', fg=TEXT_MUT,
+                 font=('Segoe UI', 7, 'italic')).pack(anchor='w', padx=4)
+
+        # ── Multi-window parameters ───────────────────────────────────────────
+        self._section('Multi-Window Parameters')
+        self.n_win_var  = tk.IntVar(value=16)
+        self.t1_min_var = tk.DoubleVar(value=5.0)
+        self.t1_max_var = tk.DoubleVar(value=90.0)
+        self.ratio_var  = tk.DoubleVar(value=5.0)
+
+        self._row('N windows',
+                  lambda p, **k: self._spinbox(p, self.n_win_var, 3, 60, 1, '%d'))
+        self._row('t₁ min (ms)',
+                  lambda p, **k: self._spinbox(p, self.t1_min_var, 1, 200, 1))
+        self._row('t₁ max (ms)',
+                  lambda p, **k: self._spinbox(p, self.t1_max_var, 5, 450, 5))
+        self._row('Ratio t₂/t₁',
+                  lambda p, **k: self._spinbox(p, self.ratio_var, 2, 20, 0.5))
+
+        # ── Standard 5 windows ────────────────────────────────────────────────
+        self._section('Standard Windows (reference)')
+        self.std_wins_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(p, text='Show 5-window comparison',
+                        variable=self.std_wins_var).pack(anchor='w', pady=2)
+
+        tk.Label(p, text='t1 / t2  (ms):', bg='#f0f0f0', fg=TEXT_SEC,
+                 font=('Segoe UI', 8)).pack(anchor='w')
+        self.std_entries = []
+        for t1, t2 in [(5, 25), (10, 50), (20, 100), (50, 250), (100, 490)]:
+            fr = tk.Frame(p, bg='#f0f0f0')
+            fr.pack(fill='x', pady=1)
+            v1, v2 = tk.DoubleVar(value=t1), tk.DoubleVar(value=t2)
+            ttk.Spinbox(fr, textvariable=v1, from_=1, to=490,
+                        increment=1, width=5,
+                        font=('Segoe UI', 9)).pack(side='left')
+            tk.Label(fr, text=' / ', bg='#f0f0f0',
+                     font=('Segoe UI', 9)).pack(side='left')
+            ttk.Spinbox(fr, textvariable=v2, from_=2, to=499,
+                        increment=1, width=5,
+                        font=('Segoe UI', 9)).pack(side='left')
+            self.std_entries.append((v1, v2))
+
+        # ── Display options ───────────────────────────────────────────────────
+        self._section('Display')
+
+        self.show_spectra_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(p, text='Show DLTS spectra panel',
+                        variable=self.show_spectra_var).pack(anchor='w')
+        self.n_spectra_var = tk.IntVar(value=5)
+        self._row('Spectra to plot',
+                  lambda p, **k: self._spinbox(p, self.n_spectra_var,
+                                               2, 16, 1, '%d'))
+
+        self.show_tmap_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(p, text='Show 2D transient map',
+                        variable=self.show_tmap_var).pack(anchor='w', pady=(6, 0))
+
+        # ── Actions ───────────────────────────────────────────────────────────
+        self._section('')
+        btn_frame = tk.Frame(p, bg='#f0f0f0')
+        btn_frame.pack(fill='x', pady=6)
+
+        self.run_btn = ttk.Button(btn_frame, text='Run Analysis',
+                                  command=self._run, state='disabled')
+        self.run_btn.pack(fill='x', pady=2)
+        ttk.Button(btn_frame, text='Edit Labels & Legends',
+                   command=self._open_label_editor).pack(fill='x', pady=2)
+        ttk.Button(btn_frame, text='Edit Annotation…',
+                   command=self._edit_annotation).pack(fill='x', pady=2)
+        ttk.Button(btn_frame, text='Save Figure as PNG',
+                   command=self._save_png).pack(fill='x', pady=2)
+        ttk.Button(btn_frame, text='Save Panel as PNG…',
+                   command=self._save_panel).pack(fill='x', pady=2)
+        ttk.Button(btn_frame, text='Export Results to TXT',
+                   command=self._export_txt).pack(fill='x', pady=2)
+        ttk.Button(btn_frame, text='Fill-pulse scan analysis…',
+                   command=self._fill_scan_tool).pack(fill='x', pady=2)
+
+    # ── Event handlers ────────────────────────────────────────────────────────
+
+    def _browse(self):
+        path = filedialog.askdirectory(title='Select data folder')
+        if path:
+            self.base_var.set(path)
+
+    def _fill_scan_tool(self):
+        """Analyse FP-bias / FP-width scan folders (ZI csv export) and recommend the
+        fill bias and width; uses N_D, diameter, ε_r from the Physical Constants."""
+        folders = []
+        for ttl in ('Fill-BIAS scan folder (Cancel to skip)', 'Fill-WIDTH scan folder (Cancel to skip)'):
+            f = filedialog.askdirectory(title=ttl)
+            if f:
+                folders.append(f)
+        if not folders:
+            return
+        m = re.search(r'_(-?\d+)C(?:_|$)', os.path.basename(folders[0]))
+        t_def = float(m.group(1)) if m else 25.0
+        et = simpledialog.askfloat('Trap level', 'E_t (eV) used for λ (Z₁/₂ ≈ 0.63 at room temperature,\n'
+                                   'EH₆/₇ ≈ 1.5 at 390 °C):', initialvalue=0.63, minvalue=0.05, maxvalue=3.0,
+                                   parent=self.root)
+        tc_ = simpledialog.askfloat('Temperature', 'Scan temperature (°C):', initialvalue=t_def,
+                                    minvalue=-200, maxvalue=600, parent=self.root)
+        if et is None or tc_ is None:
+            return
+        try:
+            self._set_status('Analysing fill-pulse scans...')
+            res = None
+            for f in folders:
+                r = analyze_fill_scan(load_fill_scan(f), self.nd_var.get(), self.diam_var.get(),
+                                      self.epsr_var.get(), et, tc_, large_signal=bool(self.ls_var.get()))
+                if res is None:
+                    res = r
+                else:
+                    for k in ('bias', 'width', 'rec_bias', 'rec_width', 'width_scan_w', 'v_cliff',
+                              'bias_of_width_scan'):
+                        if r.get(k) is not None and res.get(k) is None:
+                            res[k] = r[k]
+                    res['notes'] += r['notes']
+            self._show_fill_scan(res)
+            self._set_status('Fill-pulse scan analysis done.')
+        except Exception as exc:
+            messagebox.showerror('Fill-pulse scan', str(exc))
+            self._set_status(f'Fill-pulse scan failed: {exc}', '#eb6834')
+
+    def _show_fill_scan(self, res):
+        dlg = tk.Toplevel(self.root); dlg.title('Fill-pulse scan analysis'); dlg.geometry('1100x720')
+        fig = Figure(figsize=(7.2, 4.4), dpi=100)
+        axs = fig.subplots(2, 2).ravel()
+        b, w = res['bias'], res['width']
+        if b is not None:
+            ok = b.flag == ''
+            axs[0].errorbar(b.bias, b.dC, yerr=3 * b.err, fmt='o-', ms=3, color='#2a78d6', capsize=1.5)
+            axs[0].plot(b.bias[~ok], b.dC[~ok], 'rx')
+            axs[0].axvline(res['rec_bias'], color='0.5', ls='--', lw=0.8)
+            axs[0].set_xlabel('Fill bias (V)'); axs[0].set_ylabel('ΔC (pF)')
+            axs[0].set_title(f'ΔC({res["t1"]:g}→{res["t2"]:g} ms); recommended {res["rec_bias"]:+.1f} V', fontsize=8)
+            axs[2].plot(b.bias[ok], b.WF[ok], 's-', ms=3, color='#2a78d6'); axs[2].set_xlabel('Fill bias (V)')
+            axs[2].set_ylabel('W_F from C_fill (µm)', color='#2a78d6')
+            a2 = axs[2].twinx(); a2.plot(b.bias[ok], b.g[ok], 'o--', ms=3, color='#eb6834'); a2.set_ylabel('g', color='#eb6834')
+            axs[3].plot(b.bias[ok], b.Nt[ok] / 1e14, 'o-', ms=3, color='#2f9e6b'); axs[3].set_xlabel('Fill bias (V)')
+            axs[3].set_ylabel('apparent Nₜ (10¹⁴ cm⁻³)'); axs[3].set_ylim(bottom=0)
+        if w is not None:
+            axs[1].semilogx(w.width, 100 * w.frac, 'o-', ms=3, color='#eb6834')
+            axs[1].axhline(99, color='0.6', ls=':', lw=0.8); axs[1].axvline(res['rec_width'], color='0.5', ls='--', lw=0.8)
+            axs[1].set_xlabel('Fill width (ms)'); axs[1].set_ylabel('ΔC, % of longest pulse')
+            axs[1].set_title(f'recommended ≥ {res["rec_width"]:g} ms', fontsize=8)
+        for ax in axs:
+            ax.tick_params(labelsize=7); ax.xaxis.label.set_size(8); ax.yaxis.label.set_size(8)
+        fig.tight_layout()
+        cv = FigureCanvasTkAgg(fig, master=dlg); cv.draw(); cv.get_tk_widget().pack(fill='both', expand=True)
+        txt = scrolledtext.ScrolledText(dlg, height=14, font=('Consolas', 8)); txt.pack(fill='x')
+        rep_txt = fill_scan_report(res); txt.insert('1.0', rep_txt)
+        def _save():
+            p = filedialog.asksaveasfilename(defaultextension='.txt', filetypes=[('Text', '*.txt')],
+                                             parent=dlg, title='Save fill-pulse report')
+            if p:
+                with open(p, 'w', encoding='utf-8') as fh:
+                    fh.write(rep_txt)
+                fig.savefig(os.path.splitext(p)[0] + '.png', dpi=300)
+        ttk.Button(dlg, text='Save report + figure', command=_save).pack(pady=3)
+        self.fill_scan_last = res
+
+    def _set_status(self, msg, color='#8fb4d8'):
+        self.status_var.set(msg)
+        self.root.update_idletasks()
+
+    def _log(self, text):
+        self.results_text.configure(state='normal')
+        self.results_text.delete('1.0', 'end')
+        self.results_text.insert('end', text)
+        self.results_text.configure(state='disabled')
+
+    def _load_data(self):
+        base = self.base_var.get().strip()
+        if not base or not os.path.isdir(base):
+            messagebox.showerror('Error', 'Please select a valid data folder.')
+            return
+        self._set_status('Loading data...')
+        try:
+            self.data, self.temps = load_data(
+                base,
+                self.grid_off_var.get(),
+                self.grid_dt_var.get(),
+                self.chunk_size_var.get(),
+                self.rb_ms_var.get(),
+                self.cinf_lo_var.get(),
+                self.cinf_hi_var.get()
+            )
+            n = len(self.temps)
+            if n == 0:
+                fmt = detect_format(base)
+                if fmt == 'json_flat':
+                    raise ValueError(
+                        'No valid temperature files found.\n'
+                        'Expected files named  p{T}p0.txt  or  n{T}p0.txt  '
+                        'in the selected folder.')
+                else:
+                    raise ValueError(
+                        'No valid temperature subfolders found.\n'
+                        'Expected subfolders named  {T}C  or  n{T}C  '
+                        'each containing the ZI MFIA CSV file.')
+            fmt = detect_format(base)
+            fmt_label = 'JSON' if fmt == 'json_flat' else 'ZI MFIA'
+            msg = (f'{n} temps loaded ({fmt_label}): '
+                   f'{self.temps[0]:.0f} °C to {self.temps[-1]:.0f} °C')
+            if LOAD_INFO.get('f_osc'):
+                msg += (f'  |  f_osc {LOAD_INFO["f_osc"] / 1e3:g} kHz, C from '
+                        f'{"direct value" if LOAD_INFO.get("cap_mode") == "direct" else "B/ω"}')
+            if LOAD_INFO.get('second_pulse'):
+                msg += f'  |  2nd fill pulse at {LOAD_INFO["second_pulse"]:.0f} ms'
+            fs = LOAD_INFO.get('fill')
+            if fs:
+                if fs['v_fill_sd'] < 0.1:
+                    self.vfill_var.set(round(fs['v_fill'], 2)); self.vrev_var.set(round(fs['v_rev'], 2))
+                msg += (f'  |  fill {fs["v_fill"]:+.2f} V / reverse {fs["v_rev"]:+.2f} V'
+                        + (f' / {fs["width_ms"]:.2g} ms' if fs.get('width_ms') else '')
+                        + f' (from AuxInput1), C_fill in {fs["n_cfill"]}/{n} records')
+            self.load_info.configure(text=msg, fg='#2a78d6')
+            self._set_status(msg)
+            self.run_btn.configure(state='normal')
+        except Exception as exc:
+            messagebox.showerror('Load Error', str(exc))
+            self._set_status(f'Load failed: {exc}', '#eb6834')
+
+    def _geom_sync(self, data=None, temps=None):
+        data = self.data if data is None else data
+        temps = self.temps if temps is None else temps
+        GEOM.update(on=bool(self.geom_on_var.get()), v_fill=self.vfill_var.get(),
+                    v_rev=self.vrev_var.get(), vbi=self.vbi_var.get(),
+                    wf_mode=WF_MODES.get(self.wfmode_var.get(), 'cfill'),
+                    wf_ratio=self.wfratio_var.get(), ls=bool(self.ls_var.get()),
+                    nd_scale=bool(self.ndscale_var.get()), t_ref=self.tref_var.get(),
+                    diam_mm=self.diam_var.get(), eps_r=self.epsr_var.get())
+        try:
+            GEOM['T'], GEOM['C0'], GEOM['CF'] = geom_arrays(data, temps)
+        except Exception:
+            GEOM['T'] = GEOM['C0'] = GEOM['CF'] = None
+
+    def _run(self):
+        if not self.data:
+            messagebox.showwarning('No data', 'Load data first.')
+            return
+        self._geom_sync()
+        self._set_status('Running analysis...')
+        try:
+            n   = self.n_win_var.get()
+            t1a = self.t1_min_var.get()
+            t1b = self.t1_max_var.get()
+            r   = self.ratio_var.get()
+            t1_arr = np.logspace(np.log10(t1a), np.log10(t1b), n)
+            mw = [(float(t1), float(r * t1)) for t1 in t1_arr]
+
+            std_wins = [(v1.get(), v2.get()) for v1, v2 in self.std_entries]
+
+            gamma  = self.gamma_var.get()
+            tplo   = self.tpeak_lo_var.get()
+            tphi   = self.tpeak_hi_var.get()
+            t_fe   = self.t_fe_ms_var.get()
+            pm     = self.peak_method_var.get()
+
+            res_mw  = compute_arrhenius(mw,       self.temps, self.data,
+                                        gamma, tplo, tphi, t_fe_ms=t_fe,
+                                        peak_method=pm)
+            res_std = compute_arrhenius(std_wins, self.temps, self.data,
+                                        gamma, tplo, tphi, t_fe_ms=t_fe,
+                                        peak_method=pm)
+
+            if res_mw is None:
+                raise ValueError(
+                    'No peaks found in the selected temperature range '
+                    f'({tplo:.0f}-{tphi:.0f} K).\n'
+                    'Check the range and the t1 window settings.')
+
+            T_K = np.array([tc + 273.15 for tc in self.temps])
+
+            # Trap concentration of the SELECTED trap (selected T range only)
+            nd       = self.nd_var.get()
+            trap_nm  = self.trap_sel_var.get()
+            if trap_nm not in TRAP_PRESETS:
+                trap_nm = f'Custom ({tplo:.0f}-{tphi:.0f} K)'
+            tc_mw  = trap_concentration(res_mw,  nd, t_fe)
+            tc_std = trap_concentration(res_std, nd, t_fe)
+
+            self._plot(res_mw, res_std, mw, std_wins, T_K,
+                       trap_name=trap_nm, tc=tc_mw)
+            self._set_status('Comparing peak finders...')
+            mrows = peak_method_table(mw, self.temps, self.data, gamma,
+                                      tplo, tphi, t_fe, nd)
+            notes = quality_notes(res_mw, mw, tplo, tphi, t_fe, tc_mw, mrows,
+                                  dict(LOAD_INFO))
+            self._write_results(res_mw, res_std, tplo=tplo, tphi=tphi,
+                                trap_name=trap_nm, tc=tc_mw, tc_std=tc_std,
+                                method_rows=mrows, notes=notes)
+            self._set_status(
+                f'{trap_nm}:  Eₜ = {res_mw["Et"]:.3f} +/- {res_mw["Et_se"]:.3f} eV   '
+                f'σₙ = {res_mw["sigma"]:.2e} cm²   '
+                f'Nₜ = {tc_mw["Nt"]:.2e} cm⁻³   [{pm}]')
+
+            self._last_res_mw  = res_mw
+            self._last_res_std = res_std
+
+        except Exception as exc:
+            import traceback
+            messagebox.showerror('Analysis Error', str(exc))
+            self._set_status(f'Error: {exc}', '#eb6834')
+            traceback.print_exc()
+
+    # ── Plotting ──────────────────────────────────────────────────────────────
+
+    def _plot(self, res_mw, res_std, mw, std_wins, T_K,
+              trap_name='Trap', tc=None):
+        show_spectra = self.show_spectra_var.get()
+        show_tmap    = self.show_tmap_var.get()
+        n_spectra    = self.n_spectra_var.get()
+
+        # Clear previous canvas
+        for w in self.fig_frame.winfo_children():
+            w.destroy()
+        if self._fig:
+            plt.close(self._fig)
+            self._fig = None
+
+        # Reset stored axes/legend refs (used by label editor)
+        self._ax1 = self._ax2 = self._ax3 = None
+        self._leg1 = self._leg2 = self._leg_m = None
+        self._ann_box = None
+        # Draggable artists — applied AFTER canvas is connected to tkinter
+        _pending_drags = []   # list of ('legend'|'annot', obj)
+
+        # ── Figure / GridSpec layout ──────────────────────────────────────────
+        # ax1=Arrhenius (always), ax2=Spectra, ax3=Transient map
+        ax2 = ax3 = None
+        CL = dict(constrained_layout=True)
+
+        if show_spectra and show_tmap:
+            fig = plt.figure(figsize=(13, 10.5), facecolor=SURFACE, **CL)
+            gs  = mgridspec.GridSpec(
+                2, 2, figure=fig,
+                height_ratios=[1.0, 0.85],
+                width_ratios=[1.5, 1.0])
+            ax1 = fig.add_subplot(gs[0, 0])
+            ax2 = fig.add_subplot(gs[0, 1])
+            ax3 = fig.add_subplot(gs[1, :])
+        elif show_spectra:
+            fig, axes = plt.subplots(
+                1, 2, figsize=(13, 5.4), facecolor=SURFACE,
+                gridspec_kw={'width_ratios': [1.5, 1]}, **CL)
+            ax1, ax2 = axes
+        elif show_tmap:
+            fig = plt.figure(figsize=(10, 10.5), facecolor=SURFACE, **CL)
+            gs  = mgridspec.GridSpec(
+                2, 1, figure=fig,
+                height_ratios=[1.0, 0.85])
+            ax1 = fig.add_subplot(gs[0])
+            ax3 = fig.add_subplot(gs[1])
+        else:   # Arrhenius only
+            fig, ax1 = plt.subplots(1, 1, figsize=(8, 5.4),
+                                    facecolor=SURFACE, **CL)
+
+        self._fig = fig
+        self._ax1 = ax1; self._ax2 = ax2; self._ax3 = ax3
+        for ax in filter(None, [ax1, ax2, ax3]):
+            ax.set_facecolor(SURFACE)
+
+        # ── Arrhenius panel ───────────────────────────────────────────────────
+        x_all = np.concatenate([res_mw['x'],
+                                 res_std['x'] if res_std else res_mw['x']])
+        x_lo  = x_all.min() * 0.97
+        x_hi  = x_all.max() * 1.03
+        x_line = np.linspace(x_lo, x_hi, 400)
+
+        # CI band + fit line
+        y_lm = res_mw['slope'] * x_line + res_mw['intercept']
+        xmw  = res_mw['x'];  n_mw = len(xmw);  xb = xmw.mean()
+        Sxx  = ((xmw - xb)**2).sum()
+        ss   = np.sum((res_mw['y'] - (res_mw['slope']*xmw
+                                       + res_mw['intercept']))**2)
+        se_y = np.sqrt(ss / max(n_mw - 2, 1))
+        half = 2.0 * se_y * np.sqrt(1/n_mw + (x_line - xb)**2 / Sxx)
+        ax1.fill_between(x_line, y_lm - half, y_lm + half,
+                         color=C0, alpha=0.13, zorder=1)
+        ax1.plot(x_line, y_lm, color=C0, lw=1.3, zorder=3,
+                 label=(f'Multi ({res_mw["N"]} win)  '
+                        f'Eₜ={res_mw["Et"]:.3f}±{res_mw["Et_se"]:.3f} eV  '
+                        f'R²={res_mw["R2"]:.4f}'))
+
+        # Standard windows fit
+        if res_std and self.std_wins_var.get():
+            y_ls = res_std['slope'] * x_line + res_std['intercept']
+            ax1.plot(x_line, y_ls, color=C1, lw=1.5, ls='--', zorder=3,
+                     label=(f'Standard ({res_std["N"]} win)  '
+                            f'Eₜ={res_std["Et"]:.3f}±{res_std["Et_se"]:.3f} eV  '
+                            f'R²={res_std["R2"]:.4f}'))
+            ax1.scatter(res_std['x'], res_std['y'],
+                        color=C1, s=100, zorder=5, marker='D',
+                        edgecolors=TEXT_PRI, lw=0.7, label='Standard windows')
+
+        # Multi-window scatter coloured by log10(en)
+        cmap_arr = plt.cm.plasma
+        norm_arr = Normalize(np.log10(res_mw['en_arr'].min()),
+                             np.log10(res_mw['en_arr'].max()))
+        sc = ax1.scatter(res_mw['x'], res_mw['y'],
+                         c=np.log10(res_mw['en_arr']),
+                         cmap=cmap_arr, norm=norm_arr,
+                         s=40, zorder=4, edgecolors='white', lw=0.5)
+        cb = fig.colorbar(sc, ax=ax1, pad=0.01, fraction=0.025, aspect=28)
+        cb.set_label('log₁₀ eₙ  (s⁻¹)',
+                     fontsize=8, color=TEXT_SEC)
+        cb.ax.tick_params(labelsize=7.5)
+        cb.outline.set_edgecolor(BASELINE)
+
+        # Results box
+        res_txt = (
+            f'{trap_name}  ({res_mw["N"]} pts)\n'
+            f'Eₜ = {res_mw["Et"]:.3f} ± {res_mw["Et_se"]:.3f} eV\n'
+            f'σₙ = {res_mw["sigma"]:.2e} cm²\n'
+            + (f'Nₜ = {tc["Nt"]:.2e} cm⁻³\n' if tc else '')
+            + f'R² = {res_mw["R2"]:.4f}'
+        )
+        ann_box = ax1.annotate(
+            res_txt,
+            xy=(0.04, 0.04), xycoords='axes fraction',
+            xytext=(0.04, 0.04), textcoords='axes fraction',
+            fontsize=8.5, va='bottom', ha='left', color=TEXT_PRI,
+            linespacing=1.35, annotation_clip=False)
+        self._ann_box = ann_box
+        _pending_drags.append(('annot', ann_box))   # deferred until canvas connected
+
+        # Dual temperature axis — auto-range from actual Tp data
+        all_Tp = list(res_mw['Tp_arr'])
+        Tp_lo_K = max(80,  int(min(all_Tp)) - 30)
+        Tp_hi_K = min(1200, int(max(all_Tp)) + 30)
+        ax1b = ax1.twiny()
+        ax1b.set_xlim(ax1.get_xlim())
+        K_ticks = np.arange(Tp_lo_K, Tp_hi_K + 1, max(5, (Tp_hi_K - Tp_lo_K) // 10))
+        K_ok = K_ticks[(1000.0/K_ticks >= x_lo) & (1000.0/K_ticks <= x_hi)]
+        if len(K_ok):
+            ax1b.set_xticks(1000.0 / K_ok)
+            ax1b.set_xticklabels([f'{k-273:.0f}°C' for k in K_ok],
+                                  fontsize=7.5)
+        ax1b.tick_params(labelsize=7.5)
+
+        ax1.set_xlabel('1000 / T  (K⁻¹)', fontsize=10,
+                       color=TEXT_PRI, labelpad=5)
+        ax1.set_ylabel('ln(eₙ / T²)  (s⁻¹ K⁻²)',
+                       fontsize=10, color=TEXT_PRI, labelpad=5)
+        ax1.set_title('Arrhenius Plot', fontsize=11, color=TEXT_PRI,
+                      pad=8)
+        ax1.tick_params(labelsize=9)
+
+        leg1 = ax1.legend(loc='upper right', fontsize=7.5, frameon=False, labelcolor=TEXT_PRI, handlelength=2.0)
+        self._leg1 = leg1
+        _pending_drags.append(('legend', leg1))   # deferred
+
+        # ── DLTS spectra panel ────────────────────────────────────────────────
+        if ax2 is not None:
+            idx_show = np.round(
+                np.linspace(0, len(mw) - 1, min(n_spectra, len(mw)))
+            ).astype(int)
+            cmap_w = plt.cm.cool
+            norm_w = Normalize(0, len(mw) - 1)
+
+            ax2.axhline(0, color=BASELINE, lw=0.7)
+
+            pm_sel  = self.peak_method_var.get()
+            tplo_p  = self.tpeak_lo_var.get(); tphi_p = self.tpeak_hi_var.get()
+            m_rng   = (T_K >= tplo_p) & (T_K <= tphi_p)
+            picked  = {(round(d[0], 6), round(d[1], 6)): d for d in res_mw['detail']}
+
+            for k in idx_show:
+                t1, t2 = mw[k]
+                S = np.array([
+                    (cap_at(self.data[tc][0], self.data[tc][1], t2)
+                     - cap_at(self.data[tc][0], self.data[tc][1], t1))
+                    / self.data[tc][2]
+                    for tc in self.temps
+                ])
+                en  = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+                col = cmap_w(norm_w(k))
+                d   = picked.get((round(t1, 6), round(t2, 6)))
+                lab = (f't={t1:.0f}/{t2:.0f} ms  eₙ={en:.1f} s⁻¹'
+                       + (f'  Tₚ={d[3]:.1f} °C' if d else ''))
+                # real data as dots
+                ax2.plot(T_K - 273.15, S * 1e3, linestyle='none', marker='o',
+                         ms=3.6, mfc=col, mec='white', mew=0.4, alpha=0.9,
+                         color=col, label=lab, zorder=3)
+                # selected smoothing / curve fit applied to the in-range data
+                S_m = S[m_rng]
+                sgn = -1.0 if (len(S_m) and np.max(S_m) < abs(np.min(S_m))) else 1.0
+                if m_rng.sum() >= 3 and d:
+                    Tf, Sf, Tp_f, Sp_f, ok = fit_curve(T_K[m_rng], sgn * S_m, pm_sel)
+                    ax2.plot(Tf - 273.15, sgn * Sf * 1e3, color=col, lw=1.6,
+                             alpha=0.95, zorder=4)
+                    ax2.plot([Tp_f - 273.15], [sgn * Sp_f * 1e3], marker='v',
+                             ms=7, mfc=col, mec=TEXT_PRI, mew=0.8,
+                             linestyle='none', zorder=5)
+
+            # legend proxies explaining the symbols
+            ax2.plot([], [], 'o', color=TEXT_MUT, ms=4, label='data (measured)')
+            ax2.plot([], [], '-', color=TEXT_MUT, lw=1.6, label=f'fit: {pm_sel}')
+            ax2.plot([], [], 'v', mfc=TEXT_MUT, mec=TEXT_PRI, ms=7,
+                     label='picked peak Tₚ')
+
+            ax2.set_xlabel('Temperature  (°C)', fontsize=10, color=TEXT_PRI)
+            ax2.set_ylabel('ΔC/C₀  (×10⁻³)', fontsize=10,
+                           color=TEXT_PRI)
+            ax2.set_title('DLTS Spectra', fontsize=11, color=TEXT_PRI,
+                          pad=8)
+            ax2.tick_params(labelsize=9)
+
+            _lo, _hi = ax2.get_ylim()
+            ax2.set_ylim(_lo, _hi + 0.40 * (_hi - _lo))   # head-room for the legend
+            leg2 = ax2.legend(loc='upper right', fontsize=7, frameon=False, labelcolor=TEXT_PRI)
+            self._leg2 = leg2
+            _pending_drags.append(('legend', leg2))   # deferred
+
+        # ── 2D transient map ──────────────────────────────────────────────────
+        if ax3 is not None:
+            leg_m = self._plot_transient_map(ax3, res_mw, T_K)
+            if leg_m is not None:
+                self._leg_m = leg_m
+                _pending_drags.append(('legend', leg_m))
+
+        # Finalize — no figure-level suptitle; title is in the app banner.
+        # constrained_layout (set at figure creation) handles spacing automatically.
+
+        # Embed in tkinter FIRST — this connects fig.canvas, which draggable needs
+        self._canvas = FigureCanvasTkAgg(fig, master=self.fig_frame)
+        self._canvas.draw()
+        toolbar = NavigationToolbar2Tk(self._canvas, self.fig_frame,
+                                       pack_toolbar=False)
+        toolbar.update()
+        toolbar.pack(side='bottom', fill='x')
+        self._canvas.get_tk_widget().pack(fill='both', expand=True)
+
+        # ── Drag installation ─────────────────────────────────────────────────
+        # matplotlib 3.10 changed DraggableBase to use pick_event, which
+        # requires legendPatch.contains() to use an up-to-date renderer
+        # transform.  After pack(fill='both'), tkinter resizes the canvas and
+        # the transform is stale.  Bypass the built-in draggable system
+        # entirely: wire button_press/motion/release events directly so we
+        # re-fetch the artist bbox at click time.
+        _drag_snapshot = list(_pending_drags)
+
+        def _apply_draggable():
+            if self._canvas is None:
+                return
+            # Redraw with the current (resized) canvas so all transforms are fresh.
+            self._canvas.draw()
+            canvas_ = self._canvas
+            fig_    = fig
+
+            for kind, obj in _drag_snapshot:
+                DLTSApp._install_drag(canvas_, fig_, obj, kind)
+
+            # Double-click the annotation box → open its text editor.
+            if self._ann_box is not None:
+                _ann_ref = self._ann_box
+                def _on_ann_dblclick(evt, _a=_ann_ref):
+                    if evt.button != 1 or not getattr(evt, 'dblclick', False):
+                        return
+                    canvas_.draw()
+                    try:
+                        hit, _ = _a.contains(evt)
+                    except Exception:
+                        return
+                    if hit:
+                        self._edit_annotation()
+                canvas_.mpl_connect('button_press_event', _on_ann_dblclick)
+
+        self.root.after(300, _apply_draggable)
+
+    # ── Custom drag installer ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _install_drag(canvas, fig, artist, kind):
+        """
+        Wire button_press/motion/release drag to a Legend or Annotation.
+
+        Bypasses matplotlib's pick_event-based DraggableBase so that dragging
+        works even when the canvas has been resized after the initial draw().
+        The legend's _loc tuple and the annotation's xyann are updated in the
+        correct coordinate spaces so the artists persist at their new positions.
+
+        kind : 'legend' | 'annot'
+        """
+        from matplotlib.transforms import BboxTransformFrom
+
+        s = {'on': False, 'mx0': 0.0, 'my0': 0.0,
+             'ax': 0.0, 'ay': 0.0}        # saved anchor in display px
+
+        def _on_press(evt):
+            if evt.button != 1:
+                return
+            if getattr(evt, 'dblclick', False):
+                return   # double-click → handled by the annotation editor callback
+            # Re-draw to refresh transforms before hit-testing.
+            canvas.draw()
+            try:
+                hit, _ = artist.contains(evt)
+            except Exception:
+                return
+            if not hit:
+                return
+            s['on']  = True
+            s['mx0'] = evt.x
+            s['my0'] = evt.y
+            if kind == 'annot':
+                # Text anchor in display coords
+                s['ax'], s['ay'] = (
+                    artist.get_transform().transform(artist.xyann))
+            else:                                   # legend
+                try:
+                    rend = fig._get_renderer()
+                    bb   = artist.get_window_extent(rend)
+                    s['ax'], s['ay'] = bb.x0, bb.y0
+                except Exception:
+                    s['on'] = False
+
+        def _on_motion(evt):
+            if not s['on'] or evt.x is None or evt.y is None:
+                return
+            dx = evt.x - s['mx0']
+            dy = evt.y - s['my0']
+            try:
+                if kind == 'annot':
+                    t = artist.get_transform()
+                    artist.xyann = t.inverted().transform(
+                        (s['ax'] + dx, s['ay'] + dy))
+                else:                               # legend
+                    new_x = s['ax'] + dx
+                    new_y = s['ay'] + dy
+                    # Convert display px → _loc space
+                    # (normalised relative to the legend's bbox_to_anchor)
+                    bbox = artist.get_bbox_to_anchor()
+                    x_loc, y_loc = BboxTransformFrom(bbox).transform(
+                        (new_x, new_y))
+                    artist._loc = (float(x_loc), float(y_loc))
+            except Exception:
+                return
+            canvas.draw_idle()
+
+        def _on_release(evt):
+            s['on'] = False
+
+        canvas.mpl_connect('button_press_event',   _on_press)
+        canvas.mpl_connect('motion_notify_event',  _on_motion)
+        canvas.mpl_connect('button_release_event', _on_release)
+
+    # ── 2D transient map helper ───────────────────────────────────────────────
+
+    def _plot_transient_map(self, ax, res_mw, T_K):
+        """Filled contour plot: ΔC/C₀(t, T) on log-time y-axis.
+        Returns the legend object (or None) so the caller can make it draggable."""
+        rb_ms  = self.rb_ms_var.get()
+        temps  = self.temps
+        data   = self.data
+
+        # Time axis from the first loaded temperature
+        t_ms_ref = data[temps[0]][0]          # full axis in ms
+        t_lo_ms  = max(2.0, t_ms_ref[1])      # skip pre-pulse / first point
+        t_hi_ms  = rb_ms * 0.95
+
+        mask_t     = (t_ms_ref >= t_lo_ms) & (t_ms_ref <= t_hi_ms)
+        t_ms_full  = t_ms_ref[mask_t]
+
+        if len(t_ms_full) < 10:
+            ax.text(0.5, 0.5, 'Not enough time points',
+                    transform=ax.transAxes, ha='center', fontsize=11,
+                    color=TEXT_MUT)
+            return None
+
+        # Subsample to ~250 log-spaced points for smooth rendering
+        n_t   = min(250, len(t_ms_full))
+        idx_l = np.unique(
+            np.round(np.logspace(0, np.log10(len(t_ms_full) - 1), n_t)).astype(int)
+        )
+        idx_l = np.clip(idx_l, 0, len(t_ms_full) - 1)
+        t_ms  = t_ms_full[idx_l]
+        t_s   = t_ms * 1e-3                    # seconds
+
+        # Build ΔC/C₀ matrix  shape: (n_time, n_temp)
+        Z = np.empty((len(t_ms), len(temps)))
+        for j, tc in enumerate(temps):
+            t_j, cap_j, cinf_j = data[tc]
+            if abs(cinf_j) < 1e-30:
+                Z[:, j] = 0.0
+                continue
+            cap_interp = np.interp(t_ms, t_j, cap_j)
+            Z[:, j] = (cap_interp - cinf_j) / cinf_j
+
+        # Signed ΔC/C₀ — keep the sign so the direction of the transient is preserved.
+        # For n-type SiC DLTS, majority-carrier emission gives a negative ΔC/C₀
+        # (capacitance recovers upward from the pulse), so the peak amplitude is
+        # the most-negative region.  jet maps min → blue, max → red/yellow.
+        # Scale ×10⁵ so colorbar reads in units of ×10⁻⁵ (raw values ~1e-5).
+        Z_disp = Z * 1e5
+
+        # Colour limits: robust 1st–99th percentile to avoid outlier saturation.
+        vlo = float(np.nanpercentile(Z_disp, 1))
+        vhi = float(np.nanpercentile(Z_disp, 99))
+        if vhi <= vlo:
+            vlo, vhi = -1e-4, 1e-4
+        n_lev = 64
+        levels = np.linspace(vlo, vhi, n_lev)
+
+        # Meshgrid
+        Tm, tm = np.meshgrid(T_K, t_s)
+
+        # Filled contour + thin contour lines
+        cf = ax.contourf(Tm, tm, Z_disp, levels=levels,
+                         cmap='jet', extend='both')
+        ax.contour(Tm, tm, Z_disp, levels=levels[::6],
+                   colors='k', linewidths=0.25, alpha=0.35)
+
+        ax.set_yscale('log')
+
+        # Axis styling
+        ax.set_xlabel('Temperature  (K)', fontsize=10, color=TEXT_PRI, labelpad=5)
+        ax.set_ylabel('Time  (s)', fontsize=10, color=TEXT_PRI, labelpad=5)
+        ax.set_title('ΔC/C₀  Transient Map', fontsize=11,
+                     color=TEXT_PRI, pad=8)
+        ax.tick_params(labelsize=9)
+
+        # Colorbar
+        cbar = self._fig.colorbar(cf, ax=ax, pad=0.01,
+                                   fraction=0.015, aspect=42)
+        cbar.set_label('ΔC/C₀  (×10⁻⁵)', fontsize=9, color=TEXT_SEC)
+        cbar.ax.tick_params(labelsize=8)
+        cbar.outline.set_edgecolor(BASELINE)
+
+        return None
+
+    # ── Label / legend editor ─────────────────────────────────────────────────
+
+    def _open_label_editor(self):
+        """Popup dialog to edit axis labels, titles, and legend text/font sizes."""
+        if self._fig is None:
+            messagebox.showinfo('No plot', 'Run the analysis first.')
+            return
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title('Edit Labels & Legends')
+        dlg.configure(bg='#f0f0f0')
+        dlg.minsize(460, 340)
+        dlg.geometry('500x580')
+
+        # ── Scrollable inner frame ────────────────────────────────────────────
+        outer = tk.Frame(dlg, bg='#f0f0f0')
+        outer.pack(fill='both', expand=True)
+        cvs = tk.Canvas(outer, bg='#f0f0f0', highlightthickness=0)
+        vsb = ttk.Scrollbar(outer, orient='vertical', command=cvs.yview)
+        cvs.configure(yscrollcommand=vsb.set)
+        vsb.pack(side='right', fill='y')
+        cvs.pack(side='left', fill='both', expand=True)
+        inner = tk.Frame(cvs, bg='#f0f0f0', padx=12, pady=8)
+        cvs.create_window((0, 0), window=inner, anchor='nw')
+        inner.bind('<Configure>',
+                   lambda e: cvs.configure(scrollregion=cvs.bbox('all')))
+
+        def section(title):
+            tk.Frame(inner, bg='#1a3a5c', height=2).pack(fill='x', pady=(10, 2))
+            tk.Label(inner, text=title, bg='#f0f0f0', fg='#1a3a5c',
+                     font=('Segoe UI', 9, 'bold')).pack(anchor='w')
+
+        # Collectors for Apply
+        axis_updates  = []   # (setter_fn, text_var, size_var)
+        legend_sizes  = []   # (legend_obj, size_var)
+        legend_texts  = []   # (text_obj, text_var)
+
+        def axis_row(parent, label, current_text, current_size, setter_fn):
+            f = tk.Frame(parent, bg='#f0f0f0')
+            f.pack(fill='x', pady=2)
+            tk.Label(f, text=label, bg='#f0f0f0', fg=TEXT_PRI,
+                     font=('Segoe UI', 9), width=9, anchor='w').pack(side='left')
+            tv = tk.StringVar(value=current_text)
+            tk.Entry(f, textvariable=tv, font=('Segoe UI', 9),
+                     width=26, relief='solid').pack(side='left', padx=(4, 8))
+            tk.Label(f, text='pt', bg='#f0f0f0', fg=TEXT_SEC,
+                     font=('Segoe UI', 8)).pack(side='right')
+            sv = tk.IntVar(value=max(6, int(current_size)))
+            ttk.Spinbox(f, textvariable=sv, from_=6, to=28, increment=1,
+                        width=4, font=('Segoe UI', 9)).pack(side='right', padx=(0, 4))
+            axis_updates.append((setter_fn, tv, sv))
+
+        # ── Per-panel axis label editor ───────────────────────────────────────
+        panel_defs = [
+            ('Arrhenius Panel',       self._ax1),
+            ('DLTS Spectra Panel',    self._ax2),
+            ('Transient Map Panel',   self._ax3),
+        ]
+        for pname, ax in panel_defs:
+            if ax is None:
+                continue
+            section(pname)
+            axis_row(inner, 'Title',
+                     ax.title.get_text(), ax.title.get_fontsize(),
+                     ax.set_title)
+            axis_row(inner, 'X label',
+                     ax.xaxis.label.get_text(),
+                     ax.xaxis.label.get_fontsize() or 10,
+                     ax.set_xlabel)
+            axis_row(inner, 'Y label',
+                     ax.yaxis.label.get_text(),
+                     ax.yaxis.label.get_fontsize() or 10,
+                     ax.set_ylabel)
+
+        # ── Per-legend editor ─────────────────────────────────────────────────
+        legend_defs = [
+            ('Arrhenius Legend',      self._ax1, self._leg1),
+            ('Spectra Legend',        self._ax2, self._leg2),
+            ('Transient Map Legend',  self._ax3, self._leg_m),
+        ]
+        for lname, ax, leg in legend_defs:
+            if ax is None or leg is None:
+                continue
+            texts = leg.get_texts()
+            if not texts:
+                continue
+            section(lname)
+
+            # Font size for whole legend
+            f_sz = tk.Frame(inner, bg='#f0f0f0')
+            f_sz.pack(fill='x', pady=2)
+            tk.Label(f_sz, text='Font size', bg='#f0f0f0', fg=TEXT_PRI,
+                     font=('Segoe UI', 9), width=9, anchor='w').pack(side='left')
+            tk.Label(f_sz, text='pt', bg='#f0f0f0', fg=TEXT_SEC,
+                     font=('Segoe UI', 8)).pack(side='right')
+            fsv = tk.IntVar(value=max(6, int(texts[0].get_fontsize())))
+            ttk.Spinbox(f_sz, textvariable=fsv, from_=6, to=18, increment=1,
+                        width=4, font=('Segoe UI', 9)).pack(side='right', padx=(0, 4))
+            legend_sizes.append((leg, fsv))
+
+            # Individual entry texts
+            for i, txt_obj in enumerate(texts):
+                fe = tk.Frame(inner, bg='#f0f0f0')
+                fe.pack(fill='x', pady=1)
+                tk.Label(fe, text=f'  Entry {i+1}', bg='#f0f0f0', fg=TEXT_SEC,
+                         font=('Segoe UI', 8), width=9, anchor='w').pack(side='left')
+                ltv = tk.StringVar(value=txt_obj.get_text())
+                tk.Entry(fe, textvariable=ltv, font=('Segoe UI', 9),
+                         width=32, relief='solid').pack(side='left', padx=4)
+                legend_texts.append((txt_obj, ltv))
+
+        # ── Annotation box ────────────────────────────────────────────────────
+        if self._ann_box is not None:
+            section('Results Annotation  (Arrhenius panel)')
+            tk.Label(inner, text='Tip: double-click the box on the plot to edit it directly.',
+                     bg='#f0f0f0', fg=TEXT_MUT,
+                     font=('Segoe UI', 8), anchor='w').pack(fill='x', pady=(0, 3))
+            ann_txt = tk.scrolledtext.ScrolledText(
+                inner, font=('Consolas', 9), height=6, wrap='none',
+                bg='#fffbe6', fg='#0b0b0b', insertbackground='#0b0b0b',
+                relief='solid', bd=1)
+            ann_txt.pack(fill='both', expand=True, pady=(0, 4))
+            ann_txt.insert('1.0', self._ann_box.get_text())
+        else:
+            ann_txt = None
+
+        # ── Apply / Close buttons ─────────────────────────────────────────────
+        def apply_all():
+            for setter, tv, sv in axis_updates:
+                setter(tv.get(), fontsize=sv.get())
+            for leg, fsv in legend_sizes:
+                for t in leg.get_texts():
+                    t.set_fontsize(fsv.get())
+            for txt_obj, ltv in legend_texts:
+                txt_obj.set_text(ltv.get())
+            if ann_txt is not None and self._ann_box is not None:
+                self._ann_box.set_text(ann_txt.get('1.0', 'end-1c'))
+            if self._canvas:
+                self._canvas.draw_idle()
+
+        btn_f = tk.Frame(dlg, bg='#f0f0f0')
+        btn_f.pack(fill='x', padx=12, pady=8)
+        ttk.Button(btn_f, text='Apply',
+                   command=apply_all).pack(side='left', padx=4)
+        ttk.Button(btn_f, text='Apply & Close',
+                   command=lambda: [apply_all(), dlg.destroy()]).pack(side='left', padx=4)
+        ttk.Button(btn_f, text='Close',
+                   command=dlg.destroy).pack(side='right', padx=4)
+
+    # ── Annotation text editor ────────────────────────────────────────────────
+
+    def _edit_annotation(self):
+        """Popup editor for the Arrhenius results annotation box.
+
+        Opened via double-click on the box in the plot, or from the
+        'Edit Annotation…' sidebar button / the Labels & Legends dialog.
+        The user can freely edit the multi-line text; Apply refreshes the plot.
+        """
+        if self._ann_box is None:
+            messagebox.showinfo('No annotation',
+                                'Run the analysis first, then use this to edit '
+                                'the results box on the Arrhenius panel.')
+            return
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title('Edit Results Annotation')
+        dlg.configure(bg='#f0f0f0')
+        dlg.geometry('420x260')
+        dlg.resizable(True, True)
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        tk.Label(
+            dlg,
+            text='Arrhenius results box  —  edit freely, then click Apply.\n'
+                 'Tip: you can also double-click the box on the plot to reopen this.',
+            bg='#f0f0f0', fg=TEXT_SEC,
+            font=('Segoe UI', 8), wraplength=395, justify='left'
+        ).pack(anchor='w', padx=14, pady=(10, 4))
+
+        txt = tk.scrolledtext.ScrolledText(
+            dlg, font=('Consolas', 10), height=8, wrap='none',
+            bg='#fffbe6', fg='#0b0b0b', insertbackground='#0b0b0b',
+            relief='solid', bd=1)
+        txt.pack(fill='both', expand=True, padx=14, pady=(0, 4))
+        txt.insert('1.0', self._ann_box.get_text())
+        txt.focus_set()
+
+        # Select-all on Ctrl+A for convenience
+        txt.bind('<Control-a>',
+                 lambda e: (txt.tag_add('sel', '1.0', 'end'), 'break'))
+
+        def _apply():
+            self._ann_box.set_text(txt.get('1.0', 'end-1c'))
+            if self._canvas:
+                self._canvas.draw_idle()
+
+        btn_f = tk.Frame(dlg, bg='#f0f0f0')
+        btn_f.pack(fill='x', padx=14, pady=(0, 10))
+        ttk.Button(btn_f, text='Apply',
+                   command=_apply).pack(side='left', padx=4)
+        ttk.Button(btn_f, text='Apply & Close',
+                   command=lambda: [_apply(), dlg.destroy()]).pack(side='left', padx=4)
+        ttk.Button(btn_f, text='Close',
+                   command=dlg.destroy).pack(side='right', padx=4)
+
+    # ── Results text ──────────────────────────────────────────────────────────
+
+    def _write_results(self, res_mw, res_std, tplo=None, tphi=None,
+                       trap_name='Trap', tc=None, tc_std=None,
+                       method_rows=None, notes=None):
+        lines = ['=' * 66, '  DLTS Multiwindow Analysis  -  Results', '=' * 66, '']
+        lines.append(f'  Selected trap : {trap_name}')
+        if tplo is not None:
+            lines.append(f'  Peak search   : {tplo:.0f}-{tphi:.0f} K '
+                         f'({tplo-273.15:.0f} to {tphi-273.15:.0f} C)')
+        lines.append(f'  Peak finder   : {res_mw.get("peak_method", "-")}'
+                     f'   (fallbacks to parabola: {res_mw.get("n_fallback", 0)})')
+        lines.append('')
+        lines.append(f'  Multi-window  ({res_mw["N"]} windows)')
+        lines.append(f'    Eₜ   = {res_mw["Et"]:.4f} +/- {res_mw["Et_se"]:.4f} eV')
+        lines.append(f'    σₙ   = {res_mw["sigma"]:.3e} cm²')
+        lines.append(f'    R²   = {res_mw["R2"]:.5f}')
+        if res_std:
+            lines.append('')
+            lines.append(f'  Standard  ({res_std["N"]} windows)')
+            lines.append(f'    Eₜ   = {res_std["Et"]:.4f} +/- {res_std["Et_se"]:.4f} eV')
+            lines.append(f'    σₙ   = {res_std["sigma"]:.3e} cm²')
+            lines.append(f'    R²   = {res_std["R2"]:.5f}')
+            if res_std['Et_se'] > 0 and res_mw['Et_se'] > 0:
+                lines.append(f'    Eₜ uncertainty improvement: '
+                             f'{res_std["Et_se"]/res_mw["Et_se"]:.1f}x')
+
+        if tc:
+            lines.append('')
+            lines.append(f'  Trap concentration  -  {trap_name}  '
+                         f'(peaks within {tplo:.0f}-{tphi:.0f} K only)')
+            lines.append('    Nₜ = 2·N_D·S_pk / f(r)   per rate window; median reported')
+            lines.append(f'    N_D (input)        = {tc["nd"]:.2e} cm⁻³')
+            lines.append(f'    S_pk (median)      = {np.median(tc["sp_arr"]):.4e}')
+            lines.append(f'    f(r)  (median)     = {np.median(tc["f_arr"]):.4f}')
+            lines.append(f'    Nₜ (multi-window)  = {tc["Nt"]:.3e} cm⁻³'
+                         f'   (± {tc["Nt_sd"]:.1e} window scatter)')
+            lines.append(f'    Nₜ / N_D           = {tc["frac"]*100:.2f} %')
+            if GEOM['on'] and tc.get('geom'):
+                gi = tc['geom']
+                lines.append(f'    Fill-pulse geometry: fill {GEOM["v_fill"]:g} V, reverse {GEOM["v_rev"]:g} V, '
+                             f'Ø {GEOM["diam_mm"]:g} mm, ε_r {GEOM["eps_r"]:g}')
+                lines.append(f'      W_R = {gi["W_R"]:.2f} µm (C₀ = {gi["C0"]:.1f} pF),  W_F = {gi["W_F"]:.2f} µm '
+                             f'[{gi["src"]}' + (f', C_fill = {gi["C_fill"]:.1f} pF' if np.isfinite(gi.get('C_fill', np.nan)) else '') + ']')
+                lines.append(f'      λ = {gi["lam"]:.2f} µm  ->  g = {gi["g"]:.3f} (median window; '
+                             f'range {np.min(tc["g_arr"]):.3f}-{np.max(tc["g_arr"]):.3f})')
+                lines.append(f'      Nₜ without correction = {tc["Nt_raw"]:.3e} cm⁻³   '
+                             f'(Nₜ above is divided by g' + (', large-signal term applied)' if GEOM.get('ls') else ')'))
+                lines.append(f'      amplitude a = S_pk/f = {tc["a_med"]:.3f};  model uncertainty of the corrected Nₜ ≈ ±30 %')
+            if GEOM.get('nd_scale'):
+                lines.append(f'    N_D(T) used     = {tc["nd_med"]:.2e} cm⁻³ at the peak temperature '
+                             f'(= N_D·(C₀(T)/C₀({GEOM.get("t_ref", 25.0):g} °C))²; Nₜ/N_D above refers to it)')
+            if tc_std:
+                lines.append(f'    Nₜ (standard win.) = {tc_std["Nt"]:.3e} cm⁻³'
+                             f'   (± {tc_std["Nt_sd"]:.1e})')
+            lines.append('    Note: Nₜ scales linearly with N_D (input value, see Checks).')
+
+        def _peak_table(title, res, tcx):
+            lines.append('')
+            lines.append(f'  {title}  -  peak temperatures picked with '
+                         f'[{res.get("peak_method", "-")}]')
+            lines.append(f'  {"t1(ms)":>8} {"t2(ms)":>8} {"en(s-1)":>10} '
+                         f'{"Tpeak(C)":>9} {"Tpeak(K)":>9} {"Spk(1e-3)":>10} {"Nt(cm-3)":>10}')
+            lines.append('  ' + '-' * 72)
+            for i, (t1, t2, en, tp, sp) in enumerate(res['detail']):
+                nt_s = f'{tcx["nt_arr"][i]:10.2e}' if tcx else f'{"-":>10}'
+                lines.append(f'  {t1:8.2f} {t2:8.2f} {en:10.2f} '
+                             f'{tp:9.2f} {tp + 273.15:9.2f} {sp * 1e3:10.3f} {nt_s}')
+            tps = [d[3] for d in res['detail']]
+            lines.append(f'  Tpeak range: {min(tps):.1f} to {max(tps):.1f} C   '
+                         f'({len(tps)} windows)')
+
+        if method_rows:
+            lines.append('')
+            lines.append('  Peak-finder sensitivity  (same windows and T range)')
+            lines.append(f'  {"Finder":<22}{"Eₜ (eV)":>16}{"σₙ (cm²)":>12}{"R²":>8}{"Nₜ (cm⁻³)":>12}')
+            lines.append('  ' + '-' * 70)
+            for m, v in method_rows:
+                mark = '  <- selected' if m == res_mw.get('peak_method') else ''
+                if v is None:
+                    lines.append(f'  {m:<22}  (no result)')
+                else:
+                    lines.append(f'  {m:<22}{v["Et"]:9.3f} ±{v["se"]:.3f}{v["sigma"]:12.2e}'
+                                 f'{v["R2"]:8.4f}{v["Nt"]:12.2e}{mark}')
+        if notes:
+            lines.append('')
+            lines.append('  Checks')
+            for nt in notes:
+                lines.append('   - ' + nt)
+
+        _peak_table('Multi-window', res_mw, tc)
+        if res_std:
+            _peak_table('Standard windows', res_std, tc_std)
+        self._log('\n'.join(lines))
+
+    # ── Sample Comparison tab ─────────────────────────────────────────────────
+
+    SAMPLE_COLORS = ['#2a78d6', '#eb6834', '#2f9e6b', '#8a4fd6', '#c9a227',
+                     '#d6457a', '#3aa6b9', '#6b6b6b']
+
+    def _build_sample_tab(self):
+        t = self.sample_tab
+        left = tk.Frame(t, bg='#f0f0f0', width=250, padx=8, pady=6)
+        left.pack(side='left', fill='y')
+        left.pack_propagate(False)
+        plot_side = tk.Frame(t, bg='#f0f0f0')
+        plot_side.pack(side='left', fill='both', expand=True)
+
+        def sec(txt):
+            tk.Frame(left, bg='#1a3a5c', height=2).pack(fill='x', pady=(8, 2))
+            tk.Label(left, text=txt.upper(), bg='#f0f0f0', fg='#1a3a5c',
+                     font=('Segoe UI', 8, 'bold')).pack(anchor='w')
+
+        # ---- samples ----
+        sec('Samples')
+        ttk.Button(left, text='Add sample folder…',
+                   command=self._add_sample).pack(fill='x', pady=2)
+        ttk.Button(left, text='Add dataset loaded in main tab',
+                   command=self._add_current_sample).pack(fill='x', pady=2)
+        self.sample_list = tk.Listbox(left, height=7, exportselection=False,
+                                      font=('Segoe UI', 9), selectmode='extended')
+        self.sample_list.pack(fill='x', pady=2)
+        row = tk.Frame(left, bg='#f0f0f0'); row.pack(fill='x')
+        ttk.Button(row, text='Remove selected',
+                   command=self._remove_sample).pack(side='left', expand=True, fill='x')
+        ttk.Button(row, text='Clear all',
+                   command=self._clear_samples).pack(side='left', expand=True, fill='x')
+
+        # ---- rate window ----
+        sec('Single rate window (ms)')
+        self.sw_t1 = tk.DoubleVar(value=10.0)
+        self.sw_t2 = tk.DoubleVar(value=50.0)
+        self._sw_s1 = tk.DoubleVar(value=np.log10(10.0))
+        self._sw_s2 = tk.DoubleVar(value=np.log10(50.0))
+        self._sw_lock = False
+
+        def entry_row(label, var, svar):
+            f = tk.Frame(left, bg='#f0f0f0'); f.pack(fill='x', pady=1)
+            tk.Label(f, text=label, bg='#f0f0f0', width=4, anchor='w',
+                     font=('Segoe UI', 9)).pack(side='left')
+            sb = ttk.Spinbox(f, textvariable=var, from_=0.05, to=600,
+                             increment=1, width=8, format='%g',
+                             command=self._sw_from_entry)
+            sb.pack(side='left')
+            sb.bind('<Return>', lambda e: self._sw_from_entry())
+            sb.bind('<FocusOut>', lambda e: self._sw_from_entry())
+            sc = ttk.Scale(left, from_=np.log10(0.1), to=np.log10(600),
+                           variable=svar, command=lambda v: self._sw_from_scale())
+            sc.pack(fill='x', pady=(0, 3))
+        entry_row('t₁', self.sw_t1, self._sw_s1)
+        entry_row('t₂', self.sw_t2, self._sw_s2)
+        self.sw_info = tk.Label(left, text='', bg='#f0f0f0', fg=TEXT_SEC,
+                                font=('Consolas', 8), justify='left')
+        self.sw_info.pack(anchor='w')
+        tk.Label(left, text='Drag the sliders or type values: the plot updates live.',
+                 bg='#f0f0f0', fg=TEXT_MUT, wraplength=230, justify='left',
+                 font=('Segoe UI', 7, 'italic')).pack(anchor='w')
+
+        # ---- display ----
+        sec('Display')
+        self.sp_norm   = tk.BooleanVar(value=False)
+        self.sp_line   = tk.BooleanVar(value=True)
+        self.sp_fit    = tk.BooleanVar(value=False)
+        self.sp_peaks  = tk.BooleanVar(value=True)
+        for txt, var in [('Normalise each spectrum to its peak', self.sp_norm),
+                         ('Connect points with a line', self.sp_line),
+                         ('Overlay curve fit (main-tab peak finder)', self.sp_fit),
+                         ('Mark picked peak Tₚ', self.sp_peaks)]:
+            ttk.Checkbutton(left, text=txt, variable=var,
+                            command=self._sample_replot).pack(anchor='w')
+        self.sp_tlo = tk.StringVar(value='')
+        self.sp_thi = tk.StringVar(value='')
+        f = tk.Frame(left, bg='#f0f0f0'); f.pack(fill='x', pady=(4, 0))
+        tk.Label(f, text='Peak/fit range (°C):', bg='#f0f0f0',
+                 font=('Segoe UI', 8)).pack(anchor='w')
+        f2 = tk.Frame(left, bg='#f0f0f0'); f2.pack(fill='x')
+        for var in (self.sp_tlo, self.sp_thi):
+            e = ttk.Entry(f2, textvariable=var, width=8)
+            e.pack(side='left', padx=(0, 4))
+            e.bind('<Return>', lambda ev: self._sample_replot())
+            e.bind('<FocusOut>', lambda ev: self._sample_replot())
+        tk.Label(f2, text='(blank = trap range\nfrom main tab)', bg='#f0f0f0', fg=TEXT_MUT,
+                 font=('Segoe UI', 7, 'italic')).pack(side='left')
+
+        sec('Export')
+        ttk.Button(left, text='Save figure as PNG',
+                   command=self._sample_save_png).pack(fill='x', pady=2)
+        ttk.Button(left, text='Export spectra to CSV',
+                   command=self._sample_export_csv).pack(fill='x', pady=2)
+
+        # ---- plot ----
+        self.sp_fig = Figure(figsize=(8, 5), facecolor=SURFACE, constrained_layout=True)
+        self.sp_ax = self.sp_fig.add_subplot(111)
+        self.sp_canvas = FigureCanvasTkAgg(self.sp_fig, master=plot_side)
+        tb = NavigationToolbar2Tk(self.sp_canvas, plot_side, pack_toolbar=False)
+        tb.update(); tb.pack(side='bottom', fill='x')
+        self.sp_canvas.get_tk_widget().pack(fill='both', expand=True)
+        self.sp_text = tk.scrolledtext.ScrolledText(
+            plot_side, height=7, font=('Consolas', 9), bg='#1e1e2e', fg='#cdd6f4',
+            state='disabled', wrap='none', relief='flat')
+        self.sp_text.pack(side='bottom', fill='x', padx=6, pady=4)
+        self._sample_replot()
+
+    # -- sample management --
+
+    def _unique_sample_name(self, name):
+        names = {s['name'] for s in self.samples}
+        if name not in names:
+            return name
+        i = 2
+        while f'{name} ({i})' in names:
+            i += 1
+        return f'{name} ({i})'
+
+    def _register_sample(self, name, data, temps):
+        name = self._unique_sample_name(name)
+        col = self.SAMPLE_COLORS[len(self.samples) % len(self.SAMPLE_COLORS)]
+        self.samples.append(dict(name=name, data=data, temps=temps, color=col))
+        self.sample_list.insert('end', f'{name}   [{temps[0]:.0f} to {temps[-1]:.0f} °C]')
+        self.sample_list.itemconfig('end', foreground=col)
+        self._sample_replot()
+        self._set_status(f'Sample "{name}" added ({len(temps)} temperatures). '
+                         f'{len(self.samples)} sample(s) plotted.')
+
+    def _add_sample(self):
+        base = filedialog.askdirectory(title='Select data folder of the sample to append')
+        if not base:
+            return
+        name = simpledialog.askstring('Sample name', 'Name for this sample:',
+                                      initialvalue=os.path.basename(base.rstrip('/\\')),
+                                      parent=self.root)
+        if not name:
+            return
+        try:
+            data, temps = load_data(base, self.grid_off_var.get(), self.grid_dt_var.get(),
+                                    self.chunk_size_var.get(), self.rb_ms_var.get(),
+                                    self.cinf_lo_var.get(), self.cinf_hi_var.get())
+            if not temps:
+                raise ValueError('No valid temperature data found in that folder.')
+            self._register_sample(name, data, temps)
+        except Exception as exc:
+            messagebox.showerror('Load Error', str(exc))
+
+    def _add_current_sample(self):
+        if not self.data:
+            messagebox.showinfo('No data', 'Load a dataset in the main tab first.')
+            return
+        base = self.base_var.get().strip()
+        self._register_sample(os.path.basename(base.rstrip('/\\')) or 'Main dataset',
+                              self.data, self.temps)
+
+    def _remove_sample(self):
+        for i in sorted(self.sample_list.curselection(), reverse=True):
+            self.sample_list.delete(i)
+            del self.samples[i]
+        self._sample_replot()
+
+    def _clear_samples(self):
+        self.sample_list.delete(0, 'end')
+        self.samples.clear()
+        self._sample_replot()
+
+    # -- rate window (interactive) --
+
+    def _sw_from_entry(self):
+        if self._sw_lock:
+            return
+        try:
+            t1, t2 = float(self.sw_t1.get()), float(self.sw_t2.get())
+            self._sw_lock = True
+            self._sw_s1.set(np.log10(max(t1, 0.1))); self._sw_s2.set(np.log10(max(t2, 0.1)))
+        except (tk.TclError, ValueError):
+            return
+        finally:
+            self._sw_lock = False
+        self._sample_replot()
+
+    def _sw_from_scale(self):
+        if self._sw_lock:
+            return
+        self._sw_lock = True
+        try:
+            self.sw_t1.set(round(10 ** self._sw_s1.get(), 2))
+            self.sw_t2.set(round(10 ** self._sw_s2.get(), 2))
+        finally:
+            self._sw_lock = False
+        self._sample_replot()
+
+    def _sample_replot(self):
+        """Debounced redraw so dragging a slider stays smooth."""
+        if self._sample_job is not None:
+            try:
+                self.root.after_cancel(self._sample_job)
+            except Exception:
+                pass
+        self._sample_job = self.root.after(40, self._sample_draw)
+
+    def _sample_spectrum(self, smp, t1, t2):
+        tc = smp['temps']; d = smp['data']
+        T = np.array(tc, float)
+        S = np.array([(cap_at(d[x][0], d[x][1], t2) - cap_at(d[x][0], d[x][1], t1))
+                      / d[x][2] for x in tc])
+        return T, S
+
+    def _sample_range(self):
+        """Peak/fit range in °C.  Blank boxes use the trap range selected in
+        the Multiwindow tab (K -> °C), so the fits target the same trap."""
+        def num(v):
+            try:
+                return float(v.get())
+            except ValueError:
+                return None
+        lo, hi = num(self.sp_tlo), num(self.sp_thi)
+        if lo is None:
+            lo = self.tpeak_lo_var.get() - 273.15
+        if hi is None:
+            hi = self.tpeak_hi_var.get() - 273.15
+        return lo, hi
+
+    def _sample_draw(self):
+        self._sample_job = None
+        try:
+            t1, t2 = float(self.sw_t1.get()), float(self.sw_t2.get())
+        except (tk.TclError, ValueError):
+            return
+        ax = self.sp_ax
+        ax.clear(); ax.set_facecolor(SURFACE)
+        lines = []
+        if t2 <= t1 or t1 <= 0:
+            self.sw_info.configure(text='t₂ must be larger than t₁')
+            ax.text(0.5, 0.5, 't₂ must be larger than t₁', transform=ax.transAxes,
+                    ha='center', color=TEXT_MUT)
+            self.sp_canvas.draw_idle(); return
+        t_fe = self.t_fe_ms_var.get()
+        if t_fe > 0 and t1 > t_fe:
+            tau1, tau2 = t1 - t_fe, t2 - t_fe
+            en = np.log(tau2 / tau1) / ((tau2 - tau1) * 1e-3)
+        else:
+            en = np.log(t2 / t1) / ((t2 - t1) * 1e-3)
+        self.sw_info.configure(
+            text=f'ratio t₂/t₁ = {t2/t1:.2f}\neₙ = {en:.2f} s⁻¹  (τ = {1e3/en:.2f} ms)'
+                 f'\nt_FE = {t_fe:g} ms (main tab)')
+
+        norm = self.sp_norm.get()
+        lo_c, hi_c = self._sample_range()
+        pm = self.peak_method_var.get()
+        lines.append(f'  Rate window {t1:g}/{t2:g} ms   eₙ = {en:.2f} s⁻¹   peak finder: {pm}')
+        lines.append(f'  {"Sample":<24} {"Tpeak(C)":>9} {"Tpeak(K)":>9} {"Spk(1e-3)":>10}')
+        lines.append('  ' + '-' * 56)
+        csv_cols = {}
+        for smp in self.samples:
+            T, S = self._sample_spectrum(smp, t1, t2)
+            m = np.ones_like(T, bool)
+            if lo_c is not None: m &= T >= lo_c
+            if hi_c is not None: m &= T <= hi_c
+            y = S.copy()
+            sgn = -1.0 if (m.sum() and np.max(S[m]) < abs(np.min(S[m]))) else 1.0
+            pk_ok = m.sum() >= 3
+            Tp = Sp = None
+            if pk_ok:
+                Tp_k, Sp_v, _ = locate_peak(T[m] + 273.15, sgn * S[m], pm)
+                Tp, Sp = Tp_k - 273.15, sgn * Sp_v
+            scale = 1e3
+            if norm and Sp:
+                scale = 1.0 / abs(Sp)
+            col = smp['color']
+            lab = smp['name'] + (f'   Tₚ={Tp:.1f} °C' if (Tp is not None and self.sp_peaks.get()) else '')
+            if self.sp_line.get():
+                ax.plot(T, y * scale, '-', color=col, lw=0.8, alpha=0.6, zorder=2)
+            ax.plot(T, y * scale, 'o', ms=4.5, mfc=col, mec='white', mew=0.5,
+                    color=col, label=lab, zorder=3)
+            if pk_ok and self.sp_fit.get():
+                Tf, Sf, _, _, _ = fit_curve(T[m] + 273.15, sgn * S[m], pm)
+                ax.plot(Tf - 273.15, sgn * Sf * scale, color=col, lw=1.8, zorder=4)
+            if pk_ok and self.sp_peaks.get():
+                ax.plot([Tp], [Sp * scale], 'v', ms=8, mfc=col, mec=TEXT_PRI,
+                        mew=0.9, zorder=5)
+            lines.append(f'  {smp["name"][:24]:<24} '
+                         + (f'{Tp:9.2f} {Tp + 273.15:9.2f} {Sp*1e3:10.3f}' if pk_ok
+                            else f'{"-":>9} {"-":>9} {"-":>10}'))
+            csv_cols[smp['name']] = (T, S)
+        self._sample_csv = csv_cols
+        ax.axhline(0, color=BASELINE, lw=0.7)
+        ax.set_xlabel('Temperature  (°C)', fontsize=10, color=TEXT_PRI)
+        ax.set_ylabel('Normalised ΔC/C₀' if norm else 'ΔC/C₀  (×10⁻³)',
+                      fontsize=10, color=TEXT_PRI)
+        ax.set_title(f'DLTS spectra, rate window {t1:g}/{t2:g} ms  (eₙ = {en:.1f} s⁻¹)',
+                     fontsize=11, color=TEXT_PRI)
+        ax.tick_params(labelsize=9)
+        if self.samples:
+            ax.legend(fontsize=8, frameon=False, loc='upper left')
+        else:
+            ax.text(0.5, 0.5, 'Add a sample folder to plot its DLTS spectrum',
+                    transform=ax.transAxes, ha='center', color=TEXT_MUT)
+        self.sp_canvas.draw_idle()
+        self.sp_text.configure(state='normal')
+        self.sp_text.delete('1.0', 'end'); self.sp_text.insert('end', '\n'.join(lines))
+        self.sp_text.configure(state='disabled')
+
+    def _sample_save_png(self):
+        path = filedialog.asksaveasfilename(defaultextension='.png',
+                                            filetypes=[('PNG image', '*.png')],
+                                            initialfile='DLTS_samples.png')
+        if path:
+            self.sp_fig.savefig(path, dpi=180, facecolor=SURFACE)
+            self._set_status(f'Figure saved: {path}')
+
+    def _sample_export_csv(self):
+        if not getattr(self, '_sample_csv', None):
+            messagebox.showinfo('Nothing to export', 'Add a sample first.')
+            return
+        path = filedialog.asksaveasfilename(defaultextension='.csv',
+                                            filetypes=[('CSV', '*.csv')],
+                                            initialfile='DLTS_samples_spectra.csv')
+        if not path:
+            return
+        t1, t2 = self.sw_t1.get(), self.sw_t2.get()
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(f'# rate window t1={t1:g} ms, t2={t2:g} ms; dC/C0 (dimensionless)\n')
+            for name, (T, S) in self._sample_csv.items():
+                fh.write(f'# sample: {name}\nT_C,dC_over_C0\n')
+                for a, b in zip(T, S):
+                    fh.write(f'{a:g},{b:.6e}\n')
+        self._set_status(f'Spectra exported: {path}')
+
+    # ── Peak Deconvolution tab ────────────────────────────────────────────────
+
+    DEC_COLORS = ['#2a78d6', '#eb6834', '#2f9e6b', '#8a4fd6']
+
+    def _build_dec_tab(self):
+        t = self.dec_tab
+        left = tk.Frame(t, bg='#f0f0f0', width=270, padx=8, pady=6)
+        left.pack(side='left', fill='y'); left.pack_propagate(False)
+        plot_side = tk.Frame(t, bg='#f0f0f0')
+        plot_side.pack(side='left', fill='both', expand=True)
+
+        def sec(txt):
+            tk.Frame(left, bg='#1a3a5c', height=2).pack(fill='x', pady=(8, 2))
+            tk.Label(left, text=txt.upper(), bg='#f0f0f0', fg='#1a3a5c',
+                     font=('Segoe UI', 8, 'bold')).pack(anchor='w')
+
+        def row(label, widget_fn):
+            f = tk.Frame(left, bg='#f0f0f0'); f.pack(fill='x', pady=1)
+            tk.Label(f, text=label, bg='#f0f0f0', font=('Segoe UI', 9),
+                     width=15, anchor='w').pack(side='left')
+            w = widget_fn(f); w.pack(side='left', fill='x', expand=True)
+            return w
+
+        sec('Data source')
+        self.dec_src_var = tk.StringVar(value='Main-tab dataset')
+        self.dec_src_cb = ttk.Combobox(left, textvariable=self.dec_src_var, state='readonly',
+                                       values=['Main-tab dataset'], width=30,
+                                       postcommand=self._dec_refresh_sources)
+        self.dec_src_cb.pack(fill='x', pady=2)
+
+        sec('Deconvolution')
+        self.dec_lo = tk.DoubleVar(value=0.0)
+        self.dec_hi = tk.DoubleVar(value=140.0)
+        self.dec_n = tk.IntVar(value=2)
+        self.dec_shape = tk.StringVar(value='Pseudo-Voigt')
+        row('T min (°C)', lambda p: ttk.Spinbox(p, textvariable=self.dec_lo, from_=-200,
+                                                to=800, increment=5, width=8))
+        row('T max (°C)', lambda p: ttk.Spinbox(p, textvariable=self.dec_hi, from_=-200,
+                                                to=800, increment=5, width=8))
+        row('Number of peaks', lambda p: ttk.Spinbox(p, textvariable=self.dec_n, from_=1,
+                                                     to=4, increment=1, width=8, format='%d'))
+        row('Peak shape', lambda p: ttk.Combobox(p, textvariable=self.dec_shape, state='readonly',
+                                                 values=DEC_SHAPES, width=14))
+        self.dec_centres = tk.StringVar(value='')
+        row('Start centres (°C)', lambda p: ttk.Entry(p, textvariable=self.dec_centres, width=14))
+        self.dec_pick_btn = ttk.Button(left, text='Pick centres on plot: OFF',
+                                       command=self._dec_toggle_pick)
+        self.dec_pick_btn.pack(fill='x', pady=2)
+        tk.Label(left, text='Blank = automatic start. Centres refer to the window shown '
+                            'on the plot; fitting starts there and tracks outward.',
+                 bg='#f0f0f0', fg=TEXT_MUT, wraplength=250, justify='left',
+                 font=('Segoe UI', 7, 'italic')).pack(anchor='w')
+        self.dec_pick_mode = False
+
+        sec('Rate windows (ms)')
+        self.dec_nw = tk.IntVar(value=16)
+        self.dec_t1a = tk.DoubleVar(value=5.0)
+        self.dec_t1b = tk.DoubleVar(value=90.0)
+        self.dec_ratio = tk.DoubleVar(value=5.0)
+        row('N windows', lambda p: ttk.Spinbox(p, textvariable=self.dec_nw, from_=4, to=40,
+                                               increment=1, width=8, format='%d'))
+        row('t₁ min', lambda p: ttk.Spinbox(p, textvariable=self.dec_t1a, from_=1, to=200,
+                                            increment=1, width=8))
+        row('t₁ max', lambda p: ttk.Spinbox(p, textvariable=self.dec_t1b, from_=5, to=450,
+                                            increment=5, width=8))
+        row('Ratio t₂/t₁', lambda p: ttk.Spinbox(p, textvariable=self.dec_ratio, from_=2, to=20,
+                                                 increment=0.5, width=8))
+        ttk.Button(left, text='Deconvolute all windows',
+                   command=self._dec_run).pack(fill='x', pady=(6, 2))
+
+        sec('Window shown')
+        self.dec_widx = tk.IntVar(value=0)
+        self.dec_wlabel = tk.Label(left, text='-', bg='#f0f0f0', fg=TEXT_SEC,
+                                   font=('Consolas', 8), justify='left')
+        self.dec_wlabel.pack(anchor='w')
+        self.dec_scale = ttk.Scale(left, from_=0, to=11, orient='horizontal',
+                                   command=lambda v: self._dec_scale_moved(v))
+        self.dec_scale.pack(fill='x')
+
+        sec('Arrhenius on selected peak')
+        self.dec_sel = tk.StringVar(value='P1')
+        self.dec_sel_cb = ttk.Combobox(left, textvariable=self.dec_sel, state='readonly',
+                                       values=['P1'], width=12)
+        self.dec_sel_cb.pack(fill='x', pady=2)
+        self.dec_sel_cb.bind('<<ComboboxSelected>>', lambda e: self._dec_draw())
+        tk.Label(left, text='Pick a peak (P1 = lowest temperature) to run the '
+                            'Arrhenius analysis on it alone.',
+                 bg='#f0f0f0', fg=TEXT_MUT, wraplength=250, justify='left',
+                 font=('Segoe UI', 7, 'italic')).pack(anchor='w')
+
+        sec('Export')
+        ttk.Button(left, text='Save figure as PNG',
+                   command=self._dec_save_png).pack(fill='x', pady=2)
+        ttk.Button(left, text='Export fitted peaks to CSV',
+                   command=self._dec_export_csv).pack(fill='x', pady=2)
+
+        self.dec_fig = Figure(figsize=(10, 4.6), facecolor=SURFACE, constrained_layout=True)
+        gs = self.dec_fig.add_gridspec(1, 2, width_ratios=[1.15, 1.0])
+        self.dec_ax1 = self.dec_fig.add_subplot(gs[0, 0])
+        self.dec_ax2 = self.dec_fig.add_subplot(gs[0, 1])
+        self.dec_canvas = FigureCanvasTkAgg(self.dec_fig, master=plot_side)
+        tb = NavigationToolbar2Tk(self.dec_canvas, plot_side, pack_toolbar=False)
+        tb.update(); tb.pack(side='bottom', fill='x')
+        self.dec_canvas.get_tk_widget().pack(fill='both', expand=True)
+        self.dec_text = tk.scrolledtext.ScrolledText(
+            plot_side, height=11, font=('Consolas', 9), bg='#1e1e2e', fg='#cdd6f4',
+            state='disabled', wrap='none', relief='flat')
+        self.dec_text.pack(side='bottom', fill='x', padx=6, pady=4)
+        self.dec_canvas.mpl_connect('button_press_event', self._dec_click)
+        self._dec_draw()
+
+    def _dec_refresh_sources(self):
+        self.dec_src_cb['values'] = ['Main-tab dataset'] + [s['name'] for s in self.samples]
+
+    def _dec_source(self):
+        nm = self.dec_src_var.get()
+        if nm == 'Main-tab dataset':
+            if not self.data:
+                raise ValueError('Load a dataset in the main tab first (or add a sample '
+                                 'in the Sample Comparison tab and pick it as source).')
+            return self.data, self.temps, nm
+        for smp in self.samples:
+            if smp['name'] == nm:
+                return smp['data'], smp['temps'], nm
+        raise ValueError(f'Source "{nm}" not found.')
+
+    def _dec_windows(self):
+        n, r = self.dec_nw.get(), self.dec_ratio.get()
+        t1 = np.logspace(np.log10(self.dec_t1a.get()), np.log10(self.dec_t1b.get()), n)
+        return [(float(a), float(r * a)) for a in t1]
+
+    def _dec_toggle_pick(self):
+        self.dec_pick_mode = not self.dec_pick_mode
+        self.dec_pick_btn.configure(
+            text=f'Pick centres on plot: {"ON - click peaks" if self.dec_pick_mode else "OFF"}')
+        if self.dec_pick_mode:
+            self.dec_centres.set('')
+
+    def _dec_click(self, ev):
+        if not self.dec_pick_mode or ev.inaxes is not self.dec_ax1 or ev.xdata is None:
+            return
+        cur = [c for c in self.dec_centres.get().replace(';', ',').split(',') if c.strip()]
+        cur.append(f'{ev.xdata:.1f}')
+        n = self.dec_n.get()
+        cur = cur[-n:]
+        self.dec_centres.set(', '.join(cur))
+        self.dec_ax1.axvline(ev.xdata, color='#c0392b', lw=0.9, ls='--')
+        self.dec_canvas.draw_idle()
+        if len(cur) >= n:
+            self._dec_toggle_pick()
+
+    def _dec_run(self):
+        try:
+            data, temps, nm = self._dec_source()
+            self._geom_sync(data, temps)
+            n = self.dec_n.get()
+            shape = self.dec_shape.get()
+            txt = [c for c in self.dec_centres.get().replace(';', ',').split(',') if c.strip()]
+            centres = sorted(float(c) for c in txt) if txt else None
+            if centres:
+                n = len(centres); self.dec_n.set(n)
+            wins = self._dec_windows()
+            start = int(round(float(self.dec_scale.get()))) if self.dec else 0
+            start = min(start, len(wins) - 1)
+            self._set_status('Deconvoluting...')
+            self.dec = deconvolve_windows(data, temps, wins, self.dec_lo.get(), self.dec_hi.get(),
+                                          shape, n, centres, self.t_fe_ms_var.get(), start)
+            self.dec['source'] = nm
+            self.dec['geom'] = dict(GEOM)
+            try:
+                self._set_status('Range-stability scan...')
+                self.dec['stab'] = dec_stability(
+                    data, temps, wins, self.dec_lo.get(), self.dec_hi.get(), shape, n,
+                    centres, self.t_fe_ms_var.get(), start,
+                    self.gamma_var.get(), self.nd_var.get())
+            except Exception:
+                self.dec['stab'] = None
+            self.dec_scale.configure(to=len(wins) - 1)
+            self.dec_scale.set(start)
+            names = [f'P{i + 1}' for i in range(n)]
+            self.dec_sel_cb['values'] = names
+            if self.dec_sel.get() not in names:
+                self.dec_sel.set(names[0])
+            ok = sum(1 for f in self.dec['fits'] if f['ok'])
+            self._set_status(f'Deconvolution done: {ok}/{len(wins)} windows fitted '
+                             f'({n} x {shape}).')
+            self._dec_draw()
+        except Exception as exc:
+            messagebox.showerror('Deconvolution Error', str(exc))
+            self._set_status(f'Error: {exc}', '#eb6834')
+
+    def _dec_scale_moved(self, v):
+        if self.dec:
+            self._dec_draw()
+
+    def _dec_cur_idx(self):
+        return int(round(float(self.dec_scale.get()))) if self.dec else 0
+
+    def _dec_draw(self):
+        if self.dec and self.dec.get('geom'):
+            GEOM.update(self.dec['geom'])
+        ax1, ax2 = self.dec_ax1, self.dec_ax2
+        for ax in (ax1, ax2):
+            ax.clear(); ax.set_facecolor(SURFACE)
+            ax.tick_params(labelsize=9)
+        lines = []
+        dec = self.dec
+        if not dec:
+            ax1.text(0.5, 0.5, 'Press "Deconvolute all windows"', transform=ax1.transAxes,
+                     ha='center', color=TEXT_MUT)
+            ax2.text(0.5, 0.5, 'Arrhenius of the selected peak', transform=ax2.transAxes,
+                     ha='center', color=TEXT_MUT)
+            self.dec_canvas.draw_idle(); return
+        i = min(self._dec_cur_idx(), len(dec['windows']) - 1)
+        t1, t2 = dec['windows'][i]; f = dec['fits'][i]
+        T, S = dec['T'], dec['spectra'][i]
+        sel = int(self.dec_sel.get()[1:]) - 1 if self.dec_sel.get()[1:].isdigit() else 0
+        self.dec_wlabel.configure(text=f'#{i + 1}/{len(dec["windows"])}  {t1:.1f}/{t2:.1f} ms  '
+                                       f'eₙ={dec["en"][i]:.1f} s⁻¹')
+        # --- spectrum + components
+        ax1.plot(T, S * 1e3, 'o', ms=5, mfc='#222', mec='white', mew=0.5, zorder=5, label='data')
+        if f and f['ok']:
+            Tf = np.linspace(T.min(), T.max(), 500)
+            tot, comps = fit_components(f, Tf)
+            ax1.plot(Tf, tot * 1e3, '-', color='#c0392b', lw=1.8, zorder=4, label='total fit')
+            for ci, c in enumerate(comps):
+                col = self.DEC_COLORS[ci % 4]
+                ax1.fill_between(Tf, f['c0'] * 1e3, (c + f['c0']) * 1e3, color=col,
+                                 alpha=0.45 if ci == sel else 0.18, zorder=2)
+                ax1.plot(Tf, (c + f['c0']) * 1e3, color=col, lw=2.0 if ci == sel else 1.0, zorder=3,
+                         label=f'P{ci + 1}  Tₚ={f["peaks"][ci]["T0"]:.1f} °C')
+                ax1.plot([f['peaks'][ci]['T0']], [(f['peaks'][ci]['A'] + f['c0']) * 1e3], 'v',
+                         ms=8, mfc=col, mec=TEXT_PRI, zorder=6)
+        else:
+            ax1.text(0.5, 0.9, 'fit failed for this window', transform=ax1.transAxes,
+                     ha='center', color='#c0392b')
+        ax1.set_xlabel('Temperature  (°C)', fontsize=10, color=TEXT_PRI)
+        ax1.set_ylabel('ΔC/C₀  (×10⁻³)', fontsize=10, color=TEXT_PRI)
+        ax1.set_title(f'Deconvolution ({dec["n"]} × {dec["shape"]}), window {t1:.0f}/{t2:.0f} ms',
+                      fontsize=10.5, color=TEXT_PRI)
+        ax1.legend(fontsize=7.5, frameon=False, loc='upper left')
+        # --- Arrhenius of every peak, selected one highlighted + fitted
+        lines.append(f'  Source: {dec["source"]}   range {dec["lo"]:.0f} to {dec["hi"]:.0f} C   '
+                     f'{dec["n"]} x {dec["shape"]}   t_FE={dec["t_fe"]:g} ms')
+        lines.append(f'  {"Peak":<5}{"Eₜ (eV)":>16}{"σₙ (cm²)":>12}{"R²":>8}{"N":>4}{"Nₜ (cm⁻³)":>13}')
+        lines.append('  ' + '-' * 60)
+        gamma, nd = self.gamma_var.get(), self.nd_var.get()
+        res_sel = None
+        for ci in range(dec['n']):
+            r = component_arrhenius(dec, ci, gamma, nd)
+            col = self.DEC_COLORS[ci % 4]
+            if r is None:
+                lines.append(f'  P{ci + 1:<4}  (fewer than 3 usable windows)')
+                continue
+            ax2.plot(r['x'], r['y'], 'o', ms=6 if ci == sel else 4, color=col,
+                     alpha=1.0 if ci == sel else 0.45, mec='white', mew=0.4)
+            lines.append(f'  P{ci + 1:<4}{r["Et"]:9.3f} ±{r["Et_se"]:.3f}{r["sigma"]:12.2e}'
+                         f'{r["R2"]:8.4f}{r["N"]:4d}{r["Nt"]:13.2e}')
+            if ci == sel:
+                res_sel = r
+                xl = np.linspace(r['x'].min() * 0.99, r['x'].max() * 1.01, 50)
+                ax2.plot(xl, r['slope'] * xl + r['intercept'], '-', color=col, lw=2.0)
+                ax2.set_title(f'Arrhenius, peak P{ci + 1}:  Eₜ = {r["Et"]:.3f} ± {r["Et_se"]:.3f} eV,  '
+                              f'σₙ = {r["sigma"]:.1e} cm²', fontsize=10, fontweight='bold',
+                              color=TEXT_PRI)
+        ax2.set_xlabel('1000 / T  (K⁻¹)', fontsize=10, color=TEXT_PRI)
+        ax2.set_ylabel('ln(eₙ / T²)', fontsize=10, color=TEXT_PRI)
+        if res_sel is None:
+            ax2.set_title('Arrhenius (selected peak)', fontsize=10, color=TEXT_PRI)
+        stab = dec.get('stab')
+        if stab:
+            lines.append('')
+            lines.append('  Range-stability (T limits moved by ±20 °C where the peaks allow)')
+            for ci, s in enumerate(stab):
+                if s is None:
+                    lines.append(f'  P{ci + 1}: not enough usable fits')
+                    continue
+                lo_e, hi_e, ne = s
+                flag = ('   ROBUST' if hi_e - lo_e <= 0.05
+                        else '   NOT ROBUST - do not quote a single Eₜ')
+                lines.append(f'  P{ci + 1}: Eₜ {lo_e:.3f} to {hi_e:.3f} eV '
+                             f'(spread {hi_e - lo_e:.3f}, {ne} ranges usable){flag}')
+        if res_sel is not None:
+            lines.append('')
+            lines.append(f'  Selected peak P{sel + 1}: per-window values')
+            lines.append(f'  {"t1(ms)":>8}{"t2(ms)":>9}{"en(s-1)":>10}{"Tpeak(C)":>10}{"A(1e-3)":>9}{"Nt(cm-3)":>11}')
+            for k, wi in enumerate(res_sel['idx']):
+                a, b = dec['windows'][wi]
+                lines.append(f'  {a:8.2f}{b:9.2f}{res_sel["en"][k]:10.2f}'
+                             f'{res_sel["Tp"][k] - 273.15:10.2f}{res_sel["A"][k] * 1e3:9.3f}'
+                             f'{res_sel["nt_arr"][k]:11.2e}')
+            lines.append('  Nt = 2*N_D*A/f(r) with A = amplitude of this peak alone '
+                         '(baseline removed).')
+            lines.append('  N_D is an input; take it from C-V at the DLTS bias '
+                         '(Nt is order-of-magnitude in compensated layers).')
+        self.dec_canvas.draw_idle()
+        self.dec_text.configure(state='normal')
+        self.dec_text.delete('1.0', 'end'); self.dec_text.insert('end', '\n'.join(lines))
+        self.dec_text.configure(state='disabled')
+
+    def _dec_save_png(self):
+        path = filedialog.asksaveasfilename(defaultextension='.png',
+                                            filetypes=[('PNG image', '*.png')],
+                                            initialfile='DLTS_deconvolution.png')
+        if path:
+            self.dec_fig.savefig(path, dpi=180, facecolor=SURFACE)
+            self._set_status(f'Figure saved: {path}')
+
+    def _dec_export_csv(self):
+        if not self.dec:
+            messagebox.showinfo('Nothing to export', 'Run the deconvolution first.')
+            return
+        path = filedialog.asksaveasfilename(defaultextension='.csv',
+                                            filetypes=[('CSV', '*.csv')],
+                                            initialfile='DLTS_deconvoluted_peaks.csv')
+        if not path:
+            return
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write('window,t1_ms,t2_ms,en_s-1,peak,Tpeak_C,amplitude,width_C,baseline\n')
+            for i, f in enumerate(self.dec['fits']):
+                if not (f and f['ok']):
+                    continue
+                t1, t2 = self.dec['windows'][i]
+                for ci, d in enumerate(f['peaks']):
+                    fh.write(f'{i + 1},{t1:.4f},{t2:.4f},{self.dec["en"][i]:.4f},P{ci + 1},'
+                             f'{d["T0"]:.3f},{d["A"]:.6e},{d["w"]:.3f},{f["c0"]:.6e}\n')
+        self._set_status(f'Peaks exported: {path}')
+
+    # ── File I/O ──────────────────────────────────────────────────────────────
+
+    def _save_png(self):
+        if self._fig is None:
+            messagebox.showinfo('Nothing to save', 'Run the analysis first.')
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension='.png',
+            filetypes=[('PNG image', '*.png'), ('All files', '*.*')],
+            initialfile='DLTS_MultiWindow.png'
+        )
+        if path:
+            self._fig.savefig(path, dpi=180, bbox_inches='tight',
+                              facecolor=SURFACE)
+            self._set_status(f'Figure saved: {path}')
+
+    def _save_panel(self):
+        """Save a single panel (axes + its colorbar) as its own image file."""
+        if self._fig is None:
+            messagebox.showinfo('Nothing to save', 'Run the analysis first.')
+            return
+
+        # Build list of panels that are currently rendered
+        panels = []
+        if self._ax1 is not None:
+            panels.append(('Arrhenius Plot',       self._ax1))
+        if self._ax2 is not None:
+            panels.append(('DLTS Spectra',         self._ax2))
+        if self._ax3 is not None:
+            panels.append(('ΔC/C₀ Transient Map', self._ax3))
+
+        if not panels:
+            return
+
+        # ── Picker dialog ─────────────────────────────────────────────────────
+        dlg = tk.Toplevel(self.root)
+        dlg.title('Save Individual Panel')
+        dlg.configure(bg='#f0f0f0')
+        dlg.resizable(False, False)
+        dlg.geometry(f'300x{70 + 32 * len(panels) + 50}')
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        tk.Label(dlg, text='Select panel to save:',
+                 bg='#f0f0f0', fg=TEXT_PRI,
+                 font=('Segoe UI', 10, 'bold')).pack(anchor='w', padx=16, pady=(12, 6))
+
+        sel = tk.IntVar(value=0)
+        for i, (name, _) in enumerate(panels):
+            ttk.Radiobutton(dlg, text=name, variable=sel,
+                            value=i).pack(anchor='w', padx=28, pady=2)
+
+        def _do_save():
+            idx   = sel.get()
+            ax    = panels[idx][1]
+            pname = panels[idx][0].replace('/', '_').replace(' ', '_')
+            dlg.destroy()
+
+            path = filedialog.asksaveasfilename(
+                defaultextension='.png',
+                filetypes=[('PNG image', '*.png'),
+                           ('PDF file',  '*.pdf'),
+                           ('All files', '*.*')],
+                initialfile=f'DLTS_{pname}.png'
+            )
+            if not path:
+                return
+
+            # ── Compute tight bounding box for the chosen axes + its colorbar
+            # We detect "colorbar axes" as figure-level axes that are very
+            # narrow (<6 % fig width or height) AND spatially adjacent to ax.
+            renderer = self._fig.canvas.get_renderer()
+            ax_pos   = ax.get_position()          # Bbox in figure-fraction coords
+
+            related = [ax]
+            for other in self._fig.axes:
+                if other is ax:
+                    continue
+                op = other.get_position()
+                is_thin = (op.width < 0.065) or (op.height < 0.065)
+                v_lap   = (op.y0 < ax_pos.y1 + 0.02) and (op.y1 > ax_pos.y0 - 0.02)
+                h_lap   = (op.x0 < ax_pos.x1 + 0.02) and (op.x1 > ax_pos.x0 - 0.02)
+                h_adj   = abs(op.x0 - ax_pos.x1) < 0.15   # colorbar to right
+                t_adj   = abs(op.y0 - ax_pos.y1) < 0.10   # colorbar on top
+                if is_thin and ((v_lap and h_adj) or (h_lap and t_adj)):
+                    related.append(other)
+
+            bbs = [a.get_tightbbox(renderer) for a in related]
+            bbs = [b for b in bbs if b is not None]
+
+            if not bbs:
+                messagebox.showerror('Save Panel',
+                                     'Could not determine panel bounds.')
+                return
+
+            from matplotlib.transforms import Bbox as MplBbox
+            union = MplBbox.union(bbs)           # display pixels
+
+            # Convert display-px → inches, add 0.12 inch padding all round
+            inv_dpi = self._fig.dpi_scale_trans.inverted()
+            bbox_in = union.transformed(inv_dpi)
+            pad     = 0.12   # inches
+            padded  = MplBbox([
+                [bbox_in.x0 - pad, bbox_in.y0 - pad],
+                [bbox_in.x1 + pad, bbox_in.y1 + pad],
+            ])
+
+            bg = SURFACE
+            self._fig.savefig(path, dpi=180, bbox_inches=padded,
+                              facecolor=bg)
+            self._set_status(f'Panel saved: {path}')
+
+        btn_f = tk.Frame(dlg, bg='#f0f0f0')
+        btn_f.pack(fill='x', padx=12, pady=10)
+        ttk.Button(btn_f, text='Save…',
+                   command=_do_save).pack(side='left', padx=4)
+        ttk.Button(btn_f, text='Cancel',
+                   command=dlg.destroy).pack(side='right', padx=4)
+
+    def _export_txt(self):
+        txt = self.results_text.get('1.0', 'end').strip()
+        if not txt:
+            messagebox.showinfo('Nothing to export', 'Run the analysis first.')
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension='.txt',
+            filetypes=[('Text file', '*.txt'), ('All files', '*.*')],
+            initialfile='DLTS_Results.txt'
+        )
+        if path:
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write(txt)
+            self._set_status(f'Results exported: {path}')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    root.minsize(1000, 640)
+    app  = DLTSApp(root)
+    root.mainloop()
