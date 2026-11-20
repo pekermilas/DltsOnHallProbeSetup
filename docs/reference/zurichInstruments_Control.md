@@ -54,6 +54,7 @@ Every key of `ziDevice.params` and `DEFAULT_PARAMS`, in push order. All node pat
 | `Aux Output Upper Limit` | `/dev32271/auxouts/0/limitupper` | `0.0` | Aux output upper limit in V. |
 | `Signal Output Add` | `/dev32271/sigouts/0/add` | `1` | Add the Aux output to Signal Output 1: `0` False, `1` True (GUI: `0 - False`, `1 - True`). |
 | `Trigger Source Signal` | `/dev32271/triggers/out/0/source` | `36` | Source of Trigger Out 1: `0` Off, `1` Osc Phi Demod 2, `36` Threshold 1, `37` Threshold 2, `38` Threshold 3, `39` Threshold 4, `52` MDS Sync Out. |
+| `Trigger 2 Source Signal` | `/dev32271/triggers/out/1/source` | `36` | Source of Trigger Out 2, which triggers the light source's 33220A (same options). See [optical_dlts_light_source.md](../optical_dlts_light_source.md). |
 
 With the defaults, threshold unit 0 watches its own output (59), the logic unit inverts it, and the TU output (13) drives Aux Output 1 with scale -1 and offset -0.5 V, limited to -10 V ... 0 V. `Signal Output Add = 1` adds that aux voltage to the signal output, so the sample sees a pulsed DC bias. Trigger Out 1 follows Threshold 1, and `pull_data(trigger=True)` triggers on it. The enable/disable times set the two pulse durations. This reading of the defaults follows from the node names; the code has no comment that states it.
 

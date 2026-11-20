@@ -31,7 +31,8 @@ Z_DEFAULTS = [
     ('State Enable Time', '0.006'), ('State Disable Time', '0.003'), ('Logic Unit Not', '1 - On'),
     ('Aux Output Signal', '13 - TU Output Value'), ('Aux Output Scale', '-1'),
     ('Aux Output Offset', '-0.5'), ('Aux Output Lower Limit', '-10'), ('Aux Output Upper Limit', '0'),
-    ('Signal Output Add', '1 - True'), ('Trigger Source Signal', '36 - Threshold 1')]
+    ('Signal Output Add', '1 - True'), ('Trigger Source Signal', '36 - Threshold 1'),
+    ('Trigger 2 Source Signal', '36 - Threshold 1')]
 T_DEFAULTS = [('Initial Temperature (C)', '25'), ('Final Temperature (C)', '25'),
               ('Temperature Step (C)', '5'), ('Temperature Ramp (C/min)', '5'),
               ('Stability Delay (s)', '0'), ('Room Temperature (C)', '25'), ('Room Ramp (C/min)', '10')]

@@ -20,6 +20,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 import dltsConfig as dltsc
+import excitationTools as exT
 import impedanceAnalysis_Tools as iaT
 import runDlts_Tools as rdT
 
@@ -1178,18 +1179,16 @@ def _legacy_run_timing(dir_path):
 
     The MFIA's threshold unit sets the pulse: State Enable Time is the reverse
     bias and State Disable Time the fill pulse (0.5 s / 0.001 s for a 500 ms /
-    1 ms run; the GUI defaults 0.006 / 0.003 s give 6 ms / 3 ms).
+    1 ms run; the GUI defaults 0.006 / 0.003 s give 6 ms / 3 ms). For an
+    optical-fill run the fill is the LED pulse and the transient window the
+    rest of the cycle (excitationTools.run_timing).
     """
     try:
         with open(os.path.join(dir_path, 'runParams.txt'), 'r') as f:
             params = json.load(f)
-        rbMs = float(params['State Enable Time']) * 1e3
-        fpMs = float(params['State Disable Time']) * 1e3
     except Exception:
         return None
-    if not (rbMs > 0 and fpMs > 0):
-        return None
-    return fpMs, rbMs
+    return exT.run_timing(params)
 
 #---------------------QUALITATIVE ANALYSIS: FOLLOW LIVE RUN-------------------------#
 # While a run is writing files, the Qualitative frame adopts the run folder as
@@ -1744,7 +1743,9 @@ def _compute_legacy_transients(selectedTemps, rbDurationMs, cInfTargetMs, datase
                         # once per step (again on a Redo), so its mtime is it.
                         stepAttrs = {'acquired_at': time.strftime(
                             '%Y-%m-%dT%H:%M:%S', time.localtime(os.path.getmtime(filePath)))}
-                    auxV = np.array(data['AuxInput1'], dtype=np.float32)
+                    # The bias monitor (AuxInput1), or an optical-fill run's
+                    # PulseReference (the LED pulses); both are higher during the fill.
+                    auxV = np.array(exT.pulse_reference(data)[0], dtype=np.float32)
                     rawCap = np.array(data['ImpedanceIm'], dtype=np.float32) * 1e12
                     # The file's own sample interval: a run with another Data
                     # Transfer Rate (e.g. a slower rate for a long reverse bias)
@@ -1810,13 +1811,14 @@ def _sample_interval_s(timeStamps, fallbackS):
     return float(np.median(steps))
 
 def _read_h5_step(filePath):
-    """(channels, attrs) of one .h5 step file: the AuxInput1, ImpedanceIm and
-    timeStampImps channels, and its setpoint / measured stage temperature (°C)
-    and acquisition time. A missing channel or attribute is left out."""
+    """(channels, attrs) of one .h5 step file: the AuxInput1, PulseReference
+    (optical-fill runs), ImpedanceIm and timeStampImps channels, and its
+    setpoint / measured stage temperature (°C) and acquisition time. A missing
+    channel or attribute is left out."""
     data = {}
     attrs = {}
     with h5py.File(filePath, 'r') as f:
-        for key in ('AuxInput1', 'ImpedanceIm', 'timeStampImps'):
+        for key in ('AuxInput1', exT.PULSE_REFERENCE_CHANNEL, 'ImpedanceIm', 'timeStampImps'):
             if key in f:
                 data[key] = f[key][()]
         for attrName, key in (('setpoint_C', 'setpoint_C'), ('stage_temperature_C', 'stage_C')):
@@ -1829,9 +1831,10 @@ def _read_h5_step(filePath):
         acquiredAt = f.attrs.get('acquired_at')
         if acquiredAt is not None:
             attrs['acquired_at'] = acquiredAt.decode() if isinstance(acquiredAt, bytes) else str(acquiredAt)
-    for key in ('AuxInput1', 'ImpedanceIm'):
-        if key not in data:
-            raise KeyError(f"'{key}' channel missing from {os.path.basename(filePath)}")
+    if 'ImpedanceIm' not in data:
+        raise KeyError(f"'ImpedanceIm' channel missing from {os.path.basename(filePath)}")
+    if 'AuxInput1' not in data and exT.PULSE_REFERENCE_CHANNEL not in data:
+        raise KeyError(f"'AuxInput1' channel missing from {os.path.basename(filePath)}")
     return data, attrs
 
 def _draw_qualitative_temperatures(ax, processedTransients, startTime=None):

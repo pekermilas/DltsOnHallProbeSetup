@@ -52,7 +52,7 @@ DEFAULT_PARAMS = {
     'Equivalent Circuit Mode': 0, 'Threshold Input Signal': 59, 'State Enable Time': 0.006,
     'State Disable Time': 0.003, 'Logic Unit Not': 1, 'Aux Output Signal': 13, 'Aux Output Scale': -1.0,
     'Aux Output Offset': -0.5, 'Aux Output Lower Limit': -10.0, 'Aux Output Upper Limit': 0.0,
-    'Signal Output Add': 1, 'Trigger Source Signal': 36}
+    'Signal Output Add': 1, 'Trigger Source Signal': 36, 'Trigger 2 Source Signal': 36}
 
 
 class ziDevice:
@@ -67,7 +67,10 @@ class ziDevice:
                  'Filter Bandwidth', 'Data Transfer Rate', 'Equivalent Circuit Mode', 'Threshold Input Signal', 
                  'State Enable Time', 'State Disable Time', 'Logic Unit Not', 'Aux Output Signal', 
                  'Aux Output Scale', 'Aux Output Offset', 'Aux Output Lower Limit',
-                 'Aux Output Upper Limit', 'Signal Output Add', 'Trigger Source Signal']
+                 'Aux Output Upper Limit', 'Signal Output Add', 'Trigger Source Signal',
+                 # Trigger Out 2 triggers the light source's 33220A (rear Trig In);
+                 # Threshold 1, like Trigger Out 1, so each LED pulse is locked to the DAQ trigger.
+                 'Trigger 2 Source Signal']
         self.params = dict.fromkeys(pList, 0)
         # Set by configure(): the values set_param_value() falls back to when
         # there is no GUI, so reload_params() never needs the console prompts.
@@ -118,8 +121,14 @@ class ziDevice:
     def set_param_value(self, pName='Oscillation Frequency', valueDict=None):
         if valueDict is None:
             # GUI-driven runs store the latest values in dltsConfig; prefer those before
-            # falling back to interactive terminal prompts.
-            if hasattr(dltsc, 'z_params_for_push') and dltsc.z_params_for_push and pName in dltsc.z_params_for_push:
+            # falling back to interactive terminal prompts. z_params_effective (the
+            # values adjusted for the excitation method, e.g. a bias held constant
+            # for an optical fill) wins, so reload_params() after each factory_reset()
+            # keeps them.
+            effective = getattr(dltsc, 'z_params_effective', None)
+            if effective and pName in effective:
+                valueDict = effective
+            elif hasattr(dltsc, 'z_params_for_push') and dltsc.z_params_for_push and pName in dltsc.z_params_for_push:
                 valueDict = dltsc.z_params_for_push
             elif hasattr(dltsc, 'z_params_vars') and dltsc.z_params_vars:
                 valueDict = {
@@ -208,6 +217,11 @@ class ziDevice:
                                '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
                     pEntry = input("Please enter Trigger Source Signal (\n" +"\n".join(options) + "): ")
                     self.params[pName] = int(pEntry) if not len(pEntry)==0 else 36
+                if pName == 'Trigger 2 Source Signal':
+                    options = ['0: Off, 1: Osc Phi Demod 2, 36: Threshold 1, 37: Threshold 2',
+                               '38: Threshold 3, 39: Threshold 4, 52: MDS Sync Out']
+                    pEntry = input("Please enter Trigger 2 Source Signal (\n" +"\n".join(options) + "): ")
+                    self.params[pName] = int(pEntry) if not len(pEntry)==0 else 36
             else:
                 print(f"Unknown Parameter {pName}!!!")
         else:
@@ -266,6 +280,8 @@ class ziDevice:
                 self.session.daq_server.set('/dev32271/sigouts/0/add', self.params[pName])
             if pName == 'Trigger Source Signal':
                 self.session.daq_server.set('/dev32271/triggers/out/0/source', self.params[pName])
+            if pName == 'Trigger 2 Source Signal':
+                self.session.daq_server.set('/dev32271/triggers/out/1/source', self.params[pName])
         else:
             print("Unknown Parameter!!!")
         return 0
@@ -362,7 +378,11 @@ class ziDevice:
                                        rtol=1e-03)
             if pName == 'Trigger Source Signal':
                 returnVal = np.isclose(self.params[pName], 
-                                       self.session.daq_server.get('*')['dev32271']['triggers']['out']['0']['source']['value'][0], 
+                                       self.session.daq_server.get('*')['dev32271']['triggers']['out']['0']['source']['value'][0],
+                                       rtol=1e-03)
+            if pName == 'Trigger 2 Source Signal':
+                returnVal = np.isclose(self.params[pName],
+                                       self.session.daq_server.get('*')['dev32271']['triggers']['out']['1']['source']['value'][0],
                                        rtol=1e-03)
         else:
             print("Unknown Parameter!!!")
@@ -403,7 +423,9 @@ class ziDevice:
                 self.push_param_to_device(pName)
         return 0
     
-    def pull_data(self, plot=True, trigger=False, numPoints=1024, numReps=1):
+    def pull_data(self, plot=True, trigger=False, numPoints=1024, numReps=1, recordAuxIn2=False):
+        """recordAuxIn2: also record Aux Input 2 (the LED driver's I_MON) as
+        data['AuxInput2'] -- triggered acquisitions only."""
         data = None
         if trigger:
             daq_module = self.session.modules.daq
@@ -420,6 +442,8 @@ class ziDevice:
             daq_module.endless(0)
             self.device.imps[0].enable(True)
             daq_module.subscribe('/dev32271/demods/0/sample.AuxIn0.avg')
+            if recordAuxIn2:
+                daq_module.subscribe('/dev32271/demods/0/sample.AuxIn1.avg')
             daq_module.subscribe('/dev32271/demods/0/sample.R.avg')
             daq_module.subscribe('/dev32271/imps/0/sample.Param0.avg')
             daq_module.subscribe('/dev32271/imps/0/sample.Param1.avg')
@@ -463,6 +487,8 @@ class ziDevice:
             data['ImpedanceRe'] = np.array(list(allData['/dev32271/imps/0/sample.param0.avg'][0])[-4][0], copy=True)
             data['ImpedanceIm'] = np.array(list(allData['/dev32271/imps/0/sample.param1.avg'][0])[-4][0], copy=True)
             data['AuxInput1'] = np.array(list(allData['/dev32271/demods/0/sample.auxin0.avg'][0])[-4][0], copy=True)
+            if recordAuxIn2:
+                data['AuxInput2'] = np.array(list(allData['/dev32271/demods/0/sample.auxin1.avg'][0])[-4][0], copy=True)
             data['AbsZ'] = np.sqrt(data['ImpedanceRe']**2 + data['ImpedanceIm']**2)
         else:
             self.device.demods[0].enable(True)

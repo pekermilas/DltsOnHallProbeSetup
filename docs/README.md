@@ -16,6 +16,8 @@ controller, driven from one Tkinter GUI.
    settings to use and the results to expect.
 4. [Standalone instruments](standalone_instruments.md): the stage and the MFIA from
    Python scripts, without the GUI.
+5. [Optical DLTS with the 365 nm light source](optical_dlts_light_source.md): wiring the
+   Agilent 33220A and the LED driver, excitation methods, safety, commissioning.
 
 All of these pages are also in one PDF, `docs/DLTS_Software_Documentation.pdf`. After
 editing the docs, rebuild it with `python docs/build_docs_pdf.py` (needs Microsoft Edge;

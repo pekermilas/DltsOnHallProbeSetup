@@ -52,7 +52,13 @@ def _detailed_source():
                 traps=[dict(peakId=t['peakId'], Et=t['Et'], Et_se=t['Et_se'], peaks=t.get('peaks', [])) for t in traps],
                 c0ByT={tc + 273.15: float(rec[2]) for tc, rec in dltsc.detailed_data.items()},
                 fillByT=dict(loadInfo.get('fillByT') or {}), fill=loadInfo.get('fill'),
-                capMode=loadInfo.get('cap_mode')), None
+                capMode=loadInfo.get('cap_mode'), optical_fill=bool(loadInfo.get('optical_fill'))), None
+
+# Shown with every result from optical-fill data: the Nt model here assumes an
+# electrical fill pulse (filled region from V_fill / V_rev depletion widths).
+OPTICAL_FILL_WARNING = ("Optical-fill (O-DLTS / MCTS) data: this Nₜ uses the electrical-fill model "
+                        "(depletion widths from V_fill / V_rev) and does not apply to optical filling; "
+                        "use it only as a relative measure.")
 
 def _quick_source():
     """(source, None) from Quick Analysis' last Arrhenius solver run, or (None,
@@ -204,6 +210,10 @@ def _trapconc_calculate(log=True):
     dltsc.trapconc_lastResults, dltsc.trapconc_lastSource, dltsc.trapconc_lastGeom = results, source, geom
     _trapconc_draw(results, source, geom)
     text = _trapconc_report(results, source, geom, nd)
+    if source.get('optical_fill'):
+        text = f"WARNING: {OPTICAL_FILL_WARNING}\n\n{text}"
+        if log:
+            dltsc.log_to_textbox(f"Trap concentration: {OPTICAL_FILL_WARNING}")
     dltsc.trapconc_resultsText.configure(state='normal')
     dltsc.trapconc_resultsText.delete('1.0', 'end')
     dltsc.trapconc_resultsText.insert('end', text)

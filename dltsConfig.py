@@ -27,11 +27,13 @@ postprocessingTab = None
 # Devices
 tempDev = None
 impDev = None
+lightDev = None              # agilent33220A_Control.awgDevice driving the LED head (O-DLTS / MCTS)
 
 ##---------------------TEST-------------------------
 sourcePrefixSelection = None
 z_params_vars = dict()
 z_params_for_push = dict()
+z_params_effective = None    # z params adjusted for the excitation method (excitationTools.effective_mfia_params)
 z_param_inputField = None
 t_params_vars = dict()
 t_params_for_push = dict()
@@ -39,6 +41,10 @@ t_param_inputField = None
 d_params_vars = dict()
 d_params_for_push = dict()
 d_param_inputField = None
+l_params_vars = dict()       # Light Source group (excitationTools.DEFAULT_LIGHT_PARAMS names)
+l_params_for_push = dict()   # their typed values at the last Connect / Apply
+l_param_inputField = None
+l_statusLabel = None         # Light Source panel's connection / IDN label
 root_data_folder = None
 param_history = None
 param_history_labels = None
@@ -391,17 +397,23 @@ def init():
     # Devices
     global tempDev
     global impDev
+    global lightDev
 
     ##---------------------TEST-------------------------
     global sourcePrefixSelection
     global z_params_vars
     global z_params_for_push
+    global z_params_effective
     global z_param_inputField
     global t_params_vars
     global t_params_for_push
     global t_param_inputField
     global d_params_vars
     global d_param_inputField
+    global l_params_vars
+    global l_params_for_push
+    global l_param_inputField
+    global l_statusLabel
     global root_data_folder
     global param_history
     global param_history_labels
@@ -844,6 +856,8 @@ def recast_param_type(device, pname):
                     newValue = 39
                 if oldValue == '52 - MDS Sync Out':
                     newValue = 52
+            if pname == 'Trigger 2 Source Signal':
+                newValue = int(str(oldValue).split(' - ')[0])
     if device == 'tempDev':
         if pname in t_params_vars:
             oldValue = t_params_vars[pname].get()
@@ -868,6 +882,17 @@ def recast_param_type(device, pname):
                 newValue = int(oldValue)
             if pname == 'Number of Reps':
                 newValue = int(oldValue)
+    if device == 'light':
+        if pname in l_params_vars:
+            oldValue = l_params_vars[pname].get()
+            if pname in ('Excitation Method', 'LED Driver Range', 'Optical Timing Reference', 'Record I_MON'):
+                # '1 - Optical Fill (O-DLTS/MCTS)' -> 1
+                newValue = int(str(oldValue).split(' - ')[0])
+            if pname in ('LED Pulse Current', 'LED Pulse Width', 'LED Pulse Delay',
+                         'LED Steady Current', 'Commanded Timing Offset'):
+                newValue = float(oldValue)
+            if pname == 'AWG VISA Resource':
+                newValue = str(oldValue).strip()
 
     return newValue
 

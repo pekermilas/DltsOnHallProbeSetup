@@ -24,6 +24,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.widgets import SpanSelector
 
 import dltsConfig as dltsc
+import excitationTools as exT   # optical-fill (O-DLTS / MCTS) runs carry a PulseReference channel
 import dltsPhysics as dP   # fill-end emission rate, fill-pulse information, C0 (v3.1 corrections)
 import liveDataTab as ldT   # reuses its data-folder format detection/extraction -- see _load_detailed_data
 import impedanceAnalysis_Tools as iaT   # smoothing-spline peak finder shared with Quick Analysis
@@ -396,6 +397,7 @@ def _load_detailed_data_full(base, grid_off, grid_dt, chunk_size, rb_ms, cinf_lo
             registry = ldT._compute_legacy_dataset(base, errorMsgs)
 
     loadInfo = dict(formats=[], tFe=dP.T_FE_ZI_MS, f_osc=None, cap_mode=None, second_pulse=None, fill=None,
+                    optical_fill=False,
                     fillByT={}, c0Source={})
     if not registry:
         return {}, [], errorMsgs, loadInfo
@@ -469,7 +471,11 @@ def _read_step_records(base, temps, registry, errorMsgs, loadInfo):
                 loadInfo['cap_mode'] = capMode
             scale = 1.0 if capMode == 'direct' else 1.0 / (2.0 * np.pi * (fOsc or dP.DEFAULT_F_OSC_HZ))
             info = None
-            if 'AuxInput1' in rec:
+            if exT.PULSE_REFERENCE_CHANNEL in rec:
+                # Optical fill (O-DLTS / MCTS): the bias never changes, so there is
+                # no electrical fill pulse (V_fill, C_fill) to read; C0 is the tail mean.
+                loadInfo['optical_fill'] = True
+            elif 'AuxInput1' in rec:
                 info = dP.fill_record_info(np.arange(imp.size) * dtS * 1e3, imp * 1e12 * scale,
                                            np.asarray(rec['AuxInput1'], dtype=np.float64))
             out[tc] = (scale, info)

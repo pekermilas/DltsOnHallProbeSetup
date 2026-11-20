@@ -42,11 +42,21 @@ def _send_room_ramp(lockTimeout):
     dltsc.app_roomReturnSent = True
     return tempDev.Troom, tempDev.roomRamp
 
+def _led_off_quietly():
+    """Switch the light source's output off; safe to call on every exit path."""
+    try:
+        if dltsc.lightDev is not None:
+            dltsc.lightDev.led_off()
+    except Exception:
+        pass
+
 def _emergency_room_return(*_):
     """Backstop for exits that never reach on_closing() (Ctrl+C in the
     console, an unhandled exception ending mainloop, the console window being
-    closed): command the ramp, if the close handler hasn't already. Doesn't
-    wait or send STOP, so the controller carries the ramp out on its own."""
+    closed): switch the LED off and command the ramp, if the close handler
+    hasn't already. Doesn't wait or send STOP, so the controller carries the
+    ramp out on its own."""
+    _led_off_quietly()
     if dltsc.app_roomReturnSent:
         return
     try:
@@ -64,6 +74,11 @@ def _on_console_close(signum, frame):
 def _finish_close(stopControl):
     """Disconnect everything and destroy the window. stopControl=False leaves
     the temperature controller running (still ramping to room temperature)."""
+    try:
+        if dltsc.lightDev is not None:
+            dltsc.lightDev.disconnect_device()   # output OFF first
+    except Exception:
+        pass
     try:
         if dltsc.tempDev is not None and getattr(dltsc.tempDev, 'state', False):
             dltsc.tempDev.disconnect_temp_controller(stopControl=stopControl)
@@ -148,6 +163,7 @@ def on_closing():
             dltsc.app_closeDialog.lift()
         return
     dltsc.app_closing = True
+    _led_off_quietly()
     ldT._set_run_control_buttons('returning')   # nothing may start while closing
     try:
         target = _send_room_ramp(lockTimeout=5.0)

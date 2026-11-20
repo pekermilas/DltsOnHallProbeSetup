@@ -19,6 +19,7 @@ import statsmodels.api as sm
 import itertools
 import h5py
 import statistics
+import excitationTools as exT
 import torch
 import lmfit
 import pywt
@@ -739,7 +740,9 @@ class impdData:
         if dataType=='emission':
             n_pts = len(self.dataValues[self.dataTemps[0]]['ImpedanceIm'])
         if dataType=='excitation':
-            n_pts = len(self.dataValues[self.dataTemps[0]]["AuxInput1"])
+            # The bias monitor AuxInput1, or an optical-fill run's 0/1
+            # PulseReference (LED on = the fill level; excitationTools).
+            n_pts = len(exT.pulse_reference(self.dataValues[self.dataTemps[0]])[0])
 
         means = np.full((n_t, 2), np.nan)
         stds = np.full((n_t, 2), np.nan)
@@ -748,8 +751,11 @@ class impdData:
         for i, t in enumerate(self.dataTemps):
             if dataType=='emission':
                 raw = np.asarray(self.dataValues[t]['ImpedanceIm'], dtype=float).ravel()
+            isMarker = False
             if dataType=='excitation':
-                raw = np.asarray(self.dataValues[t]["AuxInput1"], dtype=float).ravel()
+                refValues, refName = exT.pulse_reference(self.dataValues[t])
+                raw = np.asarray(refValues, dtype=float).ravel()
+                isMarker = refName == exT.PULSE_REFERENCE_CHANNEL
 
             if raw.size != n_pts:
                 raise ValueError(f"Inconsistent data length at {t} K.")
@@ -759,11 +765,14 @@ class impdData:
                 fill_val = np.median(finite) if finite.size > 0 else 0.0
                 raw = np.where(np.isfinite(raw), raw, fill_val)
 
-            scale = np.min(raw)
+            # The 0/1 pulse marker sits at ~0 between pulses, so dividing by
+            # its minimum (as for the bias voltage) would divide by ~0; it is
+            # already normalized.
+            scale = 1.0 if isMarker else np.min(raw)
             sorted_raw = np.sort(raw)
             second_min = sorted_raw[1] if len(sorted_raw) > 1 else scale
 
-            if abs(second_min) > 0 and abs(scale) > 20.0 * abs(second_min):
+            if not isMarker and abs(second_min) > 0 and abs(scale) > 20.0 * abs(second_min):
                 print(f"Warning: Unusable data at index {i}, temperature {t} K — "
                       f"scale ({scale:.4e}) is more than 20x smaller than second minimum "
                       f"({second_min:.4e}). All labels set to -1.")
@@ -844,16 +853,19 @@ class impdData:
                     if dataType=='emission':
                         ts = np.asarray(self.dataValues[t]['timeStampImps'])
                         data = np.asarray(self.dataValues[t]['ImpedanceIm'])
+                    isMarkerLocal = False
                     if dataType=='excitation':
                         ts = np.asarray(self.dataValues[t]["timeStampDemods"])
-                        data = np.asarray(self.dataValues[t]["AuxInput1"])
+                        refValues, refName = exT.pulse_reference(self.dataValues[t])
+                        data = np.asarray(refValues)
+                        isMarkerLocal = refName == exT.PULSE_REFERENCE_CHANNEL
 
                     data_ylim = _safe_ylim(data)
 
-                    scale_local = np.min(data)
+                    scale_local = 1.0 if isMarkerLocal else np.min(data)
                     sorted_imp = np.sort(data)
                     second_min_local = sorted_imp[1] if len(sorted_imp) > 1 else scale_local
-                    if abs(second_min_local) > 0 and abs(scale_local) > 20.0 * abs(second_min_local):
+                    if not isMarkerLocal and abs(second_min_local) > 0 and abs(scale_local) > 20.0 * abs(second_min_local):
                         for ax in axes:
                             ax.cla()
                             ax.text(0.5, 0.5, 'UNUSABLE DATA', transform=ax.transAxes,

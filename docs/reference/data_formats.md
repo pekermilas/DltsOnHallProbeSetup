@@ -142,6 +142,10 @@ Every step file, JSON or HDF5, holds the same 8 channels. They come from `zurich
 | `ImpedanceIm` | `/dev32271/imps/0/sample.param1.avg` (impedance parameter 1) | see below |
 | `AbsZ` | Computed as `sqrt(ImpedanceRe**2 + ImpedanceIm**2)` | see below |
 | `AuxInput1` | `/dev32271/demods/0/sample.auxin0.avg` (Aux Input 1) | V |
+| `AuxInput2` | `/dev32271/demods/0/sample.auxin1.avg` (Aux Input 2: the LED driver's I_MON). Only when the light source's Record I_MON is on | V |
+| `PulseReference` | Optical-fill runs only: 0/1 marker of the LED pulses (I_MON normalized to the set current, or the commanded timing). The analysis uses it instead of `AuxInput1`; see [optical_dlts_light_source.md](../optical_dlts_light_source.md) | 0/1 |
+
+Runs with the light source also store its parameters (`Excitation Method`, `LED Pulse Width`, ...) in `runParams.txt`; a run without them is electrical DLTS.
 
 In a triggered run all four time channels are therefore identical. In the example file they run from `0.0` to `4.893336` s in steps of `1.8666666666666665e-05` s (about 53.6 kSa/s), 262144 samples.
 

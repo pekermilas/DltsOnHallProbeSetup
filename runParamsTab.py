@@ -17,6 +17,8 @@ from pathlib import Path
 import dltsConfig as dltsc
 import zurichInstruments_Control as ziC
 import instecTempStage_Control as tsC
+import agilent33220A_Control as awgC
+import excitationTools as exT
 import impedanceAnalysis_Tools as iaT
 import runDlts_Tools as rdT
 import convert_h5_to_text as h5txt
@@ -69,6 +71,7 @@ def _capture_current_param_set(source='Manual Save'):
         'z_params': _get_param_values(getattr(dltsc, 'z_params_vars', {})),
         't_params': _get_param_values(getattr(dltsc, 't_params_vars', {})),
         'd_params': _get_param_values(getattr(dltsc, 'd_params_vars', {})),
+        'l_params': _get_param_values(getattr(dltsc, 'l_params_vars', {})),
     }
 
 def _update_param_history_field():
@@ -108,6 +111,7 @@ def _load_selected_param_set():
     _apply_param_values(getattr(dltsc, 'z_params_vars', {}), selected_entry['z_params'])
     _apply_param_values(getattr(dltsc, 't_params_vars', {}), selected_entry['t_params'])
     _apply_param_values(getattr(dltsc, 'd_params_vars', {}), selected_entry['d_params'])
+    _apply_param_values(getattr(dltsc, 'l_params_vars', {}), selected_entry.get('l_params', {}))
     dltsc.log_to_textbox(f"Reloaded parameter set from history [{selected_entry['source']}]")
     return 0
 
@@ -138,6 +142,63 @@ def _sync_param_values_to_device(device, param_vars, device_type):
 
     return typed_values
 
+def _typed_param_values(device_type, param_vars):
+    """{name: typed value} of a parameter group, skipping values that don't parse."""
+    typed = {}
+    for pname in list(param_vars or {}):
+        try:
+            typed[pname] = dltsc.recast_param_type(device_type, pname)
+        except Exception:
+            continue
+    return typed
+
+def _refresh_effective_mfia_params(z_typed):
+    """MFIA values adjusted for the selected excitation method (an optical fill
+    holds the bias at its reverse level); stored in dltsc.z_params_effective,
+    which the MFIA prefers on every push / reload."""
+    dltsc.z_params_effective = exT.mfia_override(z_typed, rdT.current_light_params())
+    return dltsc.z_params_effective or z_typed
+
+def _push_mfia_values(values):
+    for pName in list(dltsc.impDev.params):
+        if pName in values:
+            dltsc.impDev.set_param_value(pName, values)
+            dltsc.impDev.push_param_to_device(pName)
+
+def _light_connected():
+    return dltsc.lightDev is not None and getattr(dltsc.lightDev, 'state', False)
+
+def _set_light_status(text):
+    if dltsc.l_statusLabel is not None:
+        dltsc.l_statusLabel.config(text=text)
+
+def refresh_visa_resources():
+    """Fill the AWG VISA Resource dropdown with the instruments VISA can see."""
+    resources = awgC.list_resources()
+    field = (dltsc.l_param_inputField or {}).get('AWG VISA Resource')
+    if field is not None:
+        field['values'] = resources
+        current = dltsc.l_params_vars['AWG VISA Resource'].get()
+        if not current and resources:
+            preferred = [r for r in resources if r.upper().startswith('USB')] or resources
+            dltsc.l_params_vars['AWG VISA Resource'].set(preferred[0])
+    dltsc.log_to_textbox('Light source: VISA resources: ' + (', '.join(resources) if resources else 'none found'))
+    return resources
+
+def led_off_now():
+    """The panel's LED OFF button: switch the 33220A output off immediately."""
+    if dltsc.lightDev is not None and dltsc.lightDev.led_off():
+        dltsc.log_to_textbox('Light source: output OFF.')
+    else:
+        dltsc.log_to_textbox('Light source: not connected (the LED driver arming switch is the hardware OFF).')
+
+def disconnect_light_source():
+    if dltsc.lightDev is not None:
+        dltsc.lightDev.disconnect_device()
+    dltsc.lightDev = None
+    _set_light_status('Not connected')
+    dltsc.log_to_textbox('Light source: disconnected (output OFF).')
+
 
 def connect_and_get_params(devType='impedance'):
     if devType=='impedance':
@@ -165,6 +226,21 @@ def connect_and_get_params(devType='impedance'):
         dltsc.log_to_textbox('Connect + Get Params [temperature]: ' +
                         _format_param_snapshot(dltsc.t_params_vars))
 
+    if devType=='light':
+        if dltsc.lightDev is not None:
+            dltsc.lightDev.disconnect_device()
+        resource = dltsc.l_params_vars['AWG VISA Resource'].get().strip()
+        dltsc.lightDev = awgC.awgDevice()
+        if dltsc.lightDev.connect_device(resource) != 0:
+            dltsc.lightDev = None
+            _set_light_status('Not connected')
+            return -1
+        dltsc.l_params_for_push = _typed_param_values('light', dltsc.l_params_vars)
+        _set_light_status(f'Connected: {dltsc.lightDev.idn}  (output OFF)')
+        _save_current_param_set(source='Connect/Get light')
+        dltsc.log_to_textbox(f'Connect + Get Params [light]: {dltsc.lightDev.idn}; output OFF. ' +
+                             _format_param_snapshot(dltsc.l_params_vars))
+
     return  0
 
 
@@ -176,9 +252,10 @@ def apply_and_push_params(devType='impedance'):
                     dltsc.impDev, getattr(dltsc, 'z_params_vars', {}), 'impDev'
                 )
                 if dltsc.z_params_for_push:
-                    for pName in list(dltsc.impDev.params):
-                        if pName in dltsc.z_params_for_push:
-                            dltsc.impDev.push_param_to_device(pName)
+                    # Pushed as the selected excitation method needs them (an
+                    # optical fill holds the bias constant); the GUI keeps the
+                    # electrical values.
+                    _push_mfia_values(_refresh_effective_mfia_params(dltsc.z_params_for_push))
                     _save_current_param_set(source='Apply/Push impedance')
                     dltsc.log_to_textbox('Apply + Push Params [impedance]: ' +
                                          _format_param_snapshot(dltsc.z_params_vars))
@@ -209,6 +286,34 @@ def apply_and_push_params(devType='impedance'):
         else:
             dltsc.log_to_textbox('Apply + Push Params [temperature]: No device connected. ' +
                             _format_param_snapshot(dltsc.t_params_vars))
+    if devType=='light':
+        typed = _typed_param_values('light', dltsc.l_params_vars)
+        z_typed = _typed_param_values('impDev', dltsc.z_params_vars)
+        errors = exT.validate({**exT.DEFAULT_LIGHT_PARAMS, **typed}, z_typed)
+        if errors:
+            for err in errors:
+                dltsc.log_to_textbox(f'Apply + Push Params [light]: {err}')
+            dltsc.log_to_textbox('Apply + Push Params [light]: not applied.')
+            return -1
+        dltsc.l_params_for_push = typed
+        method = exT.method_info(typed)
+        if _light_connected():
+            dltsc.lightDev.led_off()     # configured and switched on only during acquisitions
+        # The MFIA follows the method at once (an optical fill holds the bias constant).
+        if dltsc.impDev is not None and getattr(dltsc.impDev, 'device', None) is not None:
+            _push_mfia_values(_refresh_effective_mfia_params(z_typed))
+        else:
+            _refresh_effective_mfia_params(z_typed)
+        _save_current_param_set(source='Apply/Push light')
+        settings = exT.awg_settings(typed)
+        detail = {'off': 'LED not used',
+                  'pulse': f"LED pulse {settings.get('highV', 0):.3g} V at CTRL IN",
+                  'dc': f"LED steady {settings.get('dcV', 0):.3g} V at CTRL IN"}[settings['mode']]
+        dltsc.log_to_textbox(f"Apply + Push Params [light]: {method['name']}; {detail}. " +
+                             _format_param_snapshot(dltsc.l_params_vars))
+        if method['awg'] is not None and not _light_connected():
+            dltsc.log_to_textbox('Apply + Push Params [light]: connect the 33220A before running.')
+        return 0
     if devType=='output':
         selected_root = dltsc.d_params_vars['Data Root Folder'].get()
         if selected_root:
@@ -292,6 +397,83 @@ def export_h5_file():
     threading.Thread(target=worker, daemon=True).start()
     return 0
 
+def _construct_lightSourceFrame(style_names):
+    """Light Source group (365 nm LED head driven by an Agilent 33220A), in
+    its own panel to the right of the instrument parameters. See
+    excitationTools.py for the methods and docs/optical_dlts_light_source.md
+    for the wiring."""
+    lightFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="gray",
+                          highlightthickness=1, highlightcolor='gray', width=430, height=770)
+    lightFrame.grid(row=0, column=1, padx=(0, 10), pady=(2, 10), sticky='nw')
+    lightFrame.grid_propagate(False)
+    lightFrame.grid_columnconfigure(1, weight=1)
+
+    ttk.Label(lightFrame, text='Light Source (Agilent 33220A + LED driver)', style=style_names['purple']['label'],
+              font=('Segoe UI', 9, 'bold')).grid(row=0, column=0, columnspan=2, sticky='w', padx=4, pady=(4, 6))
+
+    defaults = exT.DEFAULT_LIGHT_PARAMS
+    method_options = [f"{k} - {v['name']}" for k, v in exT.METHODS.items()]
+    l_param_list = [
+        ('Excitation Method', method_options, method_options[defaults['Excitation Method']]),
+        ('LED Driver Range', ['0 - 1 A (1 Ohm)', '1 - 100 mA (10 Ohm)'], None),
+        ('LED Pulse Current (mA)', None, defaults['LED Pulse Current']),
+        ('LED Pulse Width (s)', None, defaults['LED Pulse Width']),
+        ('LED Pulse Delay (s)', None, defaults['LED Pulse Delay']),
+        ('LED Steady Current (mA)', None, defaults['LED Steady Current']),
+        ('Optical Timing Reference', ['0 - I_MON (Aux In 2)', '1 - Commanded Timing'], None),
+        ('Commanded Timing Offset (s)', None, defaults['Commanded Timing Offset']),
+        ('Record I_MON', ['0 - No', '1 - Yes'], None),
+        ('AWG VISA Resource', 'editable', ''),
+    ]
+    dltsc.l_params_vars = {}
+    dltsc.l_param_inputField = {}
+    for idx, (plabel, options, pdef) in enumerate(l_param_list):
+        pname = re.sub(r'\s*\([^)]*\)$', '', plabel)
+        if isinstance(options, list) and pdef is None:
+            pdef = next(o for o in options if int(o.split(' - ')[0]) == int(defaults[pname]))
+        r = idx + 1
+        ttk.Label(lightFrame, text=plabel, style=style_names['purple']['label']).grid(
+            row=r, column=0, sticky='w', padx=4, pady=2)
+        var = tk.StringVar(value=str(pdef))
+        if isinstance(options, list):
+            field = ttk.Combobox(lightFrame, textvariable=var, values=options, width=28, state='readonly')
+        elif options == 'editable':
+            field = ttk.Combobox(lightFrame, textvariable=var, values=[], width=28)
+        else:
+            field = ttk.Entry(lightFrame, textvariable=var, width=12)
+        field.grid(row=r, column=1, sticky='ew', padx=4, pady=2)
+        dltsc.l_param_inputField[pname] = field
+        dltsc.l_params_vars[pname] = var
+
+    row = len(l_param_list) + 1
+    bframe = ttk.Frame(lightFrame)
+    bframe.grid(row=row, column=0, columnspan=2, sticky='ew', pady=(8, 2))
+    for c in range(2):
+        bframe.grid_columnconfigure(c, weight=1)
+    ttk.Button(bframe, text='Refresh VISA List', style=style_names['purple']['button'],
+               command=refresh_visa_resources).grid(row=0, column=0, padx=4, pady=2, sticky='ew')
+    ttk.Button(bframe, text='Disconnect', style=style_names['purple']['button'],
+               command=disconnect_light_source).grid(row=0, column=1, padx=4, pady=2, sticky='ew')
+    ttk.Button(bframe, text='Connect + Get Params', style=style_names['purple']['button'],
+               command=lambda: connect_and_get_params(devType='light')).grid(
+        row=1, column=0, padx=4, pady=2, sticky='ew')
+    ttk.Button(bframe, text='Apply + Push Params', style=style_names['purple']['button'],
+               command=lambda: apply_and_push_params(devType='light')).grid(
+        row=1, column=1, padx=4, pady=2, sticky='ew')
+    tk.Button(bframe, text='LED OFF', fg='white', bg='#c62828', activebackground='#8e0000',
+              font=('Segoe UI', 10, 'bold'), command=led_off_now).grid(
+        row=2, column=0, columnspan=2, padx=4, pady=(6, 2), sticky='ew')
+
+    dltsc.l_statusLabel = ttk.Label(lightFrame, text='Not connected', wraplength=400, justify='left')
+    dltsc.l_statusLabel.grid(row=row + 1, column=0, columnspan=2, sticky='w', padx=4, pady=(4, 2))
+    ttk.Label(lightFrame, wraplength=400, justify='left', foreground='gray', text=(
+        "The LED runs only while data is being taken; the driver's arming switch is the hardware "
+        "interlock. Optical Fill holds the bias at the reverse level (Aux Output Offset + Scale) and "
+        "fires the LED instead of the fill pulse. Delay is from the MFIA Trigger Out 2 rising edge. "
+        "Wiring: 33220A Output -> CTRL IN; MFIA Trigger Out 2 -> 33220A Trig In; I_MON -> MFIA Aux In 2.")
+              ).grid(row=row + 2, column=0, columnspan=2, sticky='w', padx=4, pady=(4, 2))
+
+
 def construct_runParamsTab():
     global _exportButton
     root = dltsc.root
@@ -360,7 +542,9 @@ def construct_runParamsTab():
         ('Aux Output Lower Limit (V)', '-10'),
         ('Aux Output Upper Limit (V)', '0'),
         ('Signal Output Add', '1 - True'),
-        ('Trigger Source Signal', '36 - Threshold 1')
+        ('Trigger Source Signal', '36 - Threshold 1'),
+        # Trigger Out 2 -> the light source's 33220A Trig In (Light Source panel)
+        ('Trigger 2 Source Signal', '36 - Threshold 1')
     ]
 
     # define parameters that should be dropdowns (multiple-choice) with human-readable labels
@@ -427,6 +611,7 @@ def construct_runParamsTab():
             '52 - MDS Sync Out'
         ]
     }
+    param_options['Trigger 2 Source Signal'] = list(param_options['Trigger Source Signal'])
 
     dltsc.z_params_vars = {}
     # lay out parameters starting at row 2 below impedance inputs
@@ -581,11 +766,13 @@ def construct_runParamsTab():
 
     _update_param_history_field()
 
+    _construct_lightSourceFrame(style_names)
+
     reportParamsFrame = tk.Frame(dltsc.runParamsTab, highlightbackground="gray",
                               highlightthickness=1, highlightcolor='gray',
                               width=860, height=220)
 
-    reportParamsFrame.grid(row=1, column=0, padx=10, pady=(0, 2), sticky='nsew')
+    reportParamsFrame.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 2), sticky='nsew')
     reportParamsFrame.grid_rowconfigure(0, weight=1)
     reportParamsFrame.grid_columnconfigure(0, weight=1)
     reportParamsFrame.config()

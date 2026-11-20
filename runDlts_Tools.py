@@ -1,4 +1,5 @@
 import time
+import json
 import numpy as np
 import os
 
@@ -8,6 +9,32 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="uncertainties")
 
 import dltsConfig as dltsc
+import excitationTools as exT
+
+
+def current_light_params():
+    """Typed Light Source parameters as the GUI shows them now (so a run is
+    checked against what is on screen), else the last pushed values, else the
+    defaults (electrical DLTS) when there is no GUI."""
+    param_vars = getattr(dltsc, 'l_params_vars', None) or {}
+    if param_vars:
+        values = {}
+        for pName in param_vars:
+            try:
+                values[pName] = dltsc.recast_param_type('light', pName)
+            except Exception:
+                values[pName] = exT.DEFAULT_LIGHT_PARAMS.get(pName)
+        return {**exT.DEFAULT_LIGHT_PARAMS, **values}
+    pushed = getattr(dltsc, 'l_params_for_push', None) or {}
+    return {**exT.DEFAULT_LIGHT_PARAMS, **pushed}
+
+
+def _json_default(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.generic):
+        return obj.item()
+    return str(obj)
 
 
 def _get_runtime_param_value(param_vars, param_name, fallback_bucket=None):
@@ -30,6 +57,8 @@ class dltsRun:
         self.impDeviceParams = None
         self.tempDeviceParams = None
         self.outputParams = None
+        self.lightParams = None     # typed Light Source parameters (None = electrical DLTS)
+        self.lightDevice = None     # agilent33220A_Control.awgDevice when the method uses the LED
         self.dataFolder = None
         self.runOutputFileType = None
         self.dataFileNames = None
@@ -162,8 +191,57 @@ class dltsRun:
         else:
             dltsc.log_to_textbox("All device parameters are set.")
             returnVal += 1
+        # 3. Light source: only when the excitation method uses the LED.
+        if self.check_light_source() != 0:
+            returnVal -= 1
 
         return returnVal
+
+    def check_light_source(self):
+        """Validate the Light Source settings against the MFIA timing and, when
+        the method uses the LED, require a connected 33220A. 0 = ready."""
+        self.lightParams = current_light_params()
+        method = exT.method_info(self.lightParams)
+        errors = exT.validate(self.lightParams, self.impDeviceParams or {})
+        if method['awg'] is not None:
+            lightDev = getattr(dltsc, 'lightDev', None)
+            if lightDev is None or not getattr(lightDev, 'state', False):
+                errors.append("Light source (33220A) is not connected.")
+            self.lightDevice = lightDev
+        else:
+            self.lightDevice = None
+        for err in errors:
+            dltsc.log_to_textbox(f"Error: {err}")
+        if not errors and method['awg'] is not None:
+            dltsc.log_to_textbox(f"Excitation: {method['name']}. Check the LED driver's arming switch is ON.")
+        return len(errors)
+
+    def _push_effective_mfia_params(self):
+        """Push the MFIA parameters this excitation method needs (an optical
+        fill holds the bias at its reverse level). Stored in
+        dltsc.z_params_effective, which ziDevice.set_param_value() prefers, so
+        every reload_params() after a factory_reset() keeps them."""
+        # From the typed values pushed at Connect / Apply (the GUI strings are
+        # not pushable). None for methods that keep the GUI values.
+        typed = getattr(dltsc, 'z_params_for_push', None) or {}
+        effective = exT.mfia_override(typed, self.lightParams) if typed else None
+        dltsc.z_params_effective = effective
+        impDev = self.impDevice
+        if effective is None or getattr(impDev, 'session', None) is None:
+            return
+        for pName in list(impDev.params):
+            if pName in effective:
+                impDev.set_param_value(pName, effective)
+                impDev.push_param_to_device(pName)
+
+    def write_run_params(self):
+        """runParams.txt: written when the run starts (the live analysis needs
+        the excitation method and timing while the run is going) and again
+        when it finishes."""
+        if self.paramsFileName is None:
+            return
+        with open(self.paramsFileName, 'w') as f:
+            json.dump(self._current_run_params(), f, indent=4, default=_json_default)
 
     def init_experiment(self):
         hardware_status = self.check_setup()
@@ -226,6 +304,11 @@ class dltsRun:
             dltsc.run_outputFileType = self.runOutputFileType
 
             dltsc.log_to_textbox("3. Output file names set.")
+            self._push_effective_mfia_params()
+            try:
+                self.write_run_params()
+            except OSError as exc:
+                dltsc.log_to_textbox(f"Warning: could not write runParams.txt at the start of the run: {exc}")
             return 0
 
     def _read_stage_temp(self):
@@ -237,9 +320,13 @@ class dltsRun:
             return None
 
     def _current_run_params(self):
-        """The merged device + output parameters, as also written to runParams.txt."""
+        """The merged device + output (+ light source) parameters, as also
+        written to runParams.txt."""
         if self.impDeviceParams is not None and self.tempDeviceParams is not None and self.outputParams is not None:
-            return {**self.impDeviceParams, **self.tempDeviceParams, **self.outputParams}
+            merged = {**self.impDeviceParams, **self.tempDeviceParams, **self.outputParams}
+            if self.lightParams is not None:
+                merged.update(self.lightParams)
+            return merged
         return {}
 
     def _run_single_step(self, i, deleteFirst=False):
@@ -285,8 +372,7 @@ class dltsRun:
             # Stage temperature is read before and after the acquisition and
             # averaged; it is only recorded as HDF5 metadata.
             stageTs = [self._read_stage_temp()]
-            data = impdDev.pull_data(plot=False, trigger=True,
-                                   numPoints=numPoints, numReps=numReps)
+            data = self._acquire_with_light(impdDev, numPoints, numReps)
             stageTs.append(self._read_stage_temp())
             stageTs = [t for t in stageTs if t is not None]
             stageT = sum(stageTs) / len(stageTs) if stageTs else None
@@ -309,6 +395,39 @@ class dltsRun:
         self._everPulled = True
         self.stepStatus[i] = 'done'
         return 0
+
+    def _acquire_with_light(self, impdDev, numPoints, numReps):
+        """pull_data() with the LED driven as the excitation method asks: the
+        33220A is configured and its output switched on just before the
+        acquisition and always switched off after it, so the LED only ever
+        runs while data is being taken. An optical-fill step gets its
+        PulseReference channel (the LED pulse timing the analysis uses)."""
+        light = self.lightParams or {}
+        settings = exT.awg_settings(light)
+        lightDev = self.lightDevice
+        pullArgs = dict(plot=False, trigger=True, numPoints=numPoints, numReps=numReps)
+        if exT.records_imon(light):
+            pullArgs['recordAuxIn2'] = True
+        zParams = self.impDeviceParams or {}
+
+        if settings['mode'] == 'off':
+            if lightDev is not None:
+                lightDev.led_off()
+            return impdDev.pull_data(**pullArgs)
+
+        if lightDev is None:
+            raise RuntimeError("the excitation method uses the LED, but no 33220A is connected")
+        try:
+            lightDev.apply_settings(settings, cycleS=exT.cycle_period_s(zParams))
+            lightDev.output(True)
+            data = impdDev.pull_data(**pullArgs)
+        finally:
+            lightDev.led_off()
+
+        reference = exT.build_pulse_reference(data, light, zParams)
+        if reference is not None:
+            data[exT.PULSE_REFERENCE_CHANNEL] = reference
+        return data
 
     def run_experiment(self, indices=None, deleteFirst=False):
         """Run the experiment.
@@ -365,10 +484,9 @@ class dltsRun:
         tempDev = self.tempDevice
         impdDev = self.impDevice
 
-        runParams = self._current_run_params()
-        fName = self.paramsFileName
-        if impdDev is not None and hasattr(impdDev, 'writeDataJson') and fName is not None:
-            impdDev.writeDataJson(runParams, fName)
+        if self.lightDevice is not None:
+            self.lightDevice.led_off()
+        self.write_run_params()
 
         # The return to room temperature is no longer done here: this runs on
         # the Tk main thread, and waiting out the ramp froze the GUI for

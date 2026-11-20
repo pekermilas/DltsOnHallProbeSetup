@@ -37,6 +37,9 @@ Each row is a label and a field. Fields listed with options are read-only dropdo
 | Aux Output Upper Limit | `0` | Entry |
 | Signal Output Add | `1 - True` | `0 - False`, `1 - True` |
 | Trigger Source Signal | `36 - Threshold 1` | `0 - Off`, `1 - Osc Phi Demod 2`, `36 - Threshold 1`, `37 - Threshold 2`, `38 - Threshold 3`, `39 - Threshold 4`, `52 - MDS Sync Out` |
+| Trigger 2 Source Signal | `36 - Threshold 1` | same as Trigger Source Signal (Trigger Out 2 triggers the light source's 33220A) |
+
+The Light Source panel to the right of these groups (`_construct_lightSourceFrame`, parameters in `dltsc.l_params_vars`) is described in [optical_dlts_light_source.md](../optical_dlts_light_source.md).
 
 `dltsConfig.recast_param_type('impDev', name)` converts each value before it is sent. Dropdown values become the integer before the dash. Filter Harmonic, Filter Bandwidth, and Data Transfer Rate become `int`. All other entries become `float`. The units follow the terminal prompts in `zurichInstruments_Control.ziDevice.set_param_value`: amplitude in V, frequency in Hz, bandwidth in Hz, current range in A, voltage range in V, omega suppression in dB, data transfer rate in Sa/s, State Enable/Disable Time in s, aux output values in V.
 
