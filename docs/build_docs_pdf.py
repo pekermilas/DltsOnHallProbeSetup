@@ -19,6 +19,7 @@ ORDER = [
     ('README.md', 'Overview'),
     ('getting_started.md', 'Guide'), ('running_a_dlts_experiment.md', 'Guide'),
     ('quick_run.md', 'Guide'), ('standalone_instruments.md', 'Guide'),
+    ('optical_dlts_light_source.md', 'Guide'), ('hardware_manual/HardwareManual.md', 'Hardware'),
     ('reference/DLTSGUI_MainWindow.md', 'Reference'), ('reference/runParamsTab.md', 'Reference'),
     ('reference/liveDataTab.md', 'Reference'), ('reference/dataAnalysisTab.md', 'Reference'),
     ('reference/detailedAnalysisTab.md', 'Reference'), ('reference/runDlts_Tools.md', 'Reference'),
@@ -26,6 +27,7 @@ ORDER = [
     ('reference/impedanceAnalysis_Tools.md', 'Reference'), ('reference/dltsConfig.md', 'Reference'),
     ('reference/convert_json_to_h5.md', 'Reference'), ('reference/convert_h5_to_text.md', 'Reference'),
     ('reference/data_formats.md', 'Reference'), ('reference/other_scripts.md', 'Reference'),
+    ('reference/hallDltsSelector_Control.md', 'Reference'),
 ]
 MERMAID_URL = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js'
 EDGE = [r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',

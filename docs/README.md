@@ -18,6 +18,9 @@ controller, driven from one Tkinter GUI.
    Python scripts, without the GUI.
 5. [Optical DLTS with the 365 nm light source](optical_dlts_light_source.md): wiring the
    Agilent 33220A and the LED driver, excitation methods, safety, commissioning.
+6. [Hardware manual](hardware_manual/HardwareManual.md): the shared Hall / DLTS bench:
+   equipment, safety, switching between Hall and DLTS, the complete cable table, port
+   allocation, device limits, and planned upgrades (light source, HDS-4 selector).
 
 All of these pages are also in one PDF, `docs/DLTS_Software_Documentation.pdf`. After
 editing the docs, rebuild it with `python docs/build_docs_pdf.py` (needs Microsoft Edge;
@@ -66,6 +69,7 @@ with its parameters and return value, how to call it, and known limitations.
 | [convert_h5_to_text](reference/convert_h5_to_text.md) | One HDF5 step to a readable table or JSON |
 | [data_formats](reference/data_formats.md) | Run folders, step files, runParams.txt, HDF5 layout, ZI CSV exports |
 | [other_scripts](reference/other_scripts.md) | Legacy apps, tests, benchmarks |
+| [hallDltsSelector_Control](reference/hallDltsSelector_Control.md) | `selectorDevice`: the planned HDS-4 Hall/DLTS relay selector |
 
 ## Checking the software
 

@@ -22,7 +22,7 @@ DLTS (deep-level transient spectroscopy) GUI in Python/tkinter (`DLTSGUI_MainWin
 | O-DLTS light source integration (all excitation methods; I_MON or commanded timing reference) | Code done and tested offline (fake VISA). **Not on hardware.** Committed. | `excitationTools.py`, `agilent33220A_Control.py`, `docs/optical_dlts_light_source.md`, `tests/test_light_source.py` |
 | Temperature driver bug fixes (go_to_temp args, safe disconnect, connect errors, Serial Port box, abort) | Done, tests pass. Committed (`167f46a`). Not yet checked on hardware. | `instecTempStage_Control.py`, `runParamsTab.py`, `tests/test_temperature_driver.py` |
 | Hall + DLTS merge | **Study only, do not implement** until the owner says so | `docs/planning/hall_dlts_merge_feasibility.md` |
-| Hardware manual | Draft connection notes and photos; the manual itself is **not written yet** | `docs/hardware_manual/connections_draft.md`, `docs/hardware_manual/photos/` |
+| Hardware manual | **v1.0 written** (2026-11-24): Part A for users, Part B for builders. Status marks Installed / Planned / Designed / TBD. Included in `docs/README.md` and in the PDF (`docs/DLTS_Software_Documentation.pdf`, rebuilt). | `docs/hardware_manual/HardwareManual.md` (working notes: `connections_draft.md`; photos: `photos/`) |
 | HDS-4 Hall/DLTS relay selector | Designed (README, BOM, firmware, Python driver with tests). **Not built**, not in any GUI. | `hardware/hallDltsSelector/`, `hallDltsSelector_Control.py`, `tests/test_hall_dlts_selector.py` |
 
 Not committed at the time of writing (the owner will commit):
@@ -35,7 +35,13 @@ Not committed at the time of writing (the owner will commit):
 
 ## 3. Next steps (in the owner's order)
 
-1. **Hardware manual:** turn `docs/hardware_manual/connections_draft.md` into the manual, for both users and builders. It must include the 33220A and the LED light source wiring (§3a–3c of the draft) and the HDS-4 option. Placeholders stay for the USB port map and the tubing map until the owner fills them in.
+1. **Hardware manual follow-ups:** fill the TBD items:
+   - USB hub port map (§B4) and tubing map (§B5);
+   - vacuum pump model;
+   - whether the A/B selector boxes switch the shields;
+   - the switch box and magnet-box firmware.
+
+   When the light source is installed, change its marks from Planned to Installed and add photos.
 2. **Light source commissioning** (owner, at the bench):
    - wire cables 21–26 of the draft;
    - check that the 33220A idles at 0 V in triggered burst;
