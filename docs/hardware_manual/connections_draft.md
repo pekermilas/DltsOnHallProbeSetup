@@ -150,7 +150,7 @@ These are device limits only. A sample's safe limits are usually tighter.
 | LED driver (planned) | CTRL IN 0–4 V into 49.9 Ω gives 0–1 A (1 Ω range) or 0–100 mA (10 Ω range). 1 A DC for seconds only (Q1 ≈ 4 W). Software caps: 0.3 A average, 0.2 A steady. Keep the AWG low level at 0 V. | light source repo |
 | LED head | 365 nm UV: eye and skin hazard. Run it only clamped in the lid adapter. Wear OD ≥ 4 glasses at 365 nm when the head is out. Arming switch off before touching the head or sample. | light source user manual |
 | Agilent 33220A | Up to 10 Vpp into 50 Ω. The software sets voltage limits (`VOLT:LIM`) to protect the LED driver. | spec, `agilent33220A_Control.py` |
-| HDS-4 selector (designed) | Switch dry (instrument outputs off). Reed contacts: check the chosen relay's switching voltage (≥ 200 V needed for the Keithley's full range). | `hardware/hallDltsSelector/README.md` |
+| HDS-4 selector (designed) | Switch dry (instrument outputs off). One 8-channel relay module (revision 3, SELECT-only): no relay power = every contact on Hall. | `hardware/hallDltsSelector/README.md` |
 
 Sources:
 - [Tektronix 2450 specifications](https://www.tek.com/en/documents/specification/model-2450-interactive-sourcemeter-instrument-specifications)

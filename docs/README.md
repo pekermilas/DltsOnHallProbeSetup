@@ -69,7 +69,7 @@ with its parameters and return value, how to call it, and known limitations.
 | [convert_h5_to_text](reference/convert_h5_to_text.md) | One HDF5 step to a readable table or JSON |
 | [data_formats](reference/data_formats.md) | Run folders, step files, runParams.txt, HDF5 layout, ZI CSV exports |
 | [other_scripts](reference/other_scripts.md) | Legacy apps, tests, benchmarks |
-| [hallDltsSelector_Control](reference/hallDltsSelector_Control.md) | `selectorDevice`: the planned HDS-4 Hall/DLTS relay selector |
+| [hallDltsSelector_Control](reference/hallDltsSelector_Control.md) | `HallDltsSelector`: the planned HDS-4 Hall/DLTS relay selector (StandardFirmata, like the Hall switch box) |
 
 ## Checking the software
 

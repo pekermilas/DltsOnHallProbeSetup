@@ -290,18 +290,22 @@ C100W rear panel: CONTROL (mini-DIN, from the controller), COOLING LED, LOOP 1 M
 
 Details: `docs/optical_dlts_light_source.md` and the light source build guide.
 
-**HDS-4 Hall/DLTS selector (designed).** One relay box replaces the four A/B boxes.
-- **Relays:** per contact, a Hall path and a DLTS path. Each path switches the centre conductor and the shield.
+**HDS-4 Hall/DLTS selector (designed).** One box replaces the four A/B boxes and does the same job. It is built like the existing Hall switch box, from one 8-channel Arduino relay module, and has triax jacks.
+- **Relays:** each contact has a pair of changeover relays (centre and guard) driven together: released = Hall (NC), energized = DLTS (NO). The outer shields are bonded to the case.
+- **Controller:** its own Arduino Nano running the stock **StandardFirmata** sketch, driven from Python through pyfirmata2. This is the same arrangement and code structure as the Hall switch box (`switchBox.py`). Each contact switches independently.
+- **Relay module:** must be the HIGH-level-trigger type (or have its H/L jumper on H). StandardFirmata sets every pin LOW at boot, and LOW must mean Hall.
 - **Safety:**
-  - power-up state is OPEN;
-  - break-before-make;
-  - a hardware RELAY POWER switch;
-  - USB text protocol.
-- **Software:** Python driver `hallDltsSelector_Control.py`, so either program can check and set the routing. This is a requirement for an unattended combined Hall + DLTS sequence.
-- **Cabling:** STAGE P1–P4 to the stage, HALL P1–P4 to the switch box, DLTS P1/P2/P3 to HCUR/LCUR/LPOT.
+  - Hall and DLTS can never be connected at once: each relay is a changeover contact and breaks before it makes.
+  - Power-up, reset and the RELAY POWER switch all put every contact on Hall, the same as today's knobs on A.
+- **Software:** Python driver `hallDltsSelector_Control.py`, so either program can check and set the routing. An unattended combined Hall + DLTS sequence needs this.
+- **Cabling:** STAGE P1–P4 to the stage, HALL P1–P4 to the switch box, DLTS P1/P2/P3 to HCUR/LCUR/LPOT through triax-to-BNC adapters.
 - **After installing:** redo the MFIA open/short compensation.
 
-Design, BOM, firmware and tests: `hardware/hallDltsSelector/README.md`.
+![HDS-4 signal path, one channel](../../hardware/hallDltsSelector/selector_signal_path.png)
+
+![HDS-4 control and power wiring](../../hardware/hallDltsSelector/selector_control.png)
+
+Build details, pin table, firmware protocol, BOM and test steps: `hardware/hallDltsSelector/README.md`.
 
 ### B7. Adding new hardware
 
