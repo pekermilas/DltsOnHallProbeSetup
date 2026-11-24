@@ -4,7 +4,7 @@
 
 GUI callers:
 
-- **Input Parameters** tab: `runParamsTab.connect_and_get_params('temperature')` creates `dltsc.tempDev = mK2000B()` and calls `connect_temp_controller()` and `set_param_value()`; `apply_and_push_params('temperature')` calls `load_params()`.
+- **Input Parameters** tab: `runParamsTab.connect_and_get_params('temperature')` calls `connect_temperature_controller()`, which creates `dltsc.tempDev = mK2000B(port)` on the port in the **Serial Port** box (default `DEFAULT_PORT`) and calls `connect_temp_controller()`, then `set_param_value()`. It keeps an open connection on the same port, closes one on another port first (without STOP), and refuses to switch ports during a run. `apply_and_push_params('temperature')` calls `load_params()`.
 - **Live Tools** tab, Run DLTS (`runDlts_Tools.dltsRun`): `set_temp_grid()`, `go_to_temp()`, `read_temp()` (HDF5 metadata), `go_to_room_temp()`, and the attributes `tempGrid`, `tRamp`, `tStableDelay`, `Troom`, `roomRamp`.
 - Window close (`DLTSGUI_MainWindow`): `abort()`, `start_ramp(..., lockTimeout=...)`, `read_temp()` while waiting, and `disconnect_temp_controller(stopControl=...)`.
 
@@ -20,6 +20,9 @@ The module does not import `dltsConfig`.
 
 | Name | Value / type | Meaning |
 |---|---|---|
+| `DEFAULT_PORT` | `'COM7'` | Port used when none is given. The GUI's Serial Port box starts with it. |
+| `WAIT_SLICE_S` | `0.2` (s) | `go_to_temp()` and `go_to_room_temp()` sleep in slices this long, so `abort()` ends a wait within about 0.2 s. |
+| `list_serial_ports()` | function | Sorted names of the serial ports Windows reports (`[]` on error). Fills the Serial Port dropdown. |
 | `SERIAL_TIMEOUT_S` | `2.0` (s) | Read and write timeout set on the port by `connect_temp_controller()`. The longest `read_temp()` waits for one reply. |
 | `READ_RETRIES` | `1` | Extra queries `read_temp()` sends after a missed or unreadable reply before raising `TimeoutError`. |
 | `DEFAULT_PARAMS` | `dict`, 7 entries (below) | The Input Parameters tab's temperature defaults. `mK2000B.configure()` starts from these. |
@@ -99,7 +102,7 @@ The tolerance jumps from 0.1 °C at 25 °C to 0.014 °C just above it, and falls
 
 ## Thread safety
 
-`_ioLock` is a `threading.RLock`. `start_ramp()`, `read_temp()` and `disconnect_temp_controller()` hold it for each command (and, for `read_temp()`, the command plus its reply), so the run thread, the GUI close handler and any monitor thread never interleave bytes on the port. `go_to_temp()` and `go_to_room_temp()` do not hold the lock between polls. `write()`, `read()` and `query()` do not use the lock.
+`_ioLock` is a `threading.RLock`. `start_ramp()`, `read_temp()`, `read()`, `write()`, `query()` and `disconnect_temp_controller()` hold it for each command (and, for `read_temp()` and `query()`, the command plus its reply), so the run thread, the GUI close handler and any monitor thread never interleave bytes on the port. `go_to_temp()` and `go_to_room_temp()` do not hold the lock between polls.
 
 ## class mK2000B
 
@@ -107,10 +110,11 @@ The tolerance jumps from 0.1 °C at 25 °C to 0.014 °C just above it, and falls
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
-| `port` | `str` | `'COM7'` | Serial port name. |
-| `dev` | `serial.Serial` or `None` | `None` | Open port. Not reset to `None` by `disconnect_temp_controller()`. |
+| `port` | `str` | `DEFAULT_PORT` | Serial port name. |
+| `dev` | `serial.Serial` or `None` | `None` | Open port; `None` when not connected (reset by `disconnect_temp_controller()`). |
 | `rm` | `None` | `None` | Unused. |
 | `state` | `bool` | `False` | `True` while the port is open. |
+| `lastError` | `str` | `''` | Why the last connect or disconnect failed; `''` if it did not. |
 | `Tinitial` | number | `25` | First set-point, updated by `set_temp_grid()` and `configure()`. |
 | `Tfinal` | number | `25` | Last set-point. |
 | `tempStep` | number | `5` | Grid step. |
@@ -121,7 +125,7 @@ The tolerance jumps from 0.1 °C at 25 °C to 0.014 °C just above it, and falls
 | `Troom` | `float` | `25` | Room-temperature target, °C. |
 | `roomRamp` | `float` | `10` | Room-return ramp rate, °C/min. |
 | `_ioLock` | `threading.RLock` | new lock | Serial I/O lock. |
-| `_aborted` | `bool` | `False` | Set by `abort()`. Never cleared by the class. |
+| `_aborted` | `bool` | `False` | Set by `abort()`, cleared by `reset_abort()`. |
 | `params` | `dict` | 8 keys, all `None` | The seven `DEFAULT_PARAMS` names plus `Temperature Grid (C)`. |
 
 ### __init__(self, port = None)
@@ -130,7 +134,7 @@ Creates an unconnected controller object.
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
-| `port` | `str` or `None` | `None` | Serial port; `None` means `'COM7'`. |
+| `port` | `str` or `None` | `None` | Serial port; `None` means `DEFAULT_PORT` (`'COM7'`). |
 
 **Returns** a new `mK2000B`.
 
@@ -167,13 +171,13 @@ tsC.mK2000B.build_temp_grid(50, 25, 5)   # [50. 45. 40. 35. 30. 25.]
 
 ### read(self)
 
-Returns `self.dev.read()`: one byte from the port (pyserial reads 1 byte by default).
+Returns one byte from the port (`b''` on timeout), under the lock.
 
 No parameters.
 
-**Returns** `bytes`. Raises `AttributeError` if `dev` is `None`.
+**Returns** `bytes`. Raises `RuntimeError` if not connected.
 
-**Side effects** Waits up to `SERIAL_TIMEOUT_S` for a byte; returns `b''` on timeout. Not locked. Not used by the codebase.
+**Side effects** Waits up to `SERIAL_TIMEOUT_S`. Not used by the codebase.
 
 **Example**
 
@@ -183,56 +187,55 @@ b = stage.read()
 
 ### write(self, writeStr = None)
 
-Writes `writeStr` to the port if `dev` is set.
+Sends a raw command under the lock.
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
-| `writeStr` | `bytes` | `None` | Raw bytes to send, including `\n`. A `str` raises `TypeError` in pyserial. |
+| `writeStr` | `str` or `bytes` | `None` | Command including the trailing `\n`. A `str` is encoded. |
 
-**Returns** `0` if written, `-1` if `dev` is `None`.
+**Returns** `0` if written, `-1` if not connected.
 
-**Side effects** Sends bytes. Not locked. Not used by the codebase.
+**Side effects** Sends bytes. Not used by the codebase.
 
 **Example**
 
 ```python
-stage.write(b':TEMPerature:CTEMperature?\n')
+stage.write(':TEMPerature:STOP\n')
 ```
 
 ### query(self, queryStr = None)
 
-Calls `self.dev.query(queryStr)`. `serial.Serial` has no `query` method, so this raises `AttributeError` when connected, and returns `None` when `dev` is `None`. It is a leftover from a VISA-based version.
+Clears the input buffer, sends `queryStr` (a `\n` is added if missing) and reads one reply line, all under the lock.
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
-| `queryStr` | any | `None` | Unused in practice. |
+| `queryStr` | `str` | `None` | Command, e.g. `':TEMPerature:CTEMperature?'`. |
 
-**Returns** `None` (or raises).
+**Returns** the reply as a stripped `str` (`''` if nothing arrived within `SERIAL_TIMEOUT_S`). Raises `RuntimeError` if not connected.
 
-**Side effects** None.
+**Side effects** One command/response pair. For the temperature use `read_temp()`, which also retries and parses.
 
 **Example**
 
 ```python
-# Do not use; call read_temp() instead.
+print(stage.query(':TEMPerature:CTEMperature?'))
 ```
 
 ### connect_temp_controller(self)
 
-Opens `self.port` with `serial.Serial()`, with `timeout` and `write_timeout` set to `SERIAL_TIMEOUT_S`, waits 0.2 s and sets `state = True`. If the controller is already connected it prints `Temperature controller is already connected!`.
+Opens `self.port` with `serial.Serial()`, with `timeout` and `write_timeout` set to `SERIAL_TIMEOUT_S`, waits 0.2 s and sets `state = True`. If the controller is already connected it prints `Temperature controller is already connected!` and returns `0`.
 
 No parameters.
 
-**Returns** `0` in every case. Check `self.state`.
+**Returns** `0` when connected, `-1` on failure.
 
-**Side effects** Opens the serial port. On failure prints `Error connecting to device: ...` and resets `state`, `dev`, `rm`. It sends no command, so any device on the port "connects".
+**Side effects** Opens the serial port. On failure stores the reason in `lastError` (for example `could not open COM7: ... Access is denied.`, which usually means another program, such as the Hall probe software, holds the port), prints it, and leaves `state = False`, `dev = None`. It sends no command, so any device on the port "connects".
 
 **Example**
 
 ```python
-stage.connect_temp_controller()
-if not stage.state:
-    raise RuntimeError('temperature controller connection failed')
+if stage.connect_temp_controller() != 0:
+    raise RuntimeError(stage.lastError)
 ```
 
 ### disconnect_temp_controller(self, stopControl=True, lockTimeout=5.0)
@@ -244,9 +247,9 @@ Closes the serial port. With `stopControl=True` it first sends `:TEMPerature:STO
 | `stopControl` | `bool` | `True` | `True`: end temperature control (and cancel any ramp) before closing. `False`: leave the controller running on its own, for example still ramping to room temperature after the program exits. |
 | `lockTimeout` | `float` | `5.0` | Seconds to wait for `_ioLock`. If it expires, the method closes the port anyway. |
 
-**Returns** `0`.
+**Returns** `0`, or `-1` if STOP could not be sent (the controller may still be controlling; the reason is in `lastError`).
 
-**Side effects** Optional STOP command; closes the port; `state = False`. `dev` keeps the closed port object. Prints `Already disconnected!` if `state` is already `False`, or `Nothing to do!` if `dev` is `None`. The GUI passes `stopControl=True` only when the stage reached room temperature (or no ramp was needed); "Close now" passes `False`.
+**Side effects** Optional STOP command, then the port is **always** closed, even if STOP fails; `state = False`, `dev = None`. Prints `Already disconnected!` if `state` is already `False`, or `Nothing to do!` if `dev` is `None`. The GUI passes `stopControl=True` only when the stage reached room temperature (or no ramp was needed); "Close now" passes `False`.
 
 **Example**
 
@@ -256,13 +259,17 @@ stage.disconnect_temp_controller(stopControl=False)   # stage keeps ramping
 
 ### abort(self)
 
-Sets `self._aborted = True`. `go_to_temp()` then refuses to send a new set-point and its wait loop exits; `go_to_room_temp()` stops waiting (the ramp it already sent keeps going).
+Sets `self._aborted = True`. `go_to_temp()` then refuses to send a new set-point and its waits end within about `WAIT_SLICE_S`; `go_to_room_temp()` stops waiting (the ramp it already sent keeps going).
 
 No parameters.
 
 **Returns** `None`.
 
-**Side effects** Sets the flag only. Nothing clears it; set `stage._aborted = False` before using the object again (as `benchmarks/hardware/hw_run.py` does). In a `dltsRun`, also set `dltsc.run_abortRequested = True`, or the run will acquire at whatever temperature the stage has.
+**Side effects** Sets the flag only. It stays set until `reset_abort()` (as `benchmarks/hardware/hw_run.py` does before its room-temperature return). In a `dltsRun`, `go_to_temp()` then returns `-1` and the step is marked aborted without acquiring.
+
+### reset_abort(self)
+
+Clears the `abort()` flag so the object can move the stage again. No parameters; returns `None`.
 
 **Example**
 
@@ -331,19 +338,19 @@ Returns the stabilization tolerance for set-point `T` (see "Stabilization logic"
 tsC.mK2000B().expected_del_t(50)   # 0.0800...
 ```
 
-### go_to_temp(self, Tf=25, ramp=5, delayTime = 0)
+### go_to_temp(self, Tf=25, ramp=None, delayTime=None)
 
-Ramps to `Tf` and blocks until the stage is stable, then sleeps the stability delay.
+Ramps to `Tf` and blocks until the stage is stable, then waits the stability delay.
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
 | `Tf` | number | `25` | Target set-point, °C. |
-| `ramp` | number | `5` | **Ignored** when `dev` is set: replaced by `self.tRamp`. |
-| `delayTime` | number | `0` | **Ignored** when `dev` is set: replaced by `self.tStableDelay`. Used only on the `dev is None` path. |
+| `ramp` | number or `None` | `None` | Ramp rate, °C/min; `None` means `self.tRamp`. |
+| `delayTime` | number or `None` | `None` | Wait after stabilizing, s; `None` means `self.tStableDelay`. |
 
-**Returns** `0` when done. `-1` if `_aborted` was set before the call, during the wait, or during the stability delay. Also `0` when `dev` is `None` (prints `Nothing to do!`) or `state` is `False` (prints `T-Controller is disconnected!`), without moving the stage.
+**Returns** `0` when done. `-1` if `_aborted` was set before the call, during the wait, or during the stability delay. Raises `RuntimeError` when not connected (`dev` is `None` or `state` is `False`), so a run step fails instead of acquiring at the wrong temperature.
 
-**Side effects** Sends one ramp command, then `read_temp()` every 5 s (plus confirmation readings 10 s apart). Prints `Wait for T = <Tf> stabilization!`. Has no overall time limit; other than stabilizing, it ends on `abort()` from another thread, or with `TimeoutError` from `read_temp()` if the controller stops answering.
+**Side effects** Sends one ramp command, then `read_temp()` every 5 s (plus confirmation readings 10 s apart). Prints `Wait for T = <Tf> stabilization!`. Waits are sliced (`WAIT_SLICE_S`), so `abort()` ends them promptly. Has no overall time limit; other than stabilizing, it ends on `abort()` from another thread, or with `TimeoutError` from `read_temp()` if the controller stops answering.
 
 **Example**
 
@@ -385,7 +392,7 @@ Builds `tempGrid` from the initial/final/step values and stores `Tinitial`, `Tfi
 
 **Returns** `0`.
 
-**Side effects** Updates the grid attributes. Does nothing but print `Nothing to do!` when `dev` is `None`, so it needs a connected (or at least constructed) port. `dltsRun.init_experiment()` calls it.
+**Side effects** Updates the grid attributes. Needs no connection. `dltsRun.init_experiment()` calls it.
 
 **Example**
 
@@ -463,7 +470,7 @@ Reads the stage once and returns the deviation and the tolerance.
 
 **Returns** tuple `(abs(Tf - T_stage), expected_del_t(Tf))`, both °C.
 
-**Side effects** One `read_temp()`. With `dev = None` it prints `Nothing to do!` and then raises `UnboundLocalError`.
+**Side effects** One `read_temp()`. Raises `RuntimeError` when not connected.
 
 **Example**
 
@@ -567,17 +574,9 @@ finally:
 
 - A controller that stops answering no longer hangs anything: reads time out after 2 s, `read_temp()` retries once and then raises `TimeoutError` (earlier versions set no serial timeout and blocked forever). Tested in `tests/test_run_folder_and_serial.py`.
 - `go_to_temp()` still has no overall time limit. A set-point the stage cannot hold within tolerance, while the controller keeps answering, waits until another thread calls `abort()`.
-- `go_to_temp()` ignores its `ramp` and `delayTime` arguments when connected and uses `tRamp` and `tStableDelay`.
-- `go_to_temp()` returns `0` without moving the stage when the port is closed (`state == False`) or `dev` is `None`, so callers cannot tell "done" from "not connected".
 - If the stage is already within tolerance at the first reading, `go_to_temp()` skips the 10 s confirmation reading.
 - `expected_del_t()` is discontinuous: 0.1 °C at 25 °C, 0.014 °C at 25.01 °C, and it drops to about 0 just below 19.648 °C. At 30 °C the tolerance is 0.027 °C. The lmfit fit it runs is unused.
-- `abort()` is permanent for the object; reset `_aborted` by hand to reuse it. `go_to_room_temp()` sends its ramp even when aborted.
-- `dltsRun` checks `dltsc.run_abortRequested`, not `go_to_temp()`'s return value. Calling only `stage.abort()` during a run makes the step acquire at the current temperature.
+- `go_to_room_temp()` sends its ramp even when aborted.
 - `connect_temp_controller()` does not verify that the device on the port is an mK2000B.
-- `read()`, `write()` and `query()` are unlocked leftovers; `query()` always fails on a `serial.Serial`.
-- `measure_proxy_temp()` raises `UnboundLocalError` when not connected.
-- `set_temp_grid()` does nothing without an open port object, but `configure()` builds the same grid offline.
 - `tempGrid` is the integer `25` until a grid is built.
-- `disconnect_temp_controller()` leaves `dev` pointing at the closed port.
-- The header comment's example (`temperatureTools`, `connectTempController`, `goToTemp`, `disconnTController`) names functions that do not exist in this module.
-- The module imports `matplotlib.pyplot` and `from lmfit.models import *` without using them beyond `lmfit.models.LinearModel`.
+- Fixed 2026-11-24 (tests in `tests/test_temperature_driver.py`): `go_to_temp()` used to ignore its `ramp`/`delayTime` arguments and returned `0` without moving the stage when not connected; `disconnect_temp_controller()` left the port open if STOP failed and kept `dev` pointing at the closed port; `connect_temp_controller()` always returned `0`; the port was fixed at COM7 and reconnecting from the GUI opened a second object on the held port; `dltsRun` ignored `go_to_temp()`'s `-1`; `query()` called a method `serial.Serial` lacks; `measure_proxy_temp()` raised `UnboundLocalError` and `set_temp_grid()` needed an open port; waits could not be interrupted and `abort()` could only be cleared by hand.

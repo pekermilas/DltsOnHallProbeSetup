@@ -12,11 +12,11 @@ Created on Wed Jun  8 11:40:12 2022
 @author: pekermilas
 """
 # EXAMPLE CALLS
-# import temperatureTools as tT
-# t = tT.mK2000B()
-# t.connectTempController()
-# t.goToTemp(Tf=35)
-# t.disconnTController()
+# import instecTempStage_Control as tsC
+# t = tsC.mK2000B('COM7')
+# if t.connect_temp_controller() != 0: print(t.lastError)
+# t.go_to_temp(35, 5, 0)
+# t.disconnect_temp_controller()
 
 
 import serial
@@ -24,14 +24,30 @@ import serial.tools.list_ports
 import threading
 import time
 import numpy as np
-import matplotlib.pyplot as plt
 import lmfit
-from lmfit.models import *
+import lmfit.models
+
+# Port used when none is given (the lab PC's controller). The Input Parameters
+# tab has a Serial Port box, so this is only the starting choice.
+DEFAULT_PORT = 'COM7'
 
 # Longest wait (s) for one serial read or write before read_temp() gives up on
 # that reply; it asks READ_RETRIES more times before raising TimeoutError.
 SERIAL_TIMEOUT_S = 2.0
 READ_RETRIES = 1
+
+# Waits in go_to_temp()/go_to_room_temp() sleep in slices this long (s), so
+# abort() takes effect within a fraction of a second instead of after a whole
+# 5 s poll, 10 s confirmation or stability delay.
+WAIT_SLICE_S = 0.2
+
+
+def list_serial_ports():
+    """Names of the serial ports Windows reports (e.g. ['COM3', 'COM7']), sorted."""
+    try:
+        return sorted(p.device for p in serial.tools.list_ports.comports())
+    except Exception:
+        return []
 
 # The Input Parameters tab's temperature defaults (runParamsTab). mK2000B.configure()
 # starts from these.
@@ -43,11 +59,13 @@ DEFAULT_PARAMS = {'Initial Temperature (C)': 25.0, 'Final Temperature (C)': 25.0
 class mK2000B:
 
     def __init__(self, port = None):
-        # self.port = port or "COM3"
-        self.port = port or 'COM7'
+        self.port = port or DEFAULT_PORT
         self.dev = None
         self.rm = None
         self.state = False
+        # Why the last connect or disconnect failed ('' when it didn't), so the
+        # GUI can show it instead of the reason only reaching the console.
+        self.lastError = ''
         self.Tinitial = 25
         self.Tfinal = 25
         self.tempStep = 5
@@ -108,80 +126,137 @@ class mK2000B:
         grid[-1] = Tfin
         return grid
 
+    def _require_connection(self):
+        if self.dev is None or not self.state:
+            raise RuntimeError(f"temperature controller on {self.port} is not connected")
+
     def read(self):
-        return self.dev.read()
-    
+        """One raw byte from the port (b'' on timeout)."""
+        self._require_connection()
+        with self._ioLock:
+            return self.dev.read()
+
     def write(self, writeStr = None):
-        if not self.dev is None:
-            self.dev.write(writeStr)
-            returnVal = 0
-        else:
-            returnVal = -1
-        return returnVal
-    
+        """Send a raw command (str or bytes, including the trailing newline).
+        Returns 0, or -1 if not connected."""
+        if self.dev is None or not self.state:
+            return -1
+        data = writeStr.encode() if isinstance(writeStr, str) else writeStr
+        with self._ioLock:
+            self.dev.write(data)
+        return 0
+
     def query(self, queryStr = None):
-        if not self.dev is None:
-            return self.dev.query(queryStr)
+        """Send a command and return the one-line reply as a str ('' if none
+        arrived within SERIAL_TIMEOUT_S). A newline is added if missing."""
+        self._require_connection()
+        if not queryStr.endswith('\n'):
+            queryStr += '\n'
+        with self._ioLock:
+            self.dev.reset_input_buffer()
+            self.dev.write(queryStr.encode())
+            return self.dev.readline().decode(errors='replace').strip()
 
     def connect_temp_controller(self):
-        if not self.state:
-            try:
-                self.dev = serial.Serial()
-                self.dev.port = self.port
-                # Without these a controller that stops answering blocks
-                # readline() (and every caller: runs, the close dialog) forever.
-                self.dev.timeout = SERIAL_TIMEOUT_S
-                self.dev.write_timeout = SERIAL_TIMEOUT_S
-                # self.dev.baudrate = 9600
-                # self.dev.timeout = None
-                # self.dev.dsrdtr=True
-                self.dev.open()
-                time.sleep(0.2)
-                self.state = True
-            except IndexError:
-                print('Could not find Temperature Controller!' )
-                self.state = False
-                self.dev = None
-                self.rm = None
-            except Exception as e:
-                print(f"Error connecting to device: {e}")
-                self.state = False
-                self.dev = None
-                self.rm = None
-        else:
+        """Open self.port. Returns 0 when connected (or already connected),
+        -1 on failure, with the reason in self.lastError."""
+        if self.state:
             print('Temperature controller is already connected!')
-        # maxTimeDelay=2.0
+            return 0
+        self.lastError = ''
+        ser = None
+        try:
+            ser = serial.Serial()
+            ser.port = self.port
+            # Without these a controller that stops answering blocks
+            # readline() (and every caller: runs, the close dialog) forever.
+            ser.timeout = SERIAL_TIMEOUT_S
+            ser.write_timeout = SERIAL_TIMEOUT_S
+            ser.open()
+            time.sleep(0.2)
+        except Exception as e:
+            # Most often: the port does not exist, or another program (e.g. the
+            # Hall probe software) already holds it -- Windows ports are exclusive.
+            self.lastError = f"could not open {self.port}: {e}"
+            print(f"Error connecting to device: {self.lastError}")
+            try:
+                if ser is not None and getattr(ser, 'is_open', False):
+                    ser.close()
+            except Exception:
+                pass
+            self.state = False
+            self.dev = None
+            return -1
+        self.dev = ser
+        self.state = True
         return 0
 
     def disconnect_temp_controller(self, stopControl=True, lockTimeout=5.0):
         """Close the serial connection. stopControl=True first sends
         TEMPerature:STOP, which ends temperature control (and cancels any
         ramp in progress); pass False to leave the controller running on its
-        own -- e.g. still ramping to room temperature after the GUI exits."""
-        if not self.dev is None:
-            if self.state:
-                locked = self._ioLock.acquire(timeout=lockTimeout)
-                try:
-                    ser = self.dev
-                    if stopControl:
-                        ser.write(str.encode(":TEMPerature:STOP\n"))
-                        time.sleep(0.5)
-                    ser.close()
-                    self.state = False
-                finally:
-                    if locked:
-                        self._ioLock.release()
-            else:
-                print("Already disconnected!")
-        else:
-            print("Nothing to do!")
+        own -- e.g. still ramping to room temperature after the GUI exits.
 
-        return 0
+        The port is always closed, even if STOP cannot be sent (earlier the
+        exception skipped close() and the port stayed held until the program
+        exited). Returns 0, or -1 if STOP failed (the controller may still be
+        controlling); the reason is in self.lastError."""
+        if self.dev is None:
+            print("Nothing to do!")
+            self.state = False
+            return 0
+        if not self.state:
+            print("Already disconnected!")
+            self.dev = None
+            return 0
+        status = 0
+        self.lastError = ''
+        locked = self._ioLock.acquire(timeout=lockTimeout)
+        try:
+            ser = self.dev
+            if stopControl:
+                try:
+                    ser.write(str.encode(":TEMPerature:STOP\n"))
+                    time.sleep(0.5)
+                except Exception as e:
+                    self.lastError = f"STOP not sent on {self.port}: {e}"
+                    print(self.lastError)
+                    status = -1
+            try:
+                ser.close()
+            except Exception as e:
+                self.lastError = (self.lastError + '; ' if self.lastError else '') + \
+                                 f"closing {self.port}: {e}"
+                print(f"Error closing {self.port}: {e}")
+        finally:
+            self.state = False
+            self.dev = None
+            if locked:
+                self._ioLock.release()
+        return status
 
     def abort(self):
         """Stop go_to_temp()/go_to_room_temp() from commanding or waiting any
-        further (see self._aborted). Used when the GUI is closing."""
+        further (see self._aborted). Used when the GUI is closing. Stays set
+        until reset_abort()."""
         self._aborted = True
+
+    def reset_abort(self):
+        """Clear abort() so the object can move the stage again (e.g. to run
+        the room-temperature return after a watchdog abort)."""
+        self._aborted = False
+
+    def _wait(self, seconds):
+        """Sleep `seconds` in WAIT_SLICE_S slices. Returns True if abort() was
+        called meanwhile (the wait then ends early)."""
+        end = time.monotonic() + max(0.0, float(seconds))
+        while True:
+            if self._aborted:
+                return True
+            left = end - time.monotonic()
+            if left <= 0:
+                return False
+            time.sleep(min(WAIT_SLICE_S, left))
 
     def start_ramp(self, T, ramp, lockTimeout=None):
         """Command a ramp to T at `ramp` C/min and return immediately (the
@@ -248,38 +323,41 @@ class mK2000B:
             
         return delTEstimate
 
-    def go_to_temp(self, Tf=25, ramp=5, delayTime = 0):
-        """Ramp to Tf and wait for it to stabilize. Returns 0, or -1 if
-        aborted (abort() -- the GUI is closing) before or during the wait."""
+    def go_to_temp(self, Tf=25, ramp=None, delayTime=None):
+        """Ramp to Tf at `ramp` C/min, wait for it to stabilize, then wait
+        `delayTime` s. ramp/delayTime default to self.tRamp/self.tStableDelay
+        (earlier versions ignored the arguments and always used those).
+
+        Returns 0, or -1 if aborted (abort()) before or during the wait.
+        Raises RuntimeError if not connected -- earlier it returned 0 without
+        moving the stage, so a run would take data at the wrong temperature."""
         if self._aborted:
             return -1
-        if not self.dev is None:
-            ramp = self.tRamp
-            delayTime = self.tStableDelay
-            if self.state:
-                self.start_ramp(Tf, ramp)
-                time.sleep(0.5)
+        self._require_connection()
+        ramp = self.tRamp if ramp is None else ramp
+        delayTime = self.tStableDelay if delayTime is None else delayTime
 
-                # Wait for T stabilization
-                print('Wait for T = {} stabilization!'.format(Tf))
+        self.start_ramp(Tf, ramp)
+        if self._wait(0.5):
+            return -1
+
+        # Wait for T stabilization
+        print('Wait for T = {} stabilization!'.format(Tf))
+        delTmeas, delTtheo = self.measure_proxy_temp(Tf)
+        while delTmeas > delTtheo:
+            if self._aborted:
+                return -1
+            delTmeas, delTtheo = self.measure_proxy_temp(Tf)
+            if delTmeas < delTtheo:
+                if self._wait(10):
+                    return -1
                 delTmeas, delTtheo = self.measure_proxy_temp(Tf)
-                while(delTmeas>delTtheo):
-                    if self._aborted:
-                        return -1
-                    delTmeas, delTtheo = self.measure_proxy_temp(Tf)
-                    if delTmeas<delTtheo:
-                        time.sleep(10)
-                        delTmeas, delTtheo = self.measure_proxy_temp(Tf)
-                    else:
-                        time.sleep(5)
-            else:
-                print("T-Controller is disconnected!")
-        else:
-            print("Nothing to do!")
+            elif self._wait(5):
+                return -1
 
-        time.sleep(delayTime)
-
-        return -1 if self._aborted else 0
+        if self._wait(delayTime):
+            return -1
+        return 0
 
     def go_to_room_temp(self, Tr=None, ramp=None, tolerance=0.5, extraWaitS=900):
         """Ramp to room temperature Tr (default self.Troom) at `ramp` C/min
@@ -312,32 +390,33 @@ class mK2000B:
             if time.time() > deadline:
                 print(f"Gave up waiting for room temperature {Tr} C (stage at {currT} C).")
                 return 1
-            time.sleep(5)
+            if self._wait(5):
+                return 1
             currT = self.read_temp()
 
-        time.sleep(10)
+        if self._wait(10):
+            return 1
         return 0
 
     def set_temp_grid(self, userInput = False):
-        if not self.dev is None:
-            if userInput:
-                Tinit = input("Please enter Initial Temperature (C): ") or self.Tinitial
-                Tfin = input("Please enter Final Temperature (C): ") or self.Tfinal
-                tStep = input("Please enter Temperature Step (C): ") or self.tempStep
-            else:
-                Tinit = self.params.get('Initial Temperature (C)')
-                Tfin = self.params.get('Final Temperature (C)')
-                tStep = self.params.get('Temperature Step (C)')
-
-            self.Tinitial = Tinit
-            self.Tfinal = Tfin
-            self.tempStep = tStep
-
-            self.tempGrid = self.build_temp_grid(Tinit, Tfin, tStep)
-            self.numTemps = len(self.tempGrid)
+        """Build tempGrid from the initial/final/step values (self.params, or
+        console prompts with userInput=True). Needs no connection; earlier it
+        did nothing unless a port object existed."""
+        if userInput:
+            Tinit = input("Please enter Initial Temperature (C): ") or self.Tinitial
+            Tfin = input("Please enter Final Temperature (C): ") or self.Tfinal
+            tStep = input("Please enter Temperature Step (C): ") or self.tempStep
         else:
-           print("Nothing to do!")
+            Tinit = self.params.get('Initial Temperature (C)')
+            Tfin = self.params.get('Final Temperature (C)')
+            tStep = self.params.get('Temperature Step (C)')
 
+        self.Tinitial = Tinit
+        self.Tfinal = Tfin
+        self.tempStep = tStep
+
+        self.tempGrid = self.build_temp_grid(Tinit, Tfin, tStep)
+        self.numTemps = len(self.tempGrid)
         return 0
 
     def set_param_value(self, pName='Initial Temperature (C)', valueDict=None):
@@ -411,13 +490,12 @@ class mK2000B:
         return 0
 
     def measure_proxy_temp(self, Tf):
-        if not self.dev is None:
-            currT = self.read_temp()
-            delTtheo = self.expected_del_t(Tf)
-            delTmeas = np.abs(Tf-currT)
-        else:
-            print("Nothing to do!")
-    
+        """(|Tf - stage temperature|, tolerance expected_del_t(Tf)), both C.
+        Raises RuntimeError if not connected."""
+        self._require_connection()
+        currT = self.read_temp()
+        delTtheo = self.expected_del_t(Tf)
+        delTmeas = np.abs(Tf-currT)
         return delTmeas, delTtheo
 
 # if __name__ == '__main__':

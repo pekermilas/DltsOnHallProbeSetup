@@ -70,6 +70,7 @@ Buttons:
 
 - **Connect + Get Params** calls `connect_and_get_params(devType='temperature')`.
 - **Apply + Push Params** calls `apply_and_push_params(devType='temperature')`.
+- **Serial Port** (editable dropdown under the buttons, `dltsc.t_portVar`, default `COM7`): the mK2000B's port. Opening the list refreshes it from Windows (`refresh_serial_ports()`); a port can also be typed.
 
 ### Output parameters (green, right columns, middle)
 
@@ -142,7 +143,7 @@ Creates a device object, connects it, and copies the current GUI values into the
 
 **Side effects**
 - `'impedance'`: `dltsc.impDev = ziC.ziDevice()` (serial `dev32271` by default), then `connect_device()`, which opens a zhinst-toolkit session. Then `time.sleep(1)` and `_sync_param_values_to_device(...)`. The result goes into `dltsc.z_params_for_push`. A history entry `Connect/Get impedance` is saved and the log shows `Connect + Get Params [impedance]: name=value, ...`.
-- `'temperature'`: `dltsc.tempDev = tsC.mK2000B()` (port `COM7`), then `connect_temp_controller()`, which opens the serial port. Then `time.sleep(1)` and the sync into `dltsc.t_params_for_push`. The sync also sets `tRamp`, `tStableDelay`, `Troom`, and `roomRamp` on the device. A history entry `Connect/Get temperature` is saved and the log line is written.
+- `'temperature'`: `connect_temperature_controller()` opens the port in the **Serial Port** box. An open connection on the same port is kept; one on another port is closed first without STOP (refused while a run is in progress); a new `tsC.mK2000B(port)` is connected. On failure it logs `Temperature controller: NOT connected -- <reason>` (for example the port is held by another program), leaves `dltsc.tempDev = None` and returns `-1`. Then the sync into `dltsc.t_params_for_push`. The sync also sets `tRamp`, `tStableDelay`, `Troom`, and `roomRamp` on the device. A history entry `Connect/Get temperature` is saved and the log line is written.
 - Runs on the Tk thread, so the GUI freezes for the connection time plus 1 s.
 - Each click replaces the previous device object without disconnecting it first.
 
@@ -252,4 +253,4 @@ Builds typed values and stores them in `device.params`. For `'impDev'` and `'tem
 - The top frame has a fixed 860 × 770 px size. On a smaller window its lower rows are clipped rather than scrolled.
 - The chosen Data Root Folder is shown only in the log, not next to the **Browse...** button.
 - **Data Root Folder** starts empty. **Run DLTS** with it empty (or relative) stops before anything is created: the log shows `Error: Data Root Folder is not set`, `Choose it with Browse... on the Input Parameters tab, then Apply + Push Params.` and `Error: Failed to initialize the experiment.` (checked in `runDlts_Tools.dltsRun.init_experiment`). Earlier versions wrote such a run to the root of the current drive.
-- Device identifiers are fixed in the device classes: MFIA serial `dev32271`, temperature controller on `COM7`.
+- The MFIA serial `dev32271` is fixed in `ziDevice`. The temperature controller's port comes from the **Serial Port** box (default `COM7`).

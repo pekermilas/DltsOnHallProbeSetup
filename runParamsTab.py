@@ -200,6 +200,55 @@ def disconnect_light_source():
     dltsc.log_to_textbox('Light source: disconnected (output OFF).')
 
 
+def _temperature_port():
+    """The port in the Serial Port box, or the driver's default."""
+    var = getattr(dltsc, 't_portVar', None)
+    port = var.get().strip() if var is not None else ''
+    return port or tsC.DEFAULT_PORT
+
+
+def refresh_serial_ports():
+    """Fill the Serial Port dropdown with the ports Windows reports."""
+    field = (dltsc.t_param_inputField or {}).get('Serial Port')
+    ports = tsC.list_serial_ports()
+    if field is not None:
+        field['values'] = ports
+    return ports
+
+
+def connect_temperature_controller():
+    """Connect dltsc.tempDev on the port in the Serial Port box.
+
+    An already-open connection on the same port is kept. One on another port is
+    closed first, without STOP, so a ramp the controller is running is not
+    cancelled; earlier a new mK2000B was made each time while the old one still
+    held the port, so reconnecting failed with "port in use". Refused while a
+    run uses the controller. Returns 0 when connected, -1 otherwise (the reason
+    is in the log)."""
+    port = _temperature_port()
+    old = dltsc.tempDev
+    if old is not None and getattr(old, 'state', False):
+        if old.port == port:
+            dltsc.log_to_textbox(f'Temperature controller: already connected on {port}.')
+            return 0
+        if dltsc.run_busy:
+            dltsc.log_to_textbox(f'Temperature controller: a run is using {old.port}; '
+                                 f'not switching to {port} until it ends.')
+            return -1
+        old.disconnect_temp_controller(stopControl=False)
+        dltsc.log_to_textbox(f'Temperature controller: closed {old.port} (control left running).')
+    dev = tsC.mK2000B(port=port)
+    if dev.connect_temp_controller() != 0:
+        dltsc.tempDev = None
+        dltsc.log_to_textbox(f'Temperature controller: NOT connected -- {dev.lastError}. '
+                             'Check the Serial Port, the cable, and that no other program '
+                             '(e.g. the Hall probe software) has the port open.')
+        return -1
+    dltsc.tempDev = dev
+    dltsc.log_to_textbox(f'Temperature controller: connected on {port}.')
+    return 0
+
+
 def connect_and_get_params(devType='impedance'):
     if devType=='impedance':
         dltsc.impDev = ziC.ziDevice()
@@ -214,10 +263,8 @@ def connect_and_get_params(devType='impedance'):
                         _format_param_snapshot(dltsc.z_params_vars))
 
     if devType=='temperature':
-        dltsc.tempDev = None
-        dltsc.tempDev = tsC.mK2000B()
-        dltsc.tempDev.connect_temp_controller()
-        time.sleep(1)
+        if connect_temperature_controller() != 0:
+            return -1
 
         dltsc.t_params_for_push = _sync_param_values_to_device(
             dltsc.tempDev, getattr(dltsc, 't_params_vars', {}), 'tempDev'
@@ -688,6 +735,16 @@ def construct_runParamsTab():
     apply_btn2 = ttk.Button(tframe, text='Apply + Push Params', style=style_names['red']['button'],
                              command=lambda: apply_and_push_params(devType='temperature'))
     apply_btn2.grid(row=0, column=1, padx=4, pady=0, sticky='ew')
+
+    # Serial port of the mK2000B (used by Connect + Get Params). Editable, so a
+    # port Windows does not list yet can still be typed in.
+    ttk.Label(tframe, text='Serial Port', style=style_names['red']['label']).grid(
+        row=1, column=0, padx=4, pady=(4, 0), sticky='e')
+    dltsc.t_portVar = tk.StringVar(value=tsC.DEFAULT_PORT)
+    portBox = ttk.Combobox(tframe, textvariable=dltsc.t_portVar, width=10,
+                           values=tsC.list_serial_ports(), postcommand=refresh_serial_ports)
+    portBox.grid(row=1, column=1, padx=4, pady=(4, 0), sticky='w')
+    dltsc.t_param_inputField['Serial Port'] = portBox
 
     # Construct Data Params
     # -------------------------------------------------------------------------

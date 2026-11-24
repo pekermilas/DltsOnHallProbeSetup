@@ -342,7 +342,7 @@ status = run.run_experiment()         # continues from run.currentStepIndex
 dltsc.run_abortRequested = True
 dltsc.tempDev.abort()                 # ends a go_to_temp() wait
 # Before any further motion with the same objects:
-dltsc.tempDev._aborted = False
+dltsc.tempDev.reset_abort()
 dltsc.run_abortRequested = False
 ```
 
@@ -354,7 +354,7 @@ dltsc.run_abortRequested = False
 - An empty or relative **Data Root Folder** stops the run in `init_experiment()` (earlier versions wrote the run to `\MMDDYY\HHMMSS\` at the root of the current drive, with a doubled backslash in the path). `check_setup()` itself still accepts an empty value. Tested in `tests/test_run_folder_and_serial.py`.
 - `check_device_connections()` prints with `print()`, not `log_to_textbox()`, so its messages do not reach the GUI log.
 - `check_device_parameters()` takes the MFIA and temperature keys from `*_params_vars`, not from `*_params_for_push`. With empty `*_params_vars` the check passes and the MFIA/temperature parameters are missing from `runParams.txt` and the HDF5 `run_params` attribute.
-- `_run_single_step` ignores `go_to_temp()`'s return value and checks only `dltsc.run_abortRequested`. `tempDev.abort()` alone does not stop a run; the step acquires at the current stage temperature.
+- `_run_single_step` marks the step `'aborted'` without acquiring when `dltsc.run_abortRequested` is set or `go_to_temp()` returns `-1` (for example `tempDev.abort()` from a watchdog). A controller that is not connected makes `go_to_temp()` raise, so the step fails instead of acquiring at the current temperature.
 - `_run_single_step` factory-resets the MFIA before every acquisition except the first on the instance, then `reload_params()` re-sends parameters from `dltsc.z_params_for_push`. Parameters not in that dict (for example `imps/0/model`) return to factory values.
 - `run_experiment()` catches `Exception` only. `KeyboardInterrupt` leaves the step marked `'running'`.
 - An out-of-range index in `indices` raises `IndexError` inside the `except` handler itself (the log line indexes `tempGrid[i]`), so `run_experiment()` raises instead of returning `'error'`.

@@ -38,6 +38,7 @@ z_param_inputField = None
 t_params_vars = dict()
 t_params_for_push = dict()
 t_param_inputField = None
+t_portVar = None             # tk.StringVar of the temperature controller's Serial Port box (Input Parameters tab)
 d_params_vars = dict()
 d_params_for_push = dict()
 d_param_inputField = None
@@ -408,6 +409,7 @@ def init():
     global t_params_vars
     global t_params_for_push
     global t_param_inputField
+    global t_portVar
     global d_params_vars
     global d_param_inputField
     global l_params_vars
@@ -638,6 +640,7 @@ def init():
     z_params_for_push = dict()
     t_params_vars = dict()
     t_params_for_push = dict()
+    t_portVar = None
     d_params_vars = dict()
 
     run_busy = False

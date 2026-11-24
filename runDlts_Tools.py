@@ -349,10 +349,10 @@ class dltsRun:
         self.stepStatus[i] = 'running'
         ramp = tempDev.tRamp
         delay = tempDev.tStableDelay
-        tempDev.go_to_temp(tempDev.tempGrid[i], ramp, delay)
-        if dltsc.run_abortRequested:
-            # GUI closing: the stage is now ramping to room temperature, so
-            # don't acquire at a temperature that's no longer being held.
+        moveStatus = tempDev.go_to_temp(tempDev.tempGrid[i], ramp, delay)
+        if dltsc.run_abortRequested or moveStatus == -1:
+            # GUI closing (or the stage was aborted, e.g. by a watchdog): the
+            # stage is no longer holding this set-point, so don't acquire.
             self.stepStatus[i] = 'aborted'
             return 'aborted'
         time.sleep(1)

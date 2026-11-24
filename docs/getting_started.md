@@ -22,9 +22,9 @@ and an Arrhenius plot (activation energy, capture cross-section, trap density).
   `C:\Users\spencer\anaconda3`).
 - **Zurich Instruments LabOne** installed and its data server running. The MFIA is
   found by `zhinst.core.ziDiscovery` (on this PC: data server `192.168.176.30:8004`).
-- **Instec controller** on a USB-serial port. The code expects `COM7`
-  (`instecTempStage_Control.mK2000B(port='COM7')`); change it there if Windows assigns
-  another port.
+- **Instec controller** on a USB-serial port, `COM7` by default. If Windows assigns
+  another port, pick it in the **Serial Port** box under the temperature buttons on the
+  Input Parameters tab before **Connect + Get Params**.
 - Python packages: `pip install -r requirements.txt` from the repository folder.
   Tested versions are in that file (zhinst-core 26.01, zhinst-toolkit 1.3,
   h5py 3.12 with HDF5 1.14, numpy 2.1).

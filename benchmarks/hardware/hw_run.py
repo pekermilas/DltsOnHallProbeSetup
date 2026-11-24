@@ -204,13 +204,13 @@ try:
                 log('Redo/Retake completed.')
             roomStatus = room(f'after {kind}')
     if dltsc.run_abortRequested:
-        dltsc.tempDev._aborted = False    # let the room-temperature return proceed
+        dltsc.tempDev.reset_abort()    # let the room-temperature return proceed
         roomStatus = room('final')
 except BaseException as exc:
     log('ERROR: ' + ''.join(traceback.format_exception(exc)))
     event('error', message=repr(exc))
     try:
-        dltsc.tempDev._aborted = False
+        dltsc.tempDev.reset_abort()
         phase['name'] = 'room:emergency'
         roomStatus = dltsc.tempDev.go_to_room_temp(Tr=args.room, ramp=10.0)
     except Exception as exc2:
