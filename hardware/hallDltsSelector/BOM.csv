@@ -1,0 +1,17 @@
+Item,Qty,Description,Example part (verify before ordering),Notes
+1,16,"Reed relay, 1 Form A, 5 V coil, high insulation resistance",Coto 9001-05-00,"2 per path (centre + shield); IR >= 1e12 ohm, switching >= 200 V DC"
+2,1,"Darlington array, 8 channel, with clamp diodes",TI ULN2803A (DIP-18),Drives 8 paths (2 coils each)
+3,1,Microcontroller board with USB serial,Arduino Nano (ATmega328P),Firmware: firmware/hallDltsSelector/hallDltsSelector.ino
+4,12,"BNC bulkhead jack, insulated (shield isolated from panel)",any insulated/isolated BNC bulkhead,"4 STAGE (front), 4 HALL + 4 DLTS (rear)"
+5,1,"Die-cast aluminium enclosure, ~190 x 120 x 55 mm",Hammond 1590D,Check that 12 BNCs + USB + switch + LEDs fit
+6,1,"Toggle switch, SPST, panel mount",any,RELAY POWER (in the +5 V coil supply)
+7,3,"LED, 3 mm or 5 mm, panel holder",green / blue / amber,"HALL, DLTS, OPEN"
+8,3,"Resistor 1 kohm, 1/4 W",any,LED series resistors
+9,2,"Resistor 10 kohm, 1/4 W",any,Coil-supply sense divider to A0
+10,1,"Capacitor 100 uF electrolytic + 100 nF ceramic",any,Across the switched coil supply
+11,4,"2-pin header + jumper",any,"JS1-JS4: optional HALL/DLTS shield tie per channel (fitted only if needed)"
+12,1,Perfboard or prototyping PCB,Adafruit Perma-Proto full size,Relay board
+13,2 m,"Coax, RG-316 or RG-174",any,"Jack-to-relay runs, keep short"
+14,1,"Panel-mount USB (Mini-B or matching the Nano) extension, or a cable gland",any,USB to the PC / hub
+15,1,Ground lug + earth wire,any,Case to earth; not to any signal shield
+16,12,"BNC cables, 50 ohm, short",any,"STAGE P1-P4 to stage, HALL P1-P4 to switch box, DLTS P1-P3 to MFIA (P4 spare)"

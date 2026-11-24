@@ -96,6 +96,8 @@ If both apps run against the same controller, one app's disconnect (STOP) or clo
 
 ### 3.3 The switch box: the key unknown
 
+> **Answered 2026-11-24** (bench photos, `docs/hardware_manual/connections_draft.md`): it is option 1 in a structured form. Four manual A/B selector boxes sit between the stage feedthroughs and the instruments, one per contact. A goes to the Arduino switch box (Keithley path). B goes to the MFIA: P1→HCUR, P2→LCUR, P3→LPOT, P4 free. A combined Hall + DLTS run therefore needs either an operator prompt to turn four knobs, or a later upgrade to relay- or Arduino-driven A/B selectors (which would make stage 3 fully automatic).
+
 What the Hall code says (`switchBox.py`, `docs/reference/switchBox.md`):
 - The software routes **only the Keithley's four terminals** (Force HI/LO, Sense HI/LO) to sample contacts P1–P4. It uses 12 digital pins (three per terminal) through StandardFirmata (pyfirmata2).
 - Configurations 1–20 are resistivity and Hall permutations.
